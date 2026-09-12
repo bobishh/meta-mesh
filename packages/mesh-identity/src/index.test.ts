@@ -34,7 +34,7 @@ describe("mesh recovery phrase", () => {
 
   it("Given one wrong word, when validated, then recovery is rejected", () => {
     const words = generateRecoveryPhrase().split(" ")
-    words[11] = words[11] === "zoo" ? "abandon" : "zoo"
+    words[11] = "not-a-bip39-word"
 
     expect(recoveryPhraseIsValid(words.join(" "))).toBe(false)
   })
