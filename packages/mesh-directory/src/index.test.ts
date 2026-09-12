@@ -3,6 +3,7 @@ import { BrowserIdentityStore } from "../../mesh-identity/src/index"
 import {
   contacts,
   createDirectory,
+  createContactCard,
   decodeContactCard,
   encodeContactCard,
   mergeDirectories,
@@ -55,14 +56,7 @@ describe("mesh directory", () => {
   })
 
   it("Given a public contact card, when shared, then identity and endpoint verify without its secret", async () => {
-    const encoded = encodeContactCard({
-      kind: "twang-contact",
-      version: 1,
-      identity: bob.identity,
-      certificates: [bob.certificate],
-      deviceId: bob.device.deviceId,
-      endpoint: "bob-endpoint",
-    })
+    const encoded = encodeContactCard(await createContactCard(bob, "bob-endpoint"))
 
     await expect(decodeContactCard(encoded)).resolves.toMatchObject({
       identity: { personId: bob.identity.personId },

@@ -1,12 +1,17 @@
 import * as Automerge from "@automerge/automerge"
 import {
   fromBase64Url,
+  signEnvelope,
   toBase64Url,
   verifyDeviceCertificateChain,
+  verifyEnvelope,
   type DeviceCertificate,
   type LocalProfile,
   type PublicIdentity,
+  type SignedEnvelope,
 } from "../../mesh-identity/src/index"
+
+export const CONTACT_CARD_SIGNATURE_DOMAIN = "TWANG-CONTACT-CARD/1"
 
 export type ContactState = "incoming" | "outgoing" | "accepted" | "blocked"
 export type RoomKind = "direct" | "group"
@@ -29,6 +34,14 @@ export type ContactCard = {
   certificates: DeviceCertificate[]
   deviceId: string
   endpoint: string
+  signed: SignedEnvelope<{
+    kind: "contact-card"
+    version: 1
+    personId: string
+    deviceId: string
+    endpoint: string
+    createdAt: string
+  }>
 }
 
 export type RoomReference = {
@@ -195,6 +208,27 @@ export function encodeContactCard(card: ContactCard): string {
   return `twang:${toBase64Url(new TextEncoder().encode(JSON.stringify(card)))}`
 }
 
+export async function createContactCard(profile: LocalProfile, endpoint: string, now = Date.now()): Promise<ContactCard> {
+  const value = endpoint.trim()
+  if (!value || value.length > 2_048) throw new Error("Invalid contact endpoint")
+  return {
+    kind: "twang-contact",
+    version: 1,
+    identity: clone(profile.identity),
+    certificates: [clone(profile.certificate)],
+    deviceId: profile.device.deviceId,
+    endpoint: value,
+    signed: await signEnvelope(profile.privateKeys.devicePrivateKey, {
+      kind: "contact-card",
+      version: 1,
+      personId: profile.identity.personId,
+      deviceId: profile.device.deviceId,
+      endpoint: value,
+      createdAt: new Date(now).toISOString(),
+    }, profile.device.deviceId, CONTACT_CARD_SIGNATURE_DOMAIN),
+  }
+}
+
 export async function decodeContactCard(value: string): Promise<ContactCard> {
   const encoded = value.trim().replace(/^twang:/, "")
   let card: ContactCard
@@ -205,9 +239,15 @@ export async function decodeContactCard(value: string): Promise<ContactCard> {
   }
   if (card?.kind !== "twang-contact" || card.version !== 1 || !card.endpoint ||
     card.identity?.personId === undefined || !Array.isArray(card.certificates) ||
-    !card.certificates.some(value => value.payload.deviceId === card.deviceId)) {
+    !card.certificates.some(value => value.payload.deviceId === card.deviceId) ||
+    card.signed?.payload?.kind !== "contact-card" || card.signed.payload.version !== 1 ||
+    card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
+    card.signed.payload.endpoint !== card.endpoint || card.signed.signerKeyId !== card.deviceId) {
     throw new Error("Invalid contact card")
   }
-  await verifyDeviceCertificateChain(card.identity, card.deviceId, card.certificates)
+  const deviceKey = await verifyDeviceCertificateChain(card.identity, card.deviceId, card.certificates)
+  if (!await verifyEnvelope(card.signed, deviceKey, CONTACT_CARD_SIGNATURE_DOMAIN)) {
+    throw new Error("Invalid contact card signature")
+  }
   return card
 }
