@@ -1,0 +1,11 @@
+{
+  "name": "@meta-uber/mesh-contact",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@meta-uber/mesh-identity": "*",
+    "@automerge/automerge": "^3.4.1"
+  }
+}

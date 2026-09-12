@@ -1,0 +1,11 @@
+{
+  "name": "@meta-uber/mesh-identity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "@scure/bip39": "^2.0.1"
+  }
+}
