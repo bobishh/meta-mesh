@@ -113,11 +113,11 @@ export async function putContact(
   if (!deviceId) throw new Error("Contact device is missing")
   const updatedAt = iso(input.now ?? Date.now())
   const endpoints = [
-    ...(previous?.endpoints ?? []).filter(value => value.deviceId !== deviceId),
+    ...clone(previous?.endpoints ?? []).filter(value => value.deviceId !== deviceId),
     { deviceId, endpoint: input.endpoint.trim() },
   ].sort((a, b) => a.deviceId.localeCompare(b.deviceId))
   const certificates = [
-    ...(previous?.certificates ?? []).filter(value => value.payload.deviceId !== deviceId),
+    ...clone(previous?.certificates ?? []).filter(value => value.payload.deviceId !== deviceId),
     ...clone(input.certificates),
   ]
   const contact: Contact = {

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { BrowserIdentityStore } from "../../mesh-identity/src/index"
+import {
+  BrowserIdentityStore,
+  generateChatKey,
+  profileFromChatKeyForDevice,
+} from "../../mesh-identity/src/index"
 import {
   contacts,
   createDirectory,
@@ -32,6 +36,28 @@ describe("mesh directory", () => {
     })
 
     expect(contacts(directory).map(contact => contact.alias)).toEqual(["Bob"])
+  })
+
+  it("Given one contact on two devices, when its second route arrives, then both endpoints remain usable", async () => {
+    const key = generateChatKey()
+    const desktop = await profileFromChatKeyForDevice(key, "Bob")
+    const phone = await profileFromChatKeyForDevice(key, "Bob")
+    let directory = await putContact(createDirectory(alice), {
+      identity: desktop.identity,
+      certificates: [desktop.certificate],
+      endpoint: "bob-desktop",
+      state: "accepted",
+    })
+
+    directory = await putContact(directory, {
+      identity: phone.identity,
+      certificates: [phone.certificate],
+      endpoint: "bob-phone",
+      state: "accepted",
+    })
+
+    expect(directory.contacts[desktop.identity.personId].endpoints.map(value => value.endpoint).sort())
+      .toEqual(["bob-desktop", "bob-phone"])
   })
 
   it("Given contacts, when a group is created, then it records all members", async () => {
