@@ -36,6 +36,7 @@ describe("mesh recovery phrase", () => {
     )
 
     expect(created.recoveryKey.split(" ")).toHaveLength(count)
+    expect(created.recoveryEnvelope.origin).toBe("random-root")
     expect(opened.identity.personId).toBe(created.profile.identity.personId)
     expect(opened.device.deviceId).not.toBe(created.profile.device.deviceId)
   })
@@ -65,6 +66,7 @@ describe("mesh recovery phrase", () => {
     const opened = await openIdentityRecoveryEnvelope(envelope, recoveryKey, "Migrated", new Uint8Array(32).fill(6))
 
     expect(opened.identity.personId).toBe(legacy.identity.personId)
+    expect(envelope.origin).toBe("direct-v1")
     expect(opened.device.deviceId).not.toBe(legacy.device.deviceId)
   })
 

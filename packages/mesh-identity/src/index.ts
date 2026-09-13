@@ -12,6 +12,7 @@ export type IdentityRecoveryEnvelope = {
   kind: "mesh-identity-recovery"
   version: 2
   personId: PersonId
+  origin?: "random-root" | "direct-v1"
   security: IdentitySecurity
   kdf: {
     name: "PBKDF2"
@@ -229,6 +230,7 @@ async function sealIdentitySeed(
   personId: PersonId,
   recoveryKey: string,
   security: IdentitySecurity,
+  origin: "random-root" | "direct-v1" = "random-root",
 ): Promise<IdentityRecoveryEnvelope> {
   if (identitySeed.byteLength !== 32) throw new Error("Identity root must contain 32 bytes")
   if (identitySecurityForRecovery(recoveryKey) !== security) throw new Error("Invalid identity recovery")
@@ -238,6 +240,7 @@ async function sealIdentitySeed(
     kind: "mesh-identity-recovery",
     version: 2,
     personId,
+    origin,
     security,
     kdf: {
       name: "PBKDF2",
@@ -259,6 +262,7 @@ async function sealIdentitySeed(
 
 function assertRecoveryEnvelope(value: IdentityRecoveryEnvelope): void {
   if (value?.kind !== "mesh-identity-recovery" || value.version !== 2 || !value.personId ||
+    (value.origin !== undefined && value.origin !== "random-root" && value.origin !== "direct-v1") ||
     !["legacy", "better", "insane"].includes(value.security) ||
     value.kdf?.name !== "PBKDF2" || value.kdf.hash !== "SHA-256" ||
     value.kdf.iterations !== RECOVERY_KDF_ITERATIONS || value.cipher?.name !== "AES-GCM" ||
@@ -353,7 +357,13 @@ export async function rewrapIdentityRecoveryEnvelope(
   const recoveryKey = generateIdentityRecovery(security)
   return {
     recoveryKey,
-    recoveryEnvelope: await sealIdentitySeed(identitySeed, envelope.personId, recoveryKey, security),
+    recoveryEnvelope: await sealIdentitySeed(
+      identitySeed,
+      envelope.personId,
+      recoveryKey,
+      security,
+      envelope.origin ?? "random-root",
+    ),
   }
 }
 
@@ -363,7 +373,13 @@ export async function migrateIdentityToRecoveryEnvelope(
 ): Promise<IdentityRecoveryEnvelope> {
   const security = identitySecurityForRecovery(recoveryKey)
   if (!security) throw new Error("Invalid identity recovery")
-  return sealIdentitySeed(await identitySeedForProfile(profile), profile.identity.personId, recoveryKey, security)
+  return sealIdentitySeed(
+    await identitySeedForProfile(profile),
+    profile.identity.personId,
+    recoveryKey,
+    security,
+    "direct-v1",
+  )
 }
 
 export async function profileFromSecretPhrase(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
