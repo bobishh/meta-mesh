@@ -52,6 +52,29 @@ describe("mesh runtime instance", () => {
     await match.release()
   })
 
+  it("Given an old runtime owns its legacy leader lock, when a new runtime starts, then slot zero is skipped", async () => {
+    const locks = new FakeLocks()
+    let releaseLegacy!: () => void
+    const legacyStarted = new Promise<void>(resolve => {
+      void locks.request("match:mesh-leader", { mode: "exclusive", ifAvailable: true }, async lock => {
+        if (!lock) return
+        resolve()
+        await new Promise<void>(release => { releaseLegacy = release })
+      })
+    })
+    await legacyStarted
+
+    const lease = await acquireMeshInstanceLease({
+      namespace: "match",
+      compatibilityLockNames: ["match:mesh-leader"],
+      locks,
+    })
+    expect(lease.instanceId).toBe("slot-1")
+
+    releaseLegacy()
+    await lease.release()
+  })
+
   it("Given two tabs of one identity, when both request leadership, then only one owns the rendezvous", async () => {
     const locks = new FakeLocks()
     const first = await tryAcquireMeshLeaderLease({ namespace: "twang", name: "identity", locks })

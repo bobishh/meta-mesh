@@ -13,6 +13,7 @@ export type MeshInstanceLease = {
 
 export type MeshInstanceLeaseOptions = {
   namespace: string
+  compatibilityLockNames?: string[]
   locks?: MeshInstanceLocks
   preferredInstanceId?: string | null
   slots?: number
@@ -48,13 +49,25 @@ export async function acquireMeshInstanceLease(options: MeshInstanceLeaseOptions
     let releaseLock: (() => void) | undefined
     let resolveAttempt!: (acquired: boolean) => void
     const attempted = new Promise<boolean>(resolve => { resolveAttempt = resolve })
-    const completion = locks.request(`${namespace}:mesh-instance:${slot}`, { mode: "exclusive", ifAvailable: true }, async lock => {
-      if (!lock) return resolveAttempt(false)
-      await new Promise<void>(resolve => {
-        releaseLock = resolve
-        resolveAttempt(true)
-      })
-    })
+    const compatibilityLocks = slot === 0 ? (options.compatibilityLockNames ?? []) : []
+    if (compatibilityLocks.some(name => !name || name.length > 128)) throw new Error("Invalid compatibility lock name")
+    const lockNames = [...new Set([`${namespace}:mesh-instance:${slot}`, ...compatibilityLocks])]
+    const acquireLock = async (index: number): Promise<void> => { await locks.request(
+      lockNames[index]!,
+      { mode: "exclusive", ifAvailable: true },
+      async lock => {
+        if (!lock) return resolveAttempt(false)
+        if (index + 1 < lockNames.length) {
+          await acquireLock(index + 1)
+          return
+        }
+        await new Promise<void>(resolve => {
+          releaseLock = resolve
+          resolveAttempt(true)
+        })
+      },
+    ) }
+    const completion = acquireLock(0)
     if (await attempted) return {
       instanceId: `slot-${slot}`,
       release: async () => {
