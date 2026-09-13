@@ -18,7 +18,7 @@ export type IrohNode = {
 }
 
 type IrohModule = {
-  default(): Promise<void>
+  default(input?: { module_or_path: string }): Promise<void>
   BrowserNode: { start(seed?: Uint8Array): Promise<IrohNode> }
 }
 
@@ -51,8 +51,15 @@ export class IrohMeshNode {
   private constructor(private readonly node: IrohNode) {}
 
   static async start(moduleUrl: string, seed?: Uint8Array): Promise<IrohMeshNode> {
-    const module = await import(/* @vite-ignore */ moduleUrl) as IrohModule
-    await module.default()
+    const sourceUrl = new URL(moduleUrl, window.location.href)
+    if (sourceUrl.origin !== window.location.origin) throw new Error("Iroh module must be same-origin")
+    const response = await fetch(sourceUrl)
+    if (!response.ok) throw new Error(`Iroh module failed to load (${response.status})`)
+    const blobUrl = URL.createObjectURL(new Blob([await response.text()], { type: "text/javascript" }))
+    let module: IrohModule
+    try { module = await import(/* @vite-ignore */ blobUrl) as IrohModule }
+    finally { URL.revokeObjectURL(blobUrl) }
+    await module.default({ module_or_path: new URL("match_iroh_bg.wasm", sourceUrl).href })
     return new IrohMeshNode(await module.BrowserNode.start(seed))
   }
 
@@ -80,9 +87,9 @@ export class IrohMeshNode {
     finally { window.clearTimeout(timer) }
   }
 
-  listen(handler: WireHandler): void {
+  async listen(handler: WireHandler): Promise<void> {
+    const acceptor = await this.node.accept()
     void (async () => {
-      const acceptor = await this.node.accept()
       while (!this.stopped) {
         const connection = await acceptor.accept()
         if (!connection) continue
