@@ -6,6 +6,7 @@ import { EFF_LONG_WORDS } from "./eff-long"
 export type PersonId = string
 export type DeviceId = string
 export type RecoveryStrengthBits = 128 | 192 | 256
+export type IdentitySecurity = "legacy" | "better" | "insane"
 
 export type SignedEnvelope<T> = {
   payload: T
@@ -53,6 +54,16 @@ export function generateRecoveryPhrase(strengthBits: RecoveryStrengthBits = 128)
   return generateMnemonic(wordlist, strengthBits)
 }
 
+export function identitySecurityWordCount(security: IdentitySecurity): 4 | 12 | 24 {
+  if (security === "legacy") return 4
+  return security === "insane" ? 24 : 12
+}
+
+export function generateIdentityRecovery(security: IdentitySecurity = "better"): string {
+  if (security === "legacy") return generateChatKey()
+  return generateRecoveryPhrase(security === "insane" ? 256 : 128)
+}
+
 export function generateChatKey(): string {
   const words: string[] = []
   const limit = Math.floor(65_536 / EFF_LONG_WORDS.length) * EFF_LONG_WORDS.length
@@ -74,6 +85,16 @@ export function recoveryPhraseIsValid(value: string): boolean {
 export function chatKeyIsValid(value: string): boolean {
   const words = normalizeRecoveryPhrase(value).split(" ")
   return words.length === 4 && words.every(word => (EFF_LONG_WORDS as readonly string[]).includes(word))
+}
+
+export function identitySecurityForRecovery(value: string): IdentitySecurity | null {
+  const normalized = normalizeRecoveryPhrase(value)
+  if (chatKeyIsValid(normalized)) return "legacy"
+  if (!recoveryPhraseIsValid(normalized)) return null
+  const count = normalized.split(" ").length
+  if (count === 12) return "better"
+  if (count === 24) return "insane"
+  return null
 }
 
 export function recoveryPhraseFromEntropy(entropy: Uint8Array): string {
@@ -132,6 +153,18 @@ export async function profileFromChatKeyForDevice(
   if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
   const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
   return profileFromEntropy(entropy, displayName, deviceEntropy)
+}
+
+export async function profileFromIdentityRecoveryForDevice(
+  value: string,
+  displayName = "Mesh user",
+  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
+): Promise<LocalProfile> {
+  const security = identitySecurityForRecovery(value)
+  if (!security) throw new Error("Invalid identity recovery")
+  return security === "legacy"
+    ? profileFromChatKeyForDevice(value, displayName, deviceEntropy)
+    : profileFromRecoveryPhraseForDevice(value, displayName, deviceEntropy)
 }
 
 export async function profileFromSecretPhrase(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
@@ -374,6 +407,18 @@ export class BrowserIdentityStore {
 
   async restoreChat(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
     const candidate = await profileFromChatKeyForDevice(value, displayName)
+    const saved = await this.load()
+    if (saved?.identity.personId === candidate.identity.personId) {
+      this.profile = saved
+      return saved
+    }
+    await this.persist(candidate, true)
+    this.profile = candidate
+    return candidate
+  }
+
+  async restoreIdentity(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
+    const candidate = await profileFromIdentityRecoveryForDevice(value, displayName)
     const saved = await this.load()
     if (saved?.identity.personId === candidate.identity.personId) {
       this.profile = saved

@@ -3,7 +3,10 @@ import {
   BrowserIdentityStore,
   chatKeyIsValid,
   generateChatKey,
+  generateIdentityRecovery,
   generateRecoveryPhrase,
+  identitySecurityForRecovery,
+  identitySecurityWordCount,
   profileFromRecoveryPhrase,
   profileFromRecoveryPhraseForDevice,
   profileFromChatKey,
@@ -29,6 +32,23 @@ describe("mesh recovery phrase", () => {
     [256, 24],
   ] as const)("Given %i-bit recovery strength, when generated, then it has %i BIP39 words", (strength, count) => {
     expect(generateRecoveryPhrase(strength).split(" ")).toHaveLength(count)
+  })
+
+  it.each([
+    ["legacy", 4],
+    ["better", 12],
+    ["insane", 24],
+  ] as const)("Given %s identity security, when recovery is generated, then %i words identify its level", (security, count) => {
+    const phrase = generateIdentityRecovery(security)
+
+    expect(identitySecurityWordCount(security)).toBe(count)
+    expect(phrase.split(" ")).toHaveLength(count)
+    expect(identitySecurityForRecovery(phrase)).toBe(security)
+  })
+
+  it("Given unsupported or malformed words, when identity security is detected, then recovery is rejected", () => {
+    expect(identitySecurityForRecovery("not a valid key")).toBeNull()
+    expect(identitySecurityForRecovery(generateRecoveryPhrase(192))).toBeNull()
   })
 
   it("Given one phrase, when restored twice, then person and device ids stay stable", async () => {
@@ -99,6 +119,23 @@ describe("mesh recovery phrase", () => {
     const first = await store.restoreChat(key, "One")
     store.clearMemory()
     const restored = await store.restoreChat(key, "One")
+
+    expect(restored.identity.personId).toBe(first.identity.personId)
+    expect(restored.device.deviceId).toBe(first.device.deviceId)
+  })
+
+  it.each(["legacy", "better", "insane"] as const)("Given a %s identity, when restored on one device twice, then its device stays stable", async security => {
+    const storage = new Map<string, string>()
+    const browserStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value) },
+      removeItem: (key: string) => { storage.delete(key) },
+    }
+    const store = new BrowserIdentityStore({ storageKey: "identity", storage: browserStorage })
+    const key = generateIdentityRecovery(security)
+    const first = await store.restoreIdentity(key, "One")
+    store.clearMemory()
+    const restored = await store.restoreIdentity(key, "One")
 
     expect(restored.identity.personId).toBe(first.identity.personId)
     expect(restored.device.deviceId).toBe(first.device.deviceId)
