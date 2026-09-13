@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import * as Automerge from "@automerge/automerge"
-import { BrowserIdentityStore } from "../../mesh-identity/src/index"
+import { BrowserIdentityStore, generateChatKey, profileFromChatKeyForDevice } from "../../mesh-identity/src/index"
 import {
+  addContactParticipantDeviceCertificate,
   createContactDecision,
   createContactChannel,
   createContactMessage,
@@ -99,6 +100,25 @@ describe("contact mesh protocol", () => {
       await createContactMessage(visitor, "channel-chat", "Excellent.", { now: now + 3, messageId: "visitor-1" }), now + 3)
 
     expect(contactTimeline(channel).map(item => item.body)).toEqual(["Can we talk?", "Yes.", "Excellent."])
+  })
+
+  it("Given one visitor on a second device, when its certificate joins, then its message verifies", async () => {
+    const now = 1_800_000_000_000
+    const key = generateChatKey()
+    const firstDevice = await profileFromChatKeyForDevice(key, "Visitor", new Uint8Array(32).fill(1))
+    const secondDevice = await profileFromChatKeyForDevice(key, "Visitor", new Uint8Array(32).fill(2))
+    const request = await createContactRequest(firstDevice, {
+      endpoint: "visitor-endpoint", firstMessage: "First device", now, requestId: "request-devices",
+    })
+    const decision = await createContactDecision(owner, request, true, {
+      now, channelId: "channel-devices", channelSecret: "secret-devices",
+    })
+    let channel = await createContactChannel(request, decision, now)
+    channel = await addContactParticipantDeviceCertificate(channel, secondDevice.identity, secondDevice.certificate)
+    channel = await appendContactMessage(channel,
+      await createContactMessage(secondDevice, channel.channelId, "Second device", { now: now + 1, messageId: "device-2" }), now + 1)
+
+    expect(contactTimeline(channel).map(item => item.body)).toEqual(["First device", "Second device"])
   })
 
   it("Given separate contacts, when one channel is merged, then another channel cannot leak into it", async () => {

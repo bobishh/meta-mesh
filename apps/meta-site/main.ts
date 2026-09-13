@@ -1,10 +1,9 @@
 import {
+  BrowserIdentityStore,
   fromBase64Url,
   generateChatKey,
   chatKeyIsValid,
   normalizeRecoveryPhrase,
-  profileFromChatKey,
-  profileFromSecretPhrase,
   sha256Base64Url,
   signEnvelope,
   toBase64Url,
@@ -30,6 +29,7 @@ import {
   verifyContactRequest,
   type ContactChannel,
   type ContactRequest,
+  addContactParticipantDeviceCertificate,
 } from "../../packages/mesh-contact/src/index"
 import {
   reconcileReplicaSet,
@@ -202,7 +202,11 @@ async function ownerSnapshot(): Promise<OwnerSnapshot> {
   }
 }
 
-async function mergeOwnerSnapshot(remote: OwnerSnapshot, ownerPersonId: string): Promise<void> {
+async function mergeOwnerSnapshot(
+  remote: OwnerSnapshot,
+  ownerPersonId: string,
+  participant?: Pick<LocalProfile, "identity" | "certificate">,
+): Promise<void> {
   if (!remote || !Array.isArray(remote.channels) || !Array.isArray(remote.pending) ||
     !Array.isArray(remote.pendingTombstones) || remote.channels.length > 1_000 ||
     remote.pending.length > 1_000 || remote.pendingTombstones.length > 5_000) {
@@ -239,8 +243,16 @@ async function mergeOwnerSnapshot(remote: OwnerSnapshot, ownerPersonId: string):
     if (!incoming.channelId || !incoming.secret || typeof incoming.bytes !== "string") {
       throw new Error("Invalid owner channel")
     }
-    const remoteBytes = wireToBytes(incoming.bytes)
-    const remoteChannel = await verifyContactChannel(loadContactChannel(remoteBytes))
+    let remoteChannel = loadContactChannel(wireToBytes(incoming.bytes))
+    if (participant) {
+      remoteChannel = await addContactParticipantDeviceCertificate(
+        remoteChannel,
+        participant.identity,
+        participant.certificate,
+      )
+    }
+    remoteChannel = await verifyContactChannel(remoteChannel)
+    const remoteBytes = saveContactChannel(remoteChannel)
     if (remoteChannel.ownerPersonId !== ownerPersonId || remoteChannel.channelId !== incoming.channelId) {
       throw new Error("Owner channel does not belong to this identity")
     }
@@ -277,6 +289,14 @@ function byId<T extends HTMLElement>(id: string): T {
 function setText(id: string, value: string) { byId(id).textContent = value }
 function show(id: string, visible: boolean) { byId(id).hidden = !visible }
 
+function submitOnShortcut(textarea: HTMLTextAreaElement, form: HTMLFormElement) {
+  textarea.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return
+    event.preventDefault()
+    form.requestSubmit()
+  })
+}
+
 async function probeOwner(): Promise<boolean> {
   const module = await loadIroh()
   const node: IrohNode = await module.BrowserNode.start()
@@ -311,6 +331,10 @@ async function publicApp(openImmediately = false) {
   let current: StoredChannel | undefined
   let phrase = ""
   let pollTimer: number | undefined
+  const identityStore = new BrowserIdentityStore({
+    storageKey: "meta-mesh.visitor.identity.v1",
+    signatureDomain: CONTACT_SIGNATURE_DOMAIN,
+  })
 
   function showPanel(id?: string) {
     for (const panelId of panelIds) show(panelId, panelId === id)
@@ -345,7 +369,7 @@ async function publicApp(openImmediately = false) {
       current = undefined
     }
     phrase = normalized
-    profile ??= await profileFromChatKey(phrase)
+    profile ??= await identityStore.restoreChat(phrase)
     node ??= await startRandomNode()
     const response = await request(node, { type: "restore", proof: await sessionProof(profile) })
     if (response.status === "pending") {
@@ -427,7 +451,7 @@ async function publicApp(openImmediately = false) {
     event.preventDefault()
     try {
       const name = byId<HTMLInputElement>("mesh-name").value
-      profile = await profileFromChatKey(phrase, name)
+      profile = await identityStore.restoreChat(phrase, name)
       node = await startRandomNode()
       const requestValue = await createContactRequest(profile, {
         endpoint: node.endpointId,
@@ -453,6 +477,7 @@ async function publicApp(openImmediately = false) {
       await sync()
     } catch (error) { setText("mesh-chat-state", error instanceof Error ? error.message : String(error)) }
   })
+  submitOnShortcut(byId("mesh-chat-input"), byId("mesh-chat-form"))
   if (openImmediately) await openDialog()
 }
 
@@ -462,6 +487,10 @@ async function ownerApp() {
   let current: StoredChannel | undefined
   let primary = false
   let ownerPollTimer: number | undefined
+  const identityStore = new BrowserIdentityStore({
+    storageKey: "meta-mesh.owner.identity.v1",
+    signatureDomain: CONTACT_SIGNATURE_DOMAIN,
+  })
 
   async function syncOwnerReplica() {
     if (primary) return
@@ -470,7 +499,7 @@ async function ownerApp() {
       proof: await sessionProof(owner),
       snapshot: await ownerSnapshot(),
     })
-    await mergeOwnerSnapshot(response.snapshot, owner.identity.personId)
+    await mergeOwnerSnapshot(response.snapshot, owner.identity.personId, owner)
     if (current) current = await getRecord<StoredChannel>("owner-channels", current.channelId)
     await refresh()
     if (current) renderOwnerChat()
@@ -578,7 +607,10 @@ async function ownerApp() {
       if (incoming.type === "owner-sync") {
         const proof = await verifySession(incoming.proof)
         if (proof.identity.personId !== owner.identity.personId) throw new Error("Owner identity rejected")
-        await mergeOwnerSnapshot(incoming.snapshot, owner.identity.personId)
+        await mergeOwnerSnapshot(incoming.snapshot, owner.identity.personId, {
+          identity: proof.identity,
+          certificate: proof.certificates[0]!,
+        })
         await refresh()
         if (current) {
           current = await getRecord<StoredChannel>("owner-channels", current.channelId)
@@ -588,8 +620,15 @@ async function ownerApp() {
       }
       if (incoming.type === "restore") {
         const proof = await verifySession(incoming.proof)
-        const channels = (await allRecords<StoredChannel>("owner-channels")).filter(item =>
-          loadContactChannel(item.bytes).visitorPersonId === proof.identity.personId)
+        const channels: StoredChannel[] = []
+        for (const item of await allRecords<StoredChannel>("owner-channels")) {
+          let channel = loadContactChannel(item.bytes)
+          if (channel.visitorPersonId !== proof.identity.personId) continue
+          channel = await addContactParticipantDeviceCertificate(channel, proof.identity, proof.certificates[0]!)
+          item.bytes = saveContactChannel(channel)
+          await putRecord("owner-channels", item.channelId, item)
+          channels.push(item)
+        }
         const pending = (await allRecords<PendingRequest>("owner-pending")).some(item =>
           item.request.signed.payload.personId === proof.identity.personId)
         return reply(stream, channels.length ? {
@@ -601,8 +640,9 @@ async function ownerApp() {
         const proof = await verifySession(incoming.proof)
         const stored = await getRecord<StoredChannel>("owner-channels", incoming.channelId)
         if (!stored || stored.secret !== incoming.secret) throw new Error("Conversation key rejected")
-        const local = loadContactChannel(stored.bytes)
+        let local = loadContactChannel(stored.bytes)
         if (local.visitorPersonId !== proof.identity.personId) throw new Error("Conversation identity rejected")
+        local = await addContactParticipantDeviceCertificate(local, proof.identity, proof.certificates[0]!)
         const merged = await mergeContactChannels(local, wireToBytes(incoming.bytes))
         stored.bytes = saveContactChannel(merged)
         await putRecord("owner-channels", stored.channelId, stored)
@@ -633,7 +673,7 @@ async function ownerApp() {
     const key = byId<HTMLInputElement>("oi-key").value
     let candidate: IrohNode | undefined
     try {
-      owner = await profileFromSecretPhrase(key, "Bogdan")
+      owner = await identityStore.restoreSecret(key, "Bogdan")
       candidate = await startRandomNode()
       let primaryOnline = false
       try { primaryOnline = (await request(candidate, { type: "probe" })).status === "online" }
@@ -687,6 +727,7 @@ async function ownerApp() {
     if (!primary) await syncOwnerReplica()
     renderOwnerChat()
   })
+  submitOnShortcut(byId("oi-chat-input"), byId("oi-chat-form"))
 }
 
 export async function boot(openPublicImmediately = false) {

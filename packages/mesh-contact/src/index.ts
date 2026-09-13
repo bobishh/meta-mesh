@@ -74,6 +74,8 @@ export type ContactChannelDocument = {
   visitorPersonId: string
   request: ContactRequest
   decision: ContactDecision
+  ownerCertificates?: DeviceCertificate[]
+  visitorCertificates?: DeviceCertificate[]
   messages: Record<string, ContactMessage>
 }
 
@@ -257,7 +259,9 @@ export async function createContactMessage(
 
 async function verifyContactMessage(
   message: ContactMessage,
-  channel: Pick<ContactChannelDocument, "channelId" | "ownerPersonId" | "visitorPersonId" | "request" | "decision">,
+  channel: Pick<ContactChannelDocument,
+    "channelId" | "ownerPersonId" | "visitorPersonId" | "request" | "decision" |
+    "ownerCertificates" | "visitorCertificates">,
   now: number,
 ): Promise<void> {
   const payload = message?.payload
@@ -273,8 +277,12 @@ async function verifyContactMessage(
   if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== payload.createdAt ||
     timestamp > now + MAX_FUTURE_TOLERANCE_MS) throw new Error("Invalid message timestamp")
 
-  const party = payload.authorPersonId === channel.ownerPersonId ? channel.decision : channel.request
-  const deviceKey = await verifyDevice(party.identity, payload.authorDeviceId, party.certificates)
+  const owner = payload.authorPersonId === channel.ownerPersonId
+  const party = owner ? channel.decision : channel.request
+  const certificates = owner
+    ? [...party.certificates, ...(channel.ownerCertificates ?? [])]
+    : [...party.certificates, ...(channel.visitorCertificates ?? [])]
+  const deviceKey = await verifyDevice(party.identity, payload.authorDeviceId, certificates)
   if (!await verifyEnvelope(message, deviceKey, CONTACT_SIGNATURE_DOMAIN)) {
     throw new Error("Invalid contact message signature")
   }
@@ -299,9 +307,33 @@ export async function createContactChannel(
     draft.visitorPersonId = request.signed.payload.personId
     draft.request = clone(request)
     draft.decision = clone(decision)
+    draft.ownerCertificates = clone(decision.certificates)
+    draft.visitorCertificates = clone(request.certificates)
     draft.messages = {}
   })
   return doc
+}
+
+export async function addContactParticipantDeviceCertificate(
+  doc: ContactChannel,
+  identity: PublicIdentity,
+  certificate: DeviceCertificate,
+): Promise<ContactChannel> {
+  const owner = identity.personId === doc.ownerPersonId
+  const visitor = identity.personId === doc.visitorPersonId
+  if (!owner && !visitor) throw new Error("Certificate owner is not a channel participant")
+  const party = owner ? doc.decision : doc.request
+  if (party.identity.publicKey !== identity.publicKey) throw new Error("Channel identity does not match")
+  await verifyDeviceCertificateChain(identity, certificate.payload.deviceId, [certificate])
+  const certificates = owner
+    ? [...party.certificates, ...(doc.ownerCertificates ?? [])]
+    : [...party.certificates, ...(doc.visitorCertificates ?? [])]
+  if (certificates.some(value => value.payload.deviceId === certificate.payload.deviceId)) return doc
+  return Automerge.change(doc, { message: "Add participant device" }, draft => {
+    const key = owner ? "ownerCertificates" : "visitorCertificates"
+    if (!draft[key]) draft[key] = []
+    draft[key]!.push(clone(certificate))
+  })
 }
 
 export async function appendContactMessage(
@@ -336,6 +368,12 @@ export async function verifyContactChannel(doc: ContactChannel, now = Date.now()
   if (!decision.signed.payload.accepted || decision.signed.payload.channelId !== doc.channelId ||
     decision.signed.payload.ownerPersonId !== doc.ownerPersonId ||
     request.signed.payload.personId !== doc.visitorPersonId) throw new Error("Invalid contact channel binding")
+  for (const certificate of doc.ownerCertificates ?? []) {
+    await verifyDeviceCertificateChain(decision.identity, certificate.payload.deviceId, [certificate])
+  }
+  for (const certificate of doc.visitorCertificates ?? []) {
+    await verifyDeviceCertificateChain(request.identity, certificate.payload.deviceId, [certificate])
+  }
   const entries = Object.entries(doc.messages)
   if (entries.length > 10_000) throw new Error("Contact channel has too many messages")
   for (const [id, message] of entries) {

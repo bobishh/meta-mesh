@@ -141,6 +141,18 @@ export async function profileFromSecretPhrase(value: string, displayName = "Mesh
   return profileFromEntropy(entropy, displayName)
 }
 
+export async function profileFromSecretPhraseForDevice(
+  value: string,
+  displayName = "Mesh user",
+  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
+): Promise<LocalProfile> {
+  const key = normalizeRecoveryPhrase(value)
+  if (!key) throw new Error("Secret phrase is empty")
+  if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
+  const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
+  return profileFromEntropy(entropy, displayName, deviceEntropy)
+}
+
 async function profileFromEntropy(
   entropy: Uint8Array,
   displayName: string,
@@ -362,6 +374,18 @@ export class BrowserIdentityStore {
 
   async restoreChat(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
     const candidate = await profileFromChatKeyForDevice(value, displayName)
+    const saved = await this.load()
+    if (saved?.identity.personId === candidate.identity.personId) {
+      this.profile = saved
+      return saved
+    }
+    await this.persist(candidate, true)
+    this.profile = candidate
+    return candidate
+  }
+
+  async restoreSecret(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
+    const candidate = await profileFromSecretPhraseForDevice(value, displayName)
     const saved = await this.load()
     if (saved?.identity.personId === candidate.identity.personId) {
       this.profile = saved

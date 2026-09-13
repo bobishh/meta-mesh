@@ -103,4 +103,21 @@ describe("mesh recovery phrase", () => {
     expect(restored.identity.personId).toBe(first.identity.personId)
     expect(restored.device.deviceId).toBe(first.device.deviceId)
   })
+
+  it("Given one chat key in two browser stores, when restored, then person ids match and device ids differ", async () => {
+    const key = generateChatKey()
+    const first = await new BrowserIdentityStore({ storageKey: "first" }).restoreChat(key, "One")
+    const second = await new BrowserIdentityStore({ storageKey: "second" }).restoreChat(key, "Two")
+
+    expect(second.identity.personId).toBe(first.identity.personId)
+    expect(second.device.deviceId).not.toBe(first.device.deviceId)
+  })
+
+  it("Given one owner phrase in two browser stores, when restored, then person ids match and device ids differ", async () => {
+    const first = await new BrowserIdentityStore({ storageKey: "owner-first" }).restoreSecret("shared phrase", "One")
+    const second = await new BrowserIdentityStore({ storageKey: "owner-second" }).restoreSecret("shared phrase", "Two")
+
+    expect(second.identity.personId).toBe(first.identity.personId)
+    expect(second.device.deviceId).not.toBe(first.device.deviceId)
+  })
 })
