@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import * as Automerge from "@automerge/automerge"
-import { BrowserIdentityStore, generateChatKey, profileFromChatKeyForDevice } from "../../mesh-identity/src/index"
+import { BrowserIdentityStore, createRecoverableIdentity, openIdentityRecoveryEnvelope } from "../../mesh-identity/src/index"
 import {
   addContactParticipantDeviceCertificate,
   createContactDecision,
@@ -104,9 +104,14 @@ describe("contact mesh protocol", () => {
 
   it("Given one visitor on a second device, when its certificate joins, then its message verifies", async () => {
     const now = 1_800_000_000_000
-    const key = generateChatKey()
-    const firstDevice = await profileFromChatKeyForDevice(key, "Visitor", new Uint8Array(32).fill(1))
-    const secondDevice = await profileFromChatKeyForDevice(key, "Visitor", new Uint8Array(32).fill(2))
+    const created = await createRecoverableIdentity("better", "Visitor", new Uint8Array(32).fill(1))
+    const firstDevice = created.profile
+    const secondDevice = await openIdentityRecoveryEnvelope(
+      created.recoveryEnvelope,
+      created.recoveryKey,
+      "Visitor",
+      new Uint8Array(32).fill(2),
+    )
     const request = await createContactRequest(firstDevice, {
       endpoint: "visitor-endpoint", firstMessage: "First device", now, requestId: "request-devices",
     })

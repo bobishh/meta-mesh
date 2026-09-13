@@ -10,9 +10,8 @@ export type IdentitySecurity = "legacy" | "better" | "insane"
 
 export type IdentityRecoveryEnvelope = {
   kind: "mesh-identity-recovery"
-  version: 2
+  version: 3
   personId: PersonId
-  origin?: "random-root" | "direct-v1"
   security: IdentitySecurity
   kdf: {
     name: "PBKDF2"
@@ -31,6 +30,20 @@ export type RecoverableIdentity = {
   profile: LocalProfile
   recoveryKey: string
   recoveryEnvelope: IdentityRecoveryEnvelope
+}
+
+export type IdentityPassphraseEnvelope = {
+  kind: "mesh-identity-passphrase"
+  version: 1
+  personId: PersonId
+  kdf: IdentityRecoveryEnvelope["kdf"]
+  cipher: IdentityRecoveryEnvelope["cipher"]
+  ciphertext: string
+}
+
+export type PassphraseIdentity = {
+  profile: LocalProfile
+  passphraseEnvelope: IdentityPassphraseEnvelope
 }
 
 export type SignedEnvelope<T> = {
@@ -148,50 +161,6 @@ async function importEd25519Private(seed: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"])
 }
 
-export async function profileFromRecoveryPhrase(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-  return profileFromEntropy(recoveryPhraseToEntropy(value), displayName)
-}
-
-export async function profileFromRecoveryPhraseForDevice(
-  value: string,
-  displayName = "Mesh user",
-  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
-): Promise<LocalProfile> {
-  if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
-  return profileFromEntropy(recoveryPhraseToEntropy(value), displayName, deviceEntropy)
-}
-
-export async function profileFromChatKey(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-  const key = normalizeRecoveryPhrase(value)
-  if (!chatKeyIsValid(key)) throw new Error("Invalid chat key")
-  const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
-  return profileFromEntropy(entropy, displayName)
-}
-
-export async function profileFromChatKeyForDevice(
-  value: string,
-  displayName = "Mesh user",
-  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
-): Promise<LocalProfile> {
-  const key = normalizeRecoveryPhrase(value)
-  if (!chatKeyIsValid(key)) throw new Error("Invalid chat key")
-  if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
-  const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
-  return profileFromEntropy(entropy, displayName, deviceEntropy)
-}
-
-export async function profileFromIdentityRecoveryForDevice(
-  value: string,
-  displayName = "Mesh user",
-  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
-): Promise<LocalProfile> {
-  const security = identitySecurityForRecovery(value)
-  if (!security) throw new Error("Invalid identity recovery")
-  return security === "legacy"
-    ? profileFromChatKeyForDevice(value, displayName, deviceEntropy)
-    : profileFromRecoveryPhraseForDevice(value, displayName, deviceEntropy)
-}
-
 const RECOVERY_KDF_ITERATIONS = 600_000 as const
 
 function recoveryEnvelopeAad(envelope: Omit<IdentityRecoveryEnvelope, "ciphertext">): Uint8Array {
@@ -214,15 +183,22 @@ async function recoveryWrappingKey(recoveryKey: string, salt: Uint8Array): Promi
   }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
 }
 
-async function identitySeedForProfile(profile: LocalProfile): Promise<Uint8Array> {
-  const privateKey = profile.privateKeys.identityPrivateKey
-  if (!privateKey) throw new Error("Identity private key is unavailable")
-  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", privateKey))
-  if (pkcs8.byteLength < 32) throw new Error("Invalid identity private key")
-  const seed = pkcs8.slice(-32)
-  const personId = await sha256Base64Url(await getPublicKeyAsync(seed))
-  if (personId !== profile.identity.personId) throw new Error("Identity private key does not match profile")
-  return seed
+async function passphraseWrappingKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+  const normalized = normalizeRecoveryPhrase(passphrase)
+  if (!normalized) throw new Error("Passphrase is empty")
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(normalized),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  )
+  return crypto.subtle.deriveKey({
+    name: "PBKDF2",
+    hash: "SHA-256",
+    salt,
+    iterations: RECOVERY_KDF_ITERATIONS,
+  }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
 }
 
 async function sealIdentitySeed(
@@ -230,7 +206,6 @@ async function sealIdentitySeed(
   personId: PersonId,
   recoveryKey: string,
   security: IdentitySecurity,
-  origin: "random-root" | "direct-v1" = "random-root",
 ): Promise<IdentityRecoveryEnvelope> {
   if (identitySeed.byteLength !== 32) throw new Error("Identity root must contain 32 bytes")
   if (identitySecurityForRecovery(recoveryKey) !== security) throw new Error("Invalid identity recovery")
@@ -238,9 +213,8 @@ async function sealIdentitySeed(
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const header: Omit<IdentityRecoveryEnvelope, "ciphertext"> = {
     kind: "mesh-identity-recovery",
-    version: 2,
+    version: 3,
     personId,
-    origin,
     security,
     kdf: {
       name: "PBKDF2",
@@ -261,13 +235,74 @@ async function sealIdentitySeed(
 }
 
 function assertRecoveryEnvelope(value: IdentityRecoveryEnvelope): void {
-  if (value?.kind !== "mesh-identity-recovery" || value.version !== 2 || !value.personId ||
-    (value.origin !== undefined && value.origin !== "random-root" && value.origin !== "direct-v1") ||
+  if (value?.kind !== "mesh-identity-recovery" || value.version !== 3 || !value.personId ||
     !["legacy", "better", "insane"].includes(value.security) ||
     value.kdf?.name !== "PBKDF2" || value.kdf.hash !== "SHA-256" ||
     value.kdf.iterations !== RECOVERY_KDF_ITERATIONS || value.cipher?.name !== "AES-GCM" ||
     fromBase64Url(value.kdf.salt).byteLength !== 16 || fromBase64Url(value.cipher.iv).byteLength !== 12 ||
     fromBase64Url(value.ciphertext).byteLength !== 48) throw new Error("Invalid identity recovery envelope")
+}
+
+async function sealIdentitySeedWithPassphrase(
+  identitySeed: Uint8Array,
+  personId: PersonId,
+  passphrase: string,
+): Promise<IdentityPassphraseEnvelope> {
+  if (identitySeed.byteLength !== 32) throw new Error("Identity root must contain 32 bytes")
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const header: Omit<IdentityPassphraseEnvelope, "ciphertext"> = {
+    kind: "mesh-identity-passphrase",
+    version: 1,
+    personId,
+    kdf: {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      iterations: RECOVERY_KDF_ITERATIONS,
+      salt: toBase64Url(salt),
+    },
+    cipher: { name: "AES-GCM", iv: toBase64Url(iv) },
+  }
+  const key = await passphraseWrappingKey(passphrase, salt)
+  const ciphertext = await crypto.subtle.encrypt({
+    name: "AES-GCM",
+    iv,
+    additionalData: new TextEncoder().encode(canonicalizeJson(header)),
+    tagLength: 128,
+  }, key, identitySeed)
+  return { ...header, ciphertext: toBase64Url(new Uint8Array(ciphertext)) }
+}
+
+function assertPassphraseEnvelope(value: IdentityPassphraseEnvelope): void {
+  if (value?.kind !== "mesh-identity-passphrase" || value.version !== 1 || !value.personId ||
+    value.kdf?.name !== "PBKDF2" || value.kdf.hash !== "SHA-256" ||
+    value.kdf.iterations !== RECOVERY_KDF_ITERATIONS || value.cipher?.name !== "AES-GCM" ||
+    fromBase64Url(value.kdf.salt).byteLength !== 16 || fromBase64Url(value.cipher.iv).byteLength !== 12 ||
+    fromBase64Url(value.ciphertext).byteLength !== 48) throw new Error("Invalid identity passphrase envelope")
+}
+
+async function openIdentitySeedWithPassphrase(
+  envelope: IdentityPassphraseEnvelope,
+  passphrase: string,
+): Promise<Uint8Array> {
+  try {
+    assertPassphraseEnvelope(envelope)
+    const { ciphertext: _ciphertext, ...header } = envelope
+    const key = await passphraseWrappingKey(passphrase, fromBase64Url(envelope.kdf.salt))
+    const plaintext = await crypto.subtle.decrypt({
+      name: "AES-GCM",
+      iv: fromBase64Url(envelope.cipher.iv),
+      additionalData: new TextEncoder().encode(canonicalizeJson(header)),
+      tagLength: 128,
+    }, key, fromBase64Url(envelope.ciphertext))
+    const seed = new Uint8Array(plaintext)
+    if (seed.byteLength !== 32 || await sha256Base64Url(await getPublicKeyAsync(seed)) !== envelope.personId) {
+      throw new Error("identity mismatch")
+    }
+    return seed
+  } catch {
+    throw new Error("Passphrase does not open this identity")
+  }
 }
 
 async function openIdentitySeed(
@@ -348,6 +383,30 @@ export async function openIdentityRecoveryEnvelope(
   return profileFromIdentitySeedForDevice(await openIdentitySeed(envelope, recoveryKey), displayName, deviceEntropy)
 }
 
+export async function createPassphraseIdentity(
+  passphrase: string,
+  displayName = "Mesh user",
+  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
+): Promise<PassphraseIdentity> {
+  const identitySeed = crypto.getRandomValues(new Uint8Array(32))
+  const profile = await profileFromIdentitySeedForDevice(identitySeed, displayName, deviceEntropy)
+  const passphraseEnvelope = await sealIdentitySeedWithPassphrase(identitySeed, profile.identity.personId, passphrase)
+  return { profile, passphraseEnvelope }
+}
+
+export async function openIdentityPassphraseEnvelope(
+  envelope: IdentityPassphraseEnvelope,
+  passphrase: string,
+  displayName = "Mesh user",
+  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
+): Promise<LocalProfile> {
+  return profileFromIdentitySeedForDevice(
+    await openIdentitySeedWithPassphrase(envelope, passphrase),
+    displayName,
+    deviceEntropy,
+  )
+}
+
 export async function rewrapIdentityRecoveryEnvelope(
   envelope: IdentityRecoveryEnvelope,
   currentRecoveryKey: string,
@@ -362,75 +421,7 @@ export async function rewrapIdentityRecoveryEnvelope(
       envelope.personId,
       recoveryKey,
       security,
-      envelope.origin ?? "random-root",
     ),
-  }
-}
-
-export async function migrateIdentityToRecoveryEnvelope(
-  profile: LocalProfile,
-  recoveryKey: string,
-): Promise<IdentityRecoveryEnvelope> {
-  const security = identitySecurityForRecovery(recoveryKey)
-  if (!security) throw new Error("Invalid identity recovery")
-  return sealIdentitySeed(
-    await identitySeedForProfile(profile),
-    profile.identity.personId,
-    recoveryKey,
-    security,
-    "direct-v1",
-  )
-}
-
-export async function profileFromSecretPhrase(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-  const key = normalizeRecoveryPhrase(value)
-  if (!key) throw new Error("Secret phrase is empty")
-  const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
-  return profileFromEntropy(entropy, displayName)
-}
-
-export async function profileFromSecretPhraseForDevice(
-  value: string,
-  displayName = "Mesh user",
-  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
-): Promise<LocalProfile> {
-  const key = normalizeRecoveryPhrase(value)
-  if (!key) throw new Error("Secret phrase is empty")
-  if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
-  const entropy = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)))
-  return profileFromEntropy(entropy, displayName, deviceEntropy)
-}
-
-async function profileFromEntropy(
-  entropy: Uint8Array,
-  displayName: string,
-  deviceEntropy?: Uint8Array,
-): Promise<LocalProfile> {
-  const identitySeed = await deriveSeed(entropy, "person")
-  const deviceSeed = deviceEntropy
-    ? await deriveSeed(deviceEntropy, "device")
-    : await deriveSeed(entropy, "primary-device")
-  const identityPublic = await getPublicKeyAsync(identitySeed)
-  const devicePublic = await getPublicKeyAsync(deviceSeed)
-  const identityPrivateKey = await importEd25519Private(identitySeed)
-  const devicePrivateKey = await importEd25519Private(deviceSeed)
-  const personId = await sha256Base64Url(identityPublic)
-  const deviceId = await sha256Base64Url(devicePublic)
-  const identity: PublicIdentity = { personId, publicKey: toBase64Url(identityPublic), displayName }
-  const certificate = await signEnvelope(identityPrivateKey, {
-    kind: "device-certificate" as const,
-    version: 1 as const,
-    personId,
-    deviceId,
-    devicePublicKey: toBase64Url(devicePublic),
-    issuerCertificateHash: null,
-    canEnrollDevices: true as const,
-  }, personId)
-  return {
-    identity,
-    device: { deviceId, publicKey: toBase64Url(devicePublic), displayName: `${displayName}'s device` },
-    certificate,
-    privateKeys: { identityPrivateKey, devicePrivateKey },
   }
 }
 
@@ -601,49 +592,6 @@ export class BrowserIdentityStore {
     this.remove(this.options.storageKey)
   }
 
-  async restore(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-    const profile = await profileFromRecoveryPhrase(value, displayName)
-    await this.persist(profile, true)
-    this.profile = profile
-    return profile
-  }
-
-  async restoreRecovery(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-    const candidate = await profileFromRecoveryPhraseForDevice(value, displayName)
-    const saved = await this.load()
-    if (saved?.identity.personId === candidate.identity.personId) {
-      this.profile = saved
-      return saved
-    }
-    await this.persist(candidate, true)
-    this.profile = candidate
-    return candidate
-  }
-
-  async restoreChat(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-    const candidate = await profileFromChatKeyForDevice(value, displayName)
-    const saved = await this.load()
-    if (saved?.identity.personId === candidate.identity.personId) {
-      this.profile = saved
-      return saved
-    }
-    await this.persist(candidate, true)
-    this.profile = candidate
-    return candidate
-  }
-
-  async restoreIdentity(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-    const candidate = await profileFromIdentityRecoveryForDevice(value, displayName)
-    const saved = await this.load()
-    if (saved?.identity.personId === candidate.identity.personId) {
-      this.profile = saved
-      return saved
-    }
-    await this.persist(candidate, true)
-    this.profile = candidate
-    return candidate
-  }
-
   async createRecoverable(
     security: IdentitySecurity = "better",
     displayName = "Mesh user",
@@ -670,8 +618,19 @@ export class BrowserIdentityStore {
     return candidate
   }
 
-  async restoreSecret(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
-    const candidate = await profileFromSecretPhraseForDevice(value, displayName)
+  async createPassphrase(passphrase: string, displayName = "Mesh user"): Promise<PassphraseIdentity> {
+    const created = await createPassphraseIdentity(passphrase, displayName)
+    await this.persist(created.profile, true)
+    this.profile = created.profile
+    return created
+  }
+
+  async restorePassphraseEnvelope(
+    envelope: IdentityPassphraseEnvelope,
+    passphrase: string,
+    displayName = "Mesh user",
+  ): Promise<LocalProfile> {
+    const candidate = await openIdentityPassphraseEnvelope(envelope, passphrase, displayName)
     const saved = await this.load()
     if (saved?.identity.personId === candidate.identity.personId) {
       this.profile = saved

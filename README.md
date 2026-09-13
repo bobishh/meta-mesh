@@ -4,6 +4,6 @@ Reusable browser P2P primitives for identity, signed Automerge conversations, an
 
 Private workspace packages for now. Publish only after their API stabilizes.
 
-Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recovery phrase derives an AES-256-GCM wrapping key with PBKDF2-HMAC-SHA-256 and 600,000 iterations; it never derives the identity itself. Rewrapping with newly generated words changes recovery strength without changing the person ID. Applications own storage and replication of the encrypted recovery envelope.
+Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recovery phrase derives an AES-256-GCM wrapping key with PBKDF2-HMAC-SHA-256 and 600,000 iterations; it never derives the identity itself. Rewrapping with newly generated words changes recovery strength without changing the person ID. Applications own storage and replication of the encrypted version-3 recovery envelope.
 
-Direct-derived v1 identities remain readable. They can be wrapped without changing their person ID, but knowledge of their old phrase remains sufficient to reconstruct the old private key; migration cannot erase that historical weakness.
+No direct-derived identity compatibility or migration path exists. Applications discard pre-envelope sessions. Application-specific passphrases can encrypt a separate envelope around the same random-root model; they never derive identity keys.

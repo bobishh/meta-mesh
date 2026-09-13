@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import {
   BrowserIdentityStore,
-  generateChatKey,
-  profileFromChatKeyForDevice,
+  createRecoverableIdentity,
+  openIdentityRecoveryEnvelope,
 } from "../../mesh-identity/src/index"
 import {
   contacts,
@@ -39,9 +39,14 @@ describe("mesh directory", () => {
   })
 
   it("Given one contact on two devices, when its second route arrives, then both endpoints remain usable", async () => {
-    const key = generateChatKey()
-    const desktop = await profileFromChatKeyForDevice(key, "Bob")
-    const phone = await profileFromChatKeyForDevice(key, "Bob")
+    const created = await createRecoverableIdentity("better", "Bob", new Uint8Array(32).fill(1))
+    const desktop = created.profile
+    const phone = await openIdentityRecoveryEnvelope(
+      created.recoveryEnvelope,
+      created.recoveryKey,
+      "Bob",
+      new Uint8Array(32).fill(2),
+    )
     let directory = await putContact(createDirectory(alice), {
       identity: desktop.identity,
       certificates: [desktop.certificate],

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import * as Automerge from "@automerge/automerge"
-import { BrowserIdentityStore, generateChatKey, profileFromChatKeyForDevice } from "../../mesh-identity/src/index"
+import { BrowserIdentityStore, createRecoverableIdentity, openIdentityRecoveryEnvelope } from "../../mesh-identity/src/index"
 import {
   addConversationParticipant,
   addParticipantDeviceCertificate,
@@ -52,9 +52,14 @@ describe("mesh messaging", () => {
   })
 
   it("Given the same person on another device, when it joins a room, then its messages verify", async () => {
-    const key = generateChatKey()
-    const firstDevice = await profileFromChatKeyForDevice(key, "Alice", new Uint8Array(32).fill(1))
-    const secondDevice = await profileFromChatKeyForDevice(key, "Alice", new Uint8Array(32).fill(2))
+    const created = await createRecoverableIdentity("better", "Alice", new Uint8Array(32).fill(1))
+    const firstDevice = created.profile
+    const secondDevice = await openIdentityRecoveryEnvelope(
+      created.recoveryEnvelope,
+      created.recoveryKey,
+      "Alice",
+      new Uint8Array(32).fill(2),
+    )
     let room = createConversation(firstDevice, "Devices", "room-devices")
     room = await addParticipantDeviceCertificate(room, secondDevice)
     room = await appendMessage(room, await createMessage(secondDevice, room.conversationId, "Other device"))

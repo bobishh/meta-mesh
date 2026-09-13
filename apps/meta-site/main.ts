@@ -1,7 +1,6 @@
 import {
   BrowserIdentityStore,
   fromBase64Url,
-  generateChatKey,
   chatKeyIsValid,
   normalizeRecoveryPhrase,
   sha256Base64Url,
@@ -10,6 +9,8 @@ import {
   verifyDeviceCertificateChain,
   verifyEnvelope,
   type DeviceCertificate,
+  type IdentityPassphraseEnvelope,
+  type IdentityRecoveryEnvelope,
   type LocalProfile,
   type PublicIdentity,
   type SignedEnvelope,
@@ -71,10 +72,17 @@ type StoredChannel = {
   channelId: string
   secret: string
   bytes: Uint8Array
+  recoveryLocator: string
+  recoveryEnvelope: IdentityRecoveryEnvelope
   label?: string
   labelUpdatedAt?: string
 }
-type PendingRequest = { requestId: string; request: ContactRequest }
+type PendingRequest = {
+  requestId: string
+  request: ContactRequest
+  recoveryLocator: string
+  recoveryEnvelope: IdentityRecoveryEnvelope
+}
 type OwnerWireChannel = Omit<StoredChannel, "bytes"> & { bytes: string }
 type OwnerSnapshot = {
   channels: OwnerWireChannel[]
@@ -190,6 +198,12 @@ const getRecord = <T>(store: string, key: string) => idb<T | undefined>(store, "
 const putRecord = (store: string, key: string, value: unknown) => idb<IDBValidKey>(store, "readwrite", object => object.put(value, key))
 const deleteRecord = (store: string, key: string) => idb<undefined>(store, "readwrite", object => object.delete(key))
 const allRecords = <T>(store: string) => idb<T[]>(store, "readonly", object => object.getAll())
+const clearRecords = (store: string) => idb<undefined>(store, "readwrite", object => object.clear())
+
+async function recoveryLocator(recoveryKey: string): Promise<string> {
+  const normalized = normalizeRecoveryPhrase(recoveryKey)
+  return sha256Base64Url(textEncoder.encode(`meta-mesh/recovery-locator/v1/${normalized}`))
+}
 
 async function ownerSnapshot(): Promise<OwnerSnapshot> {
   return {
@@ -330,6 +344,7 @@ async function publicApp(openImmediately = false) {
   let node: IrohNode | undefined
   let current: StoredChannel | undefined
   let phrase = ""
+  let recoveryEnvelope: IdentityRecoveryEnvelope | undefined
   let pollTimer: number | undefined
   const identityStore = new BrowserIdentityStore({
     storageKey: "meta-mesh.visitor.identity.v1",
@@ -367,22 +382,52 @@ async function publicApp(openImmediately = false) {
       node = undefined
       profile = undefined
       current = undefined
+      recoveryEnvelope = undefined
     }
     phrase = normalized
-    profile ??= await identityStore.restoreChat(phrase)
     node ??= await startRandomNode()
+    if (!profile) {
+      const savedEnvelope = await getRecord<IdentityRecoveryEnvelope>("settings", "visitor-envelope")
+      if (savedEnvelope?.version === 3) {
+        try {
+          profile = await identityStore.restoreEnvelope(savedEnvelope, phrase)
+          recoveryEnvelope = savedEnvelope
+        } catch {
+          await deleteRecord("settings", "visitor-envelope")
+        }
+      }
+      if (!profile) {
+        const envelopeResponse = await request(node, {
+          type: "visitor-envelope",
+          recoveryLocator: await recoveryLocator(phrase),
+        })
+        const fetchedEnvelope = envelopeResponse.recoveryEnvelope as IdentityRecoveryEnvelope | undefined
+        if (!fetchedEnvelope) throw new Error("No identity envelope found for this key")
+        recoveryEnvelope = fetchedEnvelope
+        profile = await identityStore.restoreEnvelope(fetchedEnvelope, phrase)
+        await putRecord("settings", "visitor-envelope", fetchedEnvelope)
+      }
+    }
     const response = await request(node, { type: "restore", proof: await sessionProof(profile) })
     if (response.status === "pending") {
       await putRecord("settings", "visitor-key", phrase)
+      if (recoveryEnvelope) await putRecord("settings", "visitor-envelope", recoveryEnvelope)
       showPanel("mesh-pending")
       startPolling()
       return
     }
     if (!response.channels?.length) throw new Error("No conversation found for this key")
     const remote = response.channels[0]
-    current = { channelId: remote.channelId, secret: remote.secret, bytes: wireToBytes(remote.bytes) }
+    current = {
+      channelId: remote.channelId,
+      secret: remote.secret,
+      bytes: wireToBytes(remote.bytes),
+      recoveryLocator: remote.recoveryLocator,
+      recoveryEnvelope: remote.recoveryEnvelope,
+    }
     await putRecord("visitor-channels", profile.identity.personId, current)
     await putRecord("settings", "visitor-key", phrase)
+    if (recoveryEnvelope) await putRecord("settings", "visitor-envelope", recoveryEnvelope)
     showChat()
     startPolling()
   }
@@ -422,9 +467,21 @@ async function publicApp(openImmediately = false) {
   byId("mesh-open").addEventListener("click", event => { event.preventDefault(); void openDialog() })
   byId("mesh-close").addEventListener("click", () => dialog.close())
   byId("mesh-choose-new").addEventListener("click", () => {
-    phrase = generateChatKey()
-    setText("mesh-key", phrase)
-    showPanel("mesh-new")
+    void (async () => {
+      await node?.close("New conversation").catch(() => undefined)
+      identityStore.reset()
+      const created = await identityStore.createRecoverable("legacy", "Visitor")
+      phrase = created.recoveryKey
+      recoveryEnvelope = created.recoveryEnvelope
+      profile = created.profile
+      node = undefined
+      current = undefined
+      setText("mesh-key", phrase)
+      showPanel("mesh-new")
+    })().catch(error => {
+      setText("mesh-new-error", error instanceof Error ? error.message : String(error))
+      showPanel("mesh-new")
+    })
   })
   byId("mesh-choose-existing").addEventListener("click", () => {
     showPanel("mesh-existing")
@@ -451,16 +508,22 @@ async function publicApp(openImmediately = false) {
     event.preventDefault()
     try {
       const name = byId<HTMLInputElement>("mesh-name").value
-      profile = await identityStore.restoreChat(phrase, name)
+      if (!profile || !recoveryEnvelope) throw new Error("Create a new key first")
       node = await startRandomNode()
       const requestValue = await createContactRequest(profile, {
         endpoint: node.endpointId,
         displayName: name,
         firstMessage: byId<HTMLTextAreaElement>("mesh-first-message").value,
       })
-      const response = await request(node, { type: "contact", request: requestValue })
+      const response = await request(node, {
+        type: "contact",
+        request: requestValue,
+        recoveryLocator: await recoveryLocator(phrase),
+        recoveryEnvelope,
+      })
       if (response.status !== "pending") throw new Error("Request was not accepted")
       await putRecord("settings", "visitor-key", phrase)
+      await putRecord("settings", "visitor-envelope", recoveryEnvelope)
       showPanel("mesh-pending")
       startPolling()
     } catch (error) { setText("mesh-new-error", error instanceof Error ? error.message : String(error)) }
@@ -486,6 +549,7 @@ async function ownerApp() {
   let node: IrohNode
   let current: StoredChannel | undefined
   let primary = false
+  let ownerEnvelope: IdentityPassphraseEnvelope
   let ownerPollTimer: number | undefined
   const identityStore = new BrowserIdentityStore({
     storageKey: "meta-mesh.owner.identity.v1",
@@ -562,6 +626,8 @@ async function ownerApp() {
         channelId: decision.signed.payload.channelId!,
         secret,
         bytes: saveContactChannel(channel),
+        recoveryLocator: item.recoveryLocator,
+        recoveryEnvelope: item.recoveryEnvelope,
       }
       await putRecord("owner-channels", stored.channelId, stored)
       await deletePending(item.requestId)
@@ -595,9 +661,34 @@ async function ownerApp() {
     try {
       const incoming = JSON.parse(textDecoder.decode(await stream.read()))
       if (incoming.type === "probe") return reply(stream, { status: "online" })
+      if (incoming.type === "owner-envelope") {
+        return reply(stream, { status: "ready", passphraseEnvelope: ownerEnvelope })
+      }
+      if (incoming.type === "visitor-envelope") {
+        const locator = String(incoming.recoveryLocator ?? "")
+        const pending = (await allRecords<PendingRequest>("owner-pending"))
+          .find(item => item.recoveryLocator === locator)
+        const channel = (await allRecords<StoredChannel>("owner-channels"))
+          .find(item => item.recoveryLocator === locator)
+        const envelope = pending?.recoveryEnvelope ?? channel?.recoveryEnvelope
+        return reply(stream, envelope
+          ? { status: "ready", recoveryEnvelope: envelope }
+          : { status: "missing" })
+      }
       if (incoming.type === "contact") {
         const contact = await verifyContactRequest(incoming.request)
-        const item: PendingRequest = { requestId: contact.signed.payload.requestId, request: contact }
+        const envelope = incoming.recoveryEnvelope as IdentityRecoveryEnvelope
+        const locator = String(incoming.recoveryLocator ?? "")
+        if (envelope?.kind !== "mesh-identity-recovery" || envelope.version !== 3 ||
+          envelope.personId !== contact.signed.payload.personId || !locator) {
+          throw new Error("Invalid identity recovery envelope")
+        }
+        const item: PendingRequest = {
+          requestId: contact.signed.payload.requestId,
+          request: contact,
+          recoveryLocator: locator,
+          recoveryEnvelope: envelope,
+        }
         if (!await getRecord<ReplicaTombstone>("owner-pending-tombstones", item.requestId)) {
           await putRecord("owner-pending", item.requestId, item)
         }
@@ -673,12 +764,20 @@ async function ownerApp() {
     const key = byId<HTMLInputElement>("oi-key").value
     let candidate: IrohNode | undefined
     try {
-      owner = await identityStore.restoreSecret(key, "Bogdan")
       candidate = await startRandomNode()
       let primaryOnline = false
       try { primaryOnline = (await request(candidate, { type: "probe" })).status === "online" }
       catch { primaryOnline = false }
+      let savedEnvelope = await getRecord<IdentityPassphraseEnvelope>("settings", "owner-envelope")
       if (primaryOnline) {
+        if (savedEnvelope?.version !== 1) {
+          const response = await request(candidate, { type: "owner-envelope" })
+          savedEnvelope = response.passphraseEnvelope
+          if (!savedEnvelope) throw new Error("Owner identity envelope is unavailable")
+          await putRecord("settings", "owner-envelope", savedEnvelope)
+        }
+        ownerEnvelope = savedEnvelope
+        owner = await identityStore.restorePassphraseEnvelope(ownerEnvelope, key, "Bogdan")
         node = candidate
         candidate = undefined
         primary = false
@@ -691,6 +790,19 @@ async function ownerApp() {
         if (node.endpointId !== OWNER_ENDPOINT) {
           await node.close("Wrong owner key")
           throw new Error("Wrong key")
+        }
+        if (savedEnvelope?.version === 1) {
+          ownerEnvelope = savedEnvelope
+          owner = await identityStore.restorePassphraseEnvelope(ownerEnvelope, key, "Bogdan")
+        } else {
+          for (const store of ["owner-channels", "owner-pending", "owner-pending-tombstones"]) {
+            await clearRecords(store)
+          }
+          identityStore.reset()
+          const created = await identityStore.createPassphrase(key, "Bogdan")
+          owner = created.profile
+          ownerEnvelope = created.passphraseEnvelope
+          await putRecord("settings", "owner-envelope", ownerEnvelope)
         }
         primary = true
       }
