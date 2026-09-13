@@ -35,7 +35,12 @@ export async function acquireMeshInstanceLease(options: MeshInstanceLeaseOptions
   const namespace = validNamespace(options.namespace)
   const locks = options.locks ?? (typeof navigator !== "undefined" && navigator.locks
     ? navigator.locks as MeshInstanceLocks : undefined)
-  if (!locks) return { instanceId: `ephemeral-${crypto.randomUUID()}`, release: async () => {} }
+  if (!locks) {
+    const preferred = options.preferredInstanceId
+    const instanceId = preferred && /^(?:slot-\d+|ephemeral-[0-9a-f-]{36})$/.test(preferred)
+      ? preferred : `ephemeral-${crypto.randomUUID()}`
+    return { instanceId, release: async () => {} }
+  }
 
   const count = options.slots ?? 32
   if (!Number.isSafeInteger(count) || count < 1 || count > 256) throw new Error("Invalid mesh instance slot count")
