@@ -5,6 +5,7 @@ import { EFF_LONG_WORDS } from "./eff-long"
 
 export type PersonId = string
 export type DeviceId = string
+export type RecoveryStrengthBits = 128 | 192 | 256
 
 export type SignedEnvelope<T> = {
   payload: T
@@ -48,8 +49,8 @@ export type IdentityStoreOptions = {
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">
 }
 
-export function generateRecoveryPhrase(): string {
-  return generateMnemonic(wordlist, 128)
+export function generateRecoveryPhrase(strengthBits: RecoveryStrengthBits = 128): string {
+  return generateMnemonic(wordlist, strengthBits)
 }
 
 export function generateChatKey(): string {
@@ -103,6 +104,15 @@ async function importEd25519Private(seed: Uint8Array): Promise<CryptoKey> {
 
 export async function profileFromRecoveryPhrase(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
   return profileFromEntropy(recoveryPhraseToEntropy(value), displayName)
+}
+
+export async function profileFromRecoveryPhraseForDevice(
+  value: string,
+  displayName = "Mesh user",
+  deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
+): Promise<LocalProfile> {
+  if (deviceEntropy.byteLength !== 32) throw new Error("Device entropy must contain 32 bytes")
+  return profileFromEntropy(recoveryPhraseToEntropy(value), displayName, deviceEntropy)
 }
 
 export async function profileFromChatKey(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
@@ -336,6 +346,18 @@ export class BrowserIdentityStore {
     await this.persist(profile, true)
     this.profile = profile
     return profile
+  }
+
+  async restoreRecovery(value: string, displayName = "Mesh user"): Promise<LocalProfile> {
+    const candidate = await profileFromRecoveryPhraseForDevice(value, displayName)
+    const saved = await this.load()
+    if (saved?.identity.personId === candidate.identity.personId) {
+      this.profile = saved
+      return saved
+    }
+    await this.persist(candidate, true)
+    this.profile = candidate
+    return candidate
   }
 
   async restoreChat(value: string, displayName = "Mesh user"): Promise<LocalProfile> {

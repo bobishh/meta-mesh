@@ -5,6 +5,7 @@ import {
   generateChatKey,
   generateRecoveryPhrase,
   profileFromRecoveryPhrase,
+  profileFromRecoveryPhraseForDevice,
   profileFromChatKey,
   profileFromChatKeyForDevice,
   recoveryPhraseFromEntropy,
@@ -20,6 +21,14 @@ describe("mesh recovery phrase", () => {
 
     expect(phrase.split(" ")).toHaveLength(12)
     expect(recoveryPhraseToEntropy(phrase)).toEqual(entropy)
+  })
+
+  it.each([
+    [128, 12],
+    [192, 18],
+    [256, 24],
+  ] as const)("Given %i-bit recovery strength, when generated, then it has %i BIP39 words", (strength, count) => {
+    expect(generateRecoveryPhrase(strength).split(" ")).toHaveLength(count)
   })
 
   it("Given one phrase, when restored twice, then person and device ids stay stable", async () => {
@@ -54,6 +63,20 @@ describe("mesh recovery phrase", () => {
     const key = generateChatKey()
     const first = await profileFromChatKeyForDevice(key, "One", new Uint8Array(32).fill(1))
     const second = await profileFromChatKeyForDevice(key, "One", new Uint8Array(32).fill(2))
+
+    expect(second.identity.personId).toBe(first.identity.personId)
+    expect(second.device.deviceId).not.toBe(first.device.deviceId)
+    await expect(verifyDeviceCertificateChain(
+      first.identity,
+      second.device.deviceId,
+      [second.certificate],
+    )).resolves.toBe(second.device.publicKey)
+  })
+
+  it("Given one recovery identity on two devices, when enrolled, then person ids match and device ids differ", async () => {
+    const key = generateRecoveryPhrase(128)
+    const first = await profileFromRecoveryPhraseForDevice(key, "One", new Uint8Array(32).fill(1))
+    const second = await profileFromRecoveryPhraseForDevice(key, "One", new Uint8Array(32).fill(2))
 
     expect(second.identity.personId).toBe(first.identity.personId)
     expect(second.device.deviceId).not.toBe(first.device.deviceId)
