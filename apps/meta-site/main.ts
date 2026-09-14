@@ -135,6 +135,13 @@ async function request(node: IrohNode, payload: unknown): Promise<any> {
   return Promise.race([operation, timeout])
 }
 
+function ownerUnlockError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message === "Wrong key" || (error instanceof DOMException && error.name === "OperationError")) return "Wrong key"
+  if (message === "Peer is offline") return "Owner device went offline. Try again."
+  return message
+}
+
 async function reply(stream: IrohStream, payload: unknown) {
   await stream.send(textEncoder.encode(JSON.stringify(payload)))
   await stream.closeSend()
@@ -551,6 +558,7 @@ async function ownerApp() {
   let primary = false
   let ownerEnvelope: IdentityPassphraseEnvelope
   let ownerPollTimer: number | undefined
+  let unlocking = false
   const identityStore = new BrowserIdentityStore({
     storageKey: "meta-mesh.owner.identity.v1",
     signatureDomain: CONTACT_SIGNATURE_DOMAIN,
@@ -761,8 +769,18 @@ async function ownerApp() {
 
   byId<HTMLFormElement>("oi-unlock-form").addEventListener("submit", async event => {
     event.preventDefault()
-    const key = byId<HTMLInputElement>("oi-key").value
+    if (unlocking) return
+    const form = event.currentTarget as HTMLFormElement
+    const input = byId<HTMLTextAreaElement>("oi-key")
+    const submit = byId<HTMLButtonElement>("oi-unlock-submit")
+    const key = input.value
     let candidate: IrohNode | undefined
+    unlocking = true
+    form.ariaBusy = "true"
+    input.readOnly = true
+    submit.disabled = true
+    submit.textContent = "Connecting…"
+    setText("oi-error", "")
     try {
       candidate = await startRandomNode()
       let primaryOnline = false
@@ -779,16 +797,16 @@ async function ownerApp() {
         ownerEnvelope = savedEnvelope
         owner = await identityStore.restorePassphraseEnvelope(ownerEnvelope, key, "Bogdan")
         node = candidate
-        candidate = undefined
         primary = false
         await syncOwnerReplica()
+        candidate = undefined
         startOwnerPolling()
       } else {
         await candidate.close("No primary found").catch(() => undefined)
-        candidate = undefined
-        node = await startNode(key)
-        if (node.endpointId !== OWNER_ENDPOINT) {
-          await node.close("Wrong owner key")
+        candidate = await startNode(key)
+        if (candidate.endpointId !== OWNER_ENDPOINT) {
+          await candidate.close("Wrong owner key")
+          candidate = undefined
           throw new Error("Wrong key")
         }
         if (savedEnvelope?.version === 1) {
@@ -804,6 +822,8 @@ async function ownerApp() {
           ownerEnvelope = created.passphraseEnvelope
           await putRecord("settings", "owner-envelope", ownerEnvelope)
         }
+        node = candidate
+        candidate = undefined
         primary = true
       }
       show("oi-unlock", false)
@@ -813,7 +833,13 @@ async function ownerApp() {
       if (primary) void acceptConnections()
     } catch (error) {
       await candidate?.close("Owner unlock failed").catch(() => undefined)
-      setText("oi-error", error instanceof Error ? error.message : String(error))
+      setText("oi-error", ownerUnlockError(error))
+    } finally {
+      unlocking = false
+      form.ariaBusy = "false"
+      input.readOnly = false
+      submit.disabled = false
+      submit.textContent = "Go online"
     }
   })
 
