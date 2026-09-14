@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import * as Automerge from "@automerge/automerge"
+import { createBlobDescriptor } from "../../mesh-blob/src/index"
 import { BrowserIdentityStore, createRecoverableIdentity, openIdentityRecoveryEnvelope } from "../../mesh-identity/src/index"
 import {
   addConversationParticipant,
@@ -65,5 +66,13 @@ describe("mesh messaging", () => {
     room = await appendMessage(room, await createMessage(secondDevice, room.conversationId, "Other device"))
 
     expect(conversationMessages(room).map(message => message.payload.body)).toEqual(["Other device"])
+  })
+
+  it("Given verified blob metadata, when a captionless attachment is sent, then metadata is signed in the CRDT", async () => {
+    const room = createConversation(alice, "Files", "room-files")
+    const attachment = await createBlobDescriptor(new TextEncoder().encode("payload"), "proof.txt", "text/plain")
+    const next = await appendMessage(room, await createMessage(alice, room.conversationId, "", { attachments: [attachment] }))
+
+    expect(conversationMessages(next)[0]!.payload).toEqual(expect.objectContaining({ body: "", attachments: [attachment] }))
   })
 })

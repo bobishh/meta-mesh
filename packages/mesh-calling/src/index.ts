@@ -27,6 +27,79 @@ export type CallSignalPayload = {
 
 export type CallSignal = SignedEnvelope<CallSignalPayload>
 
+export type CallSessionState = "idle" | "calling" | "ringing" | "connecting" | "active" | "failed"
+export type CallSessionSnapshot = {
+  state: CallSessionState
+  callId: string
+  peerId: string
+  media: CallMedia
+  error: string
+  microphoneMuted: boolean
+  cameraDisabled: boolean
+}
+
+export class CallSession {
+  private value: CallSessionSnapshot = {
+    state: "idle", callId: "", peerId: "", media: "audio", error: "",
+    microphoneMuted: false, cameraDisabled: false,
+  }
+
+  snapshot(): CallSessionSnapshot { return { ...this.value } }
+
+  start(callId: string, peerId: string, media: CallMedia): CallSessionSnapshot {
+    this.assertStart(callId, peerId, media)
+    this.value = { state: "calling", callId, peerId, media, error: "", microphoneMuted: false, cameraDisabled: false }
+    return this.snapshot()
+  }
+
+  ring(callId: string, peerId: string, media: CallMedia): CallSessionSnapshot {
+    this.assertStart(callId, peerId, media)
+    this.value = { state: "ringing", callId, peerId, media, error: "", microphoneMuted: false, cameraDisabled: false }
+    return this.snapshot()
+  }
+
+  connecting(): CallSessionSnapshot {
+    if (!["calling", "ringing", "connecting"].includes(this.value.state)) throw new Error("Call session cannot connect")
+    this.value.state = "connecting"
+    return this.snapshot()
+  }
+
+  connected(): CallSessionSnapshot {
+    if (!["calling", "connecting", "active"].includes(this.value.state)) throw new Error("Call session cannot become active")
+    this.value.state = "active"
+    return this.snapshot()
+  }
+
+  fail(error: string): CallSessionSnapshot {
+    if (this.value.state === "idle") throw new Error("No call session")
+    this.value.state = "failed"
+    this.value.error = error || "Call failed"
+    return this.snapshot()
+  }
+
+  setMicrophoneMuted(muted: boolean): CallSessionSnapshot {
+    if (this.value.state === "idle") throw new Error("No call session")
+    this.value.microphoneMuted = muted
+    return this.snapshot()
+  }
+
+  setCameraDisabled(disabled: boolean): CallSessionSnapshot {
+    if (this.value.state === "idle" || this.value.media !== "video") throw new Error("No video call session")
+    this.value.cameraDisabled = disabled
+    return this.snapshot()
+  }
+
+  end(): CallSessionSnapshot {
+    this.value = { state: "idle", callId: "", peerId: "", media: "audio", error: "", microphoneMuted: false, cameraDisabled: false }
+    return this.snapshot()
+  }
+
+  private assertStart(callId: string, peerId: string, media: CallMedia) {
+    if (this.value.state !== "idle") throw new Error("Call session is busy")
+    if (!callId || !peerId || !["audio", "video"].includes(media)) throw new Error("Invalid call session")
+  }
+}
+
 export async function createCallSignal(
   profile: LocalProfile,
   input: Omit<CallSignalPayload, "kind" | "version" | "senderPersonId" | "senderDeviceId" | "createdAt"> & { now?: number },

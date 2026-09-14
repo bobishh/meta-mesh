@@ -5,7 +5,7 @@ import {
   createConversation,
   createConversationGrant,
 } from "../../mesh-messaging/src/index"
-import { createCallSignal, verifyCallSignal } from "./index"
+import { CallSession, createCallSignal, verifyCallSignal } from "./index"
 
 describe("mesh calling", () => {
   let alice: Awaited<ReturnType<BrowserIdentityStore["bootstrap"]>>
@@ -50,5 +50,29 @@ describe("mesh calling", () => {
     })
 
     await expect(verifyCallSignal(signal, room, alice.identity.personId)).rejects.toThrow("not a room member")
+  })
+
+  it("Given an outgoing video call, when media connects and controls change, then lifecycle stays transport-independent", () => {
+    const session = new CallSession()
+    session.start("call-1", "bob", "video")
+    session.connecting()
+    session.connected()
+    session.setMicrophoneMuted(true)
+    session.setCameraDisabled(true)
+
+    expect(session.snapshot()).toEqual({
+      state: "active", callId: "call-1", peerId: "bob", media: "video",
+      error: "", microphoneMuted: true, cameraDisabled: true,
+    })
+    session.end()
+    expect(session.snapshot().state).toBe("idle")
+  })
+
+  it("Given a busy or failed session, when another offer or failure arrives, then state is explicit", () => {
+    const session = new CallSession()
+    session.ring("call-1", "alice", "audio")
+    expect(() => session.ring("call-2", "eve", "video")).toThrow("Call session is busy")
+    session.fail("ICE failed")
+    expect(session.snapshot()).toEqual(expect.objectContaining({ state: "failed", error: "ICE failed" }))
   })
 })

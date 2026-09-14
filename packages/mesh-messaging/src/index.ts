@@ -1,4 +1,5 @@
 import * as Automerge from "@automerge/automerge"
+import { MAX_ATTACHMENTS, validateBlobDescriptor, type BlobDescriptor } from "../../mesh-blob/src/index"
 import {
   canonicalizeJson,
   signEnvelope,
@@ -42,6 +43,7 @@ export type MessagePayload = {
   authorPersonId: string
   authorDeviceId: string
   body: string
+  attachments?: BlobDescriptor[]
   createdAt: string
 }
 
@@ -70,10 +72,10 @@ function normalizeTitle(value: string): string {
   return title
 }
 
-function normalizeBody(value: string): string {
+function normalizeBody(value: string, hasAttachments = false): string {
   const body = value.trim()
-  if (!body || [...body].length > MAX_MESSAGE_LENGTH) {
-    throw new Error(`Message must contain 1–${MAX_MESSAGE_LENGTH.toLocaleString()} characters`)
+  if ((!body && !hasAttachments) || [...body].length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message must contain 1–${MAX_MESSAGE_LENGTH.toLocaleString()} characters, or an attachment`)
   }
   return body
 }
@@ -170,8 +172,12 @@ export async function createMessage(
   profile: LocalProfile,
   conversationId: string,
   body: string,
-  options: { now?: number; messageId?: string } = {},
+  options: { now?: number; messageId?: string; attachments?: BlobDescriptor[] } = {},
 ): Promise<Message> {
+  const attachments = options.attachments?.map(value => ({ ...validateBlobDescriptor(value) })) ?? []
+  if (attachments.length > MAX_ATTACHMENTS || new Set(attachments.map(value => value.blobId)).size !== attachments.length) {
+    throw new Error(`A message may contain up to ${MAX_ATTACHMENTS} unique attachments`)
+  }
   return signEnvelope(profile.privateKeys.devicePrivateKey, {
     kind: "message",
     version: 1,
@@ -179,18 +185,23 @@ export async function createMessage(
     messageId: options.messageId ?? crypto.randomUUID(),
     authorPersonId: profile.identity.personId,
     authorDeviceId: profile.device.deviceId,
-    body: normalizeBody(body),
+    body: normalizeBody(body, attachments.length > 0),
+    ...(attachments.length ? { attachments } : {}),
     createdAt: new Date(options.now ?? Date.now()).toISOString(),
   }, profile.device.deviceId, MESSAGING_SIGNATURE_DOMAIN)
 }
 
 async function verifyMessage(doc: ConversationDocument, message: Message, now: number): Promise<void> {
   const payload = message?.payload
+  const attachments = payload?.attachments ?? []
   if (!payload || payload.kind !== "message" || payload.version !== 1 ||
     payload.conversationId !== doc.conversationId || !payload.messageId ||
-    message.signerKeyId !== payload.authorDeviceId || normalizeBody(payload.body) !== payload.body) {
+    message.signerKeyId !== payload.authorDeviceId || normalizeBody(payload.body, attachments.length > 0) !== payload.body ||
+    !Array.isArray(attachments) || attachments.length > MAX_ATTACHMENTS ||
+    new Set(attachments.map(value => value.blobId)).size !== attachments.length) {
     throw new Error("Invalid message")
   }
+  try { for (const attachment of attachments) validateBlobDescriptor(attachment) } catch { throw new Error("Invalid message attachment") }
   const timestamp = Date.parse(payload.createdAt)
   if (!Number.isFinite(timestamp) || timestamp > now + 5 * 60 * 1000) throw new Error("Invalid message timestamp")
   const author = doc.participants[payload.authorPersonId]
