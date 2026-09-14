@@ -48,7 +48,10 @@ export function decodeWireMessage(bytes: Uint8Array): unknown {
 export class IrohMeshNode {
   private stopped = false
 
-  private constructor(private readonly node: IrohNode) {}
+  constructor(
+    private readonly node: IrohNode,
+    private readonly closeTimeoutMs = 1_500,
+  ) {}
 
   static async start(moduleUrl: string, seed?: Uint8Array): Promise<IrohMeshNode> {
     const sourceUrl = new URL(moduleUrl, window.location.href)
@@ -118,7 +121,10 @@ export class IrohMeshNode {
 
   async close(): Promise<void> {
     this.stopped = true
-    await this.node.close("Twang closed")
+    await Promise.race([
+      this.node.close("Mesh node closed").catch(() => undefined),
+      new Promise<void>(resolve => globalThis.setTimeout(resolve, this.closeTimeoutMs)),
+    ])
   }
 }
 import { getPublicKeyAsync } from "@noble/ed25519"
