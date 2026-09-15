@@ -10,7 +10,9 @@
     "./gossip": "./src/gossip.ts"
   },
   "dependencies": {
-    "@meta-uber/mesh-identity": "*",
+    "@meta-uber/mesh-identity": "*"
+  },
+  "peerDependencies": {
     "@automerge/automerge": "^3.4.1"
   }
 }

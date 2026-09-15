@@ -6,7 +6,9 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@meta-uber/mesh-blob": "*",
-    "@meta-uber/mesh-identity": "*",
+    "@meta-uber/mesh-identity": "*"
+  },
+  "peerDependencies": {
     "@automerge/automerge": "^3.4.1"
   }
 }
