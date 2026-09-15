@@ -22,7 +22,6 @@ export type ContactRequestPayload = {
   requestId: string
   personId: string
   deviceId: string
-  endpoint: string
   displayName: string
   firstMessage: string
   createdAt: string
@@ -82,7 +81,6 @@ export type ContactChannelDocument = {
 export type ContactChannel = Automerge.Doc<ContactChannelDocument>
 
 export type CreateContactRequestInput = {
-  endpoint: string
   firstMessage: string
   displayName?: string
   now?: number
@@ -129,18 +127,16 @@ export async function createContactRequest(
   profile: LocalProfile,
   input: CreateContactRequestInput,
 ): Promise<ContactRequest> {
-  const payload: ContactRequestPayload = {
+  const common = {
     kind: "contact-request",
-    version: 1,
     requestId: input.requestId ?? crypto.randomUUID(),
     personId: profile.identity.personId,
     deviceId: profile.device.deviceId,
-    endpoint: input.endpoint.trim(),
     displayName: normalizeName(input.displayName ?? profile.identity.displayName),
     firstMessage: normalizeMessage(input.firstMessage),
     createdAt: new Date(input.now ?? Date.now()).toISOString(),
-  }
-  if (!payload.endpoint || payload.endpoint.length > 2_048) throw new Error("Invalid contact endpoint")
+  } as const
+  const payload: ContactRequestPayload = { ...common, version: 1 }
   return {
     signed: await signEnvelope(
       profile.privateKeys.devicePrivateKey,
@@ -160,7 +156,6 @@ export async function verifyContactRequest(value: unknown, now = Date.now()): Pr
   if (!payload || payload.kind !== "contact-request" || payload.version !== 1 ||
     typeof payload.requestId !== "string" || !payload.requestId || payload.requestId.length > 128 ||
     typeof payload.personId !== "string" || typeof payload.deviceId !== "string" ||
-    typeof payload.endpoint !== "string" || !payload.endpoint || payload.endpoint.length > 2_048 ||
     typeof payload.displayName !== "string" || normalizeName(payload.displayName) !== payload.displayName ||
     typeof payload.firstMessage !== "string" || normalizeMessage(payload.firstMessage) !== payload.firstMessage ||
     request.signed.signerKeyId !== payload.deviceId ||

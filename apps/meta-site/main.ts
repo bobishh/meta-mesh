@@ -518,7 +518,6 @@ async function publicApp(openImmediately = false) {
       if (!profile || !recoveryEnvelope) throw new Error("Create a new key first")
       node = await startRandomNode()
       const requestValue = await createContactRequest(profile, {
-        endpoint: node.endpointId,
         displayName: name,
         firstMessage: byId<HTMLTextAreaElement>("mesh-first-message").value,
       })

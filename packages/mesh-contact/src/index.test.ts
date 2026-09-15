@@ -28,18 +28,18 @@ describe("contact mesh protocol", () => {
 
   it("Given a visitor identity, when the first message is sent, then the owner can verify it", async () => {
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint",
       firstMessage: "Hello from the cliff.",
       now: 1_800_000_000_000,
       requestId: "request-1",
     })
 
     await expect(verifyContactRequest(request, 1_800_000_000_000)).resolves.toEqual(request)
+    expect(request.signed.payload.version).toBe(1)
+    expect("endpoint" in request.signed.payload).toBe(false)
   })
 
   it("Given a signed request, when its first message is altered, then verification fails", async () => {
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint",
       firstMessage: "Original",
     })
     request.signed.payload.firstMessage = "Altered"
@@ -49,7 +49,6 @@ describe("contact mesh protocol", () => {
 
   it("Given an old request, when received, then it is rejected as expired", async () => {
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint",
       firstMessage: "Late hello",
       now: 1_800_000_000_000,
     })
@@ -59,7 +58,6 @@ describe("contact mesh protocol", () => {
 
   it("Given an approved request, when the visitor verifies it, then the channel is bound to both identities", async () => {
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint",
       firstMessage: "Hello",
       now: 1_800_000_000_000,
       requestId: "request-2",
@@ -75,7 +73,6 @@ describe("contact mesh protocol", () => {
 
   it("Given a declined request, when encoded, then it grants no channel", async () => {
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint",
       firstMessage: "Hello",
     })
     const decision = await createContactDecision(owner, request, false)
@@ -88,7 +85,7 @@ describe("contact mesh protocol", () => {
   it("Given an accepted request, when both people write, then one CRDT contains the whole chat", async () => {
     const now = 1_800_000_000_000
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint", firstMessage: "Can we talk?", now, requestId: "request-chat",
+      firstMessage: "Can we talk?", now, requestId: "request-chat",
     })
     const decision = await createContactDecision(owner, request, true, {
       now: now + 1, channelId: "channel-chat", channelSecret: "secret-chat",
@@ -113,7 +110,7 @@ describe("contact mesh protocol", () => {
       new Uint8Array(32).fill(2),
     )
     const request = await createContactRequest(firstDevice, {
-      endpoint: "visitor-endpoint", firstMessage: "First device", now, requestId: "request-devices",
+      firstMessage: "First device", now, requestId: "request-devices",
     })
     const decision = await createContactDecision(owner, request, true, {
       now, channelId: "channel-devices", channelSecret: "secret-devices",
@@ -129,14 +126,14 @@ describe("contact mesh protocol", () => {
   it("Given separate contacts, when one channel is merged, then another channel cannot leak into it", async () => {
     const now = 1_800_000_000_000
     const firstRequest = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint", firstMessage: "First", now, requestId: "request-first",
+      firstMessage: "First", now, requestId: "request-first",
     })
     const firstDecision = await createContactDecision(owner, firstRequest, true, {
       now, channelId: "channel-first", channelSecret: "secret-first",
     })
     const first = await createContactChannel(firstRequest, firstDecision, now)
     const secondRequest = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint", firstMessage: "Second", now, requestId: "request-second",
+      firstMessage: "Second", now, requestId: "request-second",
     })
     const secondDecision = await createContactDecision(owner, secondRequest, true, {
       now, channelId: "channel-second", channelSecret: "secret-second",
@@ -149,7 +146,7 @@ describe("contact mesh protocol", () => {
   it("Given a valid CRDT, when a message body is changed without its key, then merge rejects it", async () => {
     const now = 1_800_000_000_000
     const request = await createContactRequest(visitor, {
-      endpoint: "visitor-endpoint", firstMessage: "Hello", now, requestId: "request-tamper",
+      firstMessage: "Hello", now, requestId: "request-tamper",
     })
     const decision = await createContactDecision(owner, request, true, {
       now, channelId: "channel-tamper", channelSecret: "secret-tamper",
