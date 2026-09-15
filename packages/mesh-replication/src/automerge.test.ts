@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest"
 import {
   AutomergeAntiEntropy,
   AutomergeSyncScheduler,
+  receiveAutomergeDeviceSync,
+  syncAutomergeDocumentToDevice,
   type AutomergeAdmission,
   type AutomergeDocumentAdapter,
   type AutomergeSyncFrame,
 } from "./automerge"
+import { createRecoverableIdentity, verifyDeviceCertificateChain } from "@meta-uber/mesh-identity"
+import { verifySignedDurableBatchAck, type DeviceRoute } from "./protocol"
 
 type Chat = { messages: string[] }
 
@@ -142,5 +146,45 @@ describe("Automerge anti-entropy", () => {
     expect([...requests.get("chat-1")]).toEqual([
       "local-commit", "remote-commit", "connection", "scope-discovery", "scheduled-repair",
     ])
+  })
+
+  it("Given one durable device has two routes, when the first route fails, then one native sync reaches the sibling route and returns a signed durable ACK", async () => {
+    const leftProfile = (await createRecoverableIdentity("better", "Left")).profile
+    const rightProfile = (await createRecoverableIdentity("better", "Right")).profile
+    const base = Automerge.from<Chat>({ messages: [] })
+    const leftAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("one") }))
+    const rightAdapter = new MemoryAdapter(Automerge.clone(base))
+    const left = new AutomergeAntiEntropy(leftProfile.device.deviceId, Automerge)
+    const right = new AutomergeAntiEntropy(rightProfile.device.deviceId, Automerge)
+    const route = (instanceId: string): DeviceRoute => ({
+      kind: "mesh-device-route", version: 1, scopeId: "room-1", personId: rightProfile.identity.personId,
+      deviceId: rightProfile.device.deviceId, instanceId, endpoint: instanceId, sequence: 1,
+      issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      signerKeyId: rightProfile.device.deviceId, signature: "route-signature",
+    })
+    const attempted: string[] = []
+
+    const result = await syncAutomergeDocumentToDevice({
+      engine: left,
+      adapter: leftAdapter,
+      targetDeviceId: rightProfile.device.deviceId,
+      routes: [route("closed-tab"), route("live-tab")],
+      fallbackDelayMs: 0,
+      retryDelaysMs: [],
+      send: async (candidate, request) => {
+        attempted.push(candidate.instanceId)
+        if (candidate.instanceId === "closed-tab") throw new Error("closed")
+        return receiveAutomergeDeviceSync({ profile: rightProfile, engine: right, adapter: rightAdapter,
+          remoteDeviceId: leftProfile.device.deviceId, request })
+      },
+      verifyAck: async ack => verifySignedDurableBatchAck(ack,
+        await verifyDeviceCertificateChain(rightProfile.identity, rightProfile.device.deviceId, [rightProfile.certificate])),
+    })
+
+    expect(attempted).toContain("closed-tab")
+    expect(attempted).toContain("live-tab")
+    expect(result.routeInstanceIds).toContain("live-tab")
+    expect(rightAdapter.document.messages).toEqual(["one"])
+    expect(Automerge.getHeads(rightAdapter.document)).toEqual(Automerge.getHeads(leftAdapter.document))
   })
 })
