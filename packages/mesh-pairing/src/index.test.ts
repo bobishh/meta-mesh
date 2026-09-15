@@ -35,6 +35,17 @@ describe("pairing protocol", () => {
     expect(inspectPairingFrame(frame)).toEqual({ type: "mesh-handshake-request", secret: "workspace-secret" })
   })
 
+  it.each([
+    "mesh-automerge-sync",
+    "mesh-gossip",
+    "mesh-durable-batch",
+    "mesh-durable-ack",
+  ] as const)("Given a %s runtime frame, when inspected, then the live session accepts it", (type) => {
+    const frame = encodePairingFrame(type, "workspace-secret", new Uint8Array([7]))
+
+    expect(inspectPairingFrame(frame)).toEqual({ type, secret: "workspace-secret" })
+  })
+
   describe("Task 3.1: Discriminated v1 invitations", () => {
     const mockProfile = {
       identity: { personId: "person_1" },

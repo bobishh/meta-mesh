@@ -44,25 +44,15 @@ export type WorkspaceJoinInvitation = {
 
 export type ScopedInvitation = DeviceEnrollmentInvitation | WorkspaceJoinInvitation
 
-export type PairingFrameType =
-  | "sync-request"
-  | "sync-response"
-  | "sync-ack"
-  | "sync-update"
-  | "sync-heartbeat"
-  | "sync-heartbeat-ack"
-  | "enroll-request"
-  | "enroll-approved" | "enroll-ack" | "enroll-complete"
-  | "workspace-join-request"
-  | "workspace-join-response"
-  | "mesh-handshake-request"
-  | "mesh-handshake-response"
-  | "mesh-handoff-request"
-  | "mesh-handoff-ready"
-  | "mesh-automerge-sync"
-  | "mesh-gossip"
-  | "mesh-durable-batch"
-  | "mesh-durable-ack"
+const pairingFrameTypes = [
+  "sync-request", "sync-response", "sync-ack", "sync-update", "sync-heartbeat", "sync-heartbeat-ack",
+  "enroll-request", "enroll-approved", "enroll-ack", "enroll-complete",
+  "workspace-join-request", "workspace-join-response",
+  "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready",
+  "mesh-automerge-sync", "mesh-gossip", "mesh-durable-batch", "mesh-durable-ack",
+] as const
+
+export type PairingFrameType = typeof pairingFrameTypes[number]
 
 export class PairingError extends Error {}
 
@@ -329,12 +319,8 @@ export function inspectPairingFrame(frame: Uint8Array): { type: PairingFrameType
   } catch {
     throw new PairingError("Pairing frame invalid")
   }
-  if (header.version !== pairingVersion || !header.secret || ![
-    "sync-request", "sync-response", "sync-ack", "sync-update", "sync-heartbeat", "sync-heartbeat-ack",
-    "enroll-request", "enroll-approved", "enroll-ack", "enroll-complete",
-    "workspace-join-request", "workspace-join-response", "mesh-handshake-request", "mesh-handshake-response",
-    "mesh-handoff-request", "mesh-handoff-ready",
-  ].includes(header.type ?? "")) throw new PairingError("Pairing frame invalid")
+  if (header.version !== pairingVersion || !header.secret ||
+    !pairingFrameTypes.includes((header.type ?? "") as PairingFrameType)) throw new PairingError("Pairing frame invalid")
   return { type: header.type as PairingFrameType, secret: header.secret }
 }
 
