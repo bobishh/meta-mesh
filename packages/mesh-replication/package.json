@@ -3,5 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts"
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts",
+    "./automerge": "./src/automerge.ts",
+    "./gossip": "./src/gossip.ts"
+  },
+  "dependencies": {
+    "@meta-uber/mesh-identity": "*",
+    "@automerge/automerge": "^3.4.1"
+  }
 }

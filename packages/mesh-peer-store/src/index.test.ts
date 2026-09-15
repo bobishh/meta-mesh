@@ -780,6 +780,54 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       }))
     })
 
+    it("Given equal route sequences disagree, when merged in either order, then canonical route bytes win without wall-clock authority", () => {
+      const peer = (endpoint: string, lastSeen: string): WorkspacePeerRecord => ({
+        workspaceId: "ws_tie", deviceId: "dev_tie", personId: "person_tie", instanceId: "slot-0",
+        endpoint, transportSecret: "secret", role: "editor", lastSeen,
+        advertisement: { advertisement: { payload: { routeSequence: 7 } } },
+      })
+
+      const left = peer("iroh://alpha", "2026-09-15T12:10:00.000Z")
+      const right = peer("iroh://omega", "2026-09-15T12:00:00.000Z")
+      const forward = mergePeerRecords(left, right)
+      const reverse = mergePeerRecords(right, left)
+
+      expect(forward.instances).toEqual(reverse.instances)
+      expect(forward.instances?.[0].endpoint).toBe("iroh://omega")
+    })
+
+    it("Given one device has active and expired routes, when exposed as a replica, then membership and both routes remain distinct", () => {
+      const base: WorkspacePeerRecord = {
+        workspaceId: "ws_replica", deviceId: "dev_replica", personId: "person_replica",
+        instanceId: "tab-a", endpoint: "iroh://a", transportSecret: "secret", role: "editor",
+        lastSeen: "2026-09-15T12:00:00.000Z",
+        advertisement: { advertisement: { payload: { routeSequence: 2, expiresAt: "2026-09-15T12:10:00.000Z" } } },
+      }
+      const merged = mergePeerRecords(base, {
+        ...base, instanceId: "tab-b", endpoint: "iroh://b", lastSeen: "2026-09-15T11:00:00.000Z",
+        advertisement: { advertisement: { payload: { routeSequence: 1, expiresAt: "2026-09-15T11:10:00.000Z" } } },
+      })
+
+      expect(merged.instances?.map(route => route.instanceId).sort()).toEqual(["tab-a", "tab-b"])
+    })
+
+    it("Given stored transport instances, when device replicas are listed, then routes stay grouped under one durable device", async () => {
+      const store = new PeerStore("test-db-device-replicas", mockIdb as any)
+      const base: WorkspacePeerRecord = {
+        workspaceId: "ws_grouped", deviceId: "dev_grouped", personId: "person_grouped",
+        instanceId: "tab-a", endpoint: "iroh://a", transportSecret: "secret", role: "editor",
+        lastSeen: "2026-09-15T12:00:00.000Z",
+      }
+      await store.upsertPeer(base)
+      await store.upsertPeer({ ...base, instanceId: "tab-b", endpoint: "iroh://b" })
+
+      await expect(store.listDeviceReplicas("ws_grouped")).resolves.toEqual([expect.objectContaining({
+        scopeId: "ws_grouped",
+        deviceId: "dev_grouped",
+        routes: [expect.objectContaining({ instanceId: "tab-a" }), expect.objectContaining({ instanceId: "tab-b" })],
+      })])
+    })
+
     it("Given one browser instance, when advertisements renew, then its sequence increases durably", async () => {
       const store = new PeerStore("test-db-route-sequence", mockIdb as any)
 

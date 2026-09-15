@@ -20,6 +20,15 @@ export interface PeerTransportInstance {
   advertisement?: unknown
 }
 
+export interface DeviceReplicaRecord {
+  scopeId: string
+  deviceId: string
+  personId: string
+  role: PeerRole
+  revokedAt?: string | null
+  routes: PeerTransportInstance[]
+}
+
 export interface WorkspacePeerRecord {
   workspaceId: string
   deviceId: string
@@ -319,33 +328,53 @@ export function mergePeerRecords(
 
   const instances = new Map<string, PeerTransportInstance>()
   const sequence = (instance: PeerTransportInstance) => {
-    const value = (instance.advertisement as { advertisement?: { payload?: { routeSequence?: unknown } } } | undefined)
-      ?.advertisement?.payload?.routeSequence
+    const advertisement = instance.advertisement as {
+      sequence?: unknown
+      payload?: { sequence?: unknown; routeSequence?: unknown }
+      advertisement?: { payload?: { sequence?: unknown; routeSequence?: unknown } }
+    } | undefined
+    const value = advertisement?.sequence ?? advertisement?.payload?.sequence ?? advertisement?.payload?.routeSequence ??
+      advertisement?.advertisement?.payload?.sequence ?? advertisement?.advertisement?.payload?.routeSequence
     return Number.isSafeInteger(value) ? value as number : undefined
   }
+  const routeTie = (instance: PeerTransportInstance) => canonicalJson({
+    instanceId: instance.instanceId,
+    endpoint: instance.endpoint,
+    advertisement: instance.advertisement,
+  })
+  const selectInstance = (current: PeerTransportInstance | undefined, candidate: PeerTransportInstance) => {
+    if (!current) return candidate
+    const currentSequence = sequence(current)
+    const candidateSequence = sequence(candidate)
+    if (candidateSequence !== undefined && currentSequence === undefined) return candidate
+    if (candidateSequence === undefined && currentSequence !== undefined) return current
+    if (candidateSequence !== undefined && currentSequence !== undefined && candidateSequence !== currentSequence) {
+      return candidateSequence > currentSequence ? candidate : current
+    }
+    return routeTie(candidate) > routeTie(current) ? candidate : current
+  }
   const collect = (peer: WorkspacePeerRecord, replaceEndpointAlias = false) => {
-    for (const instance of peer.instances ?? []) instances.set(instance.instanceId, structuredClone(instance))
-    if (peer.instanceId) {
-      const value = { instanceId: peer.instanceId, endpoint: peer.endpoint, lastSeen: peer.lastSeen,
-        ...(peer.advertisement === undefined ? {} : { advertisement: structuredClone(peer.advertisement) }) }
-      if (replaceEndpointAlias) {
+    const candidates = (peer.instances ?? []).map(instance => structuredClone(instance))
+    if (peer.instanceId) candidates.push({ instanceId: peer.instanceId, endpoint: peer.endpoint, lastSeen: peer.lastSeen,
+        ...(peer.advertisement === undefined ? {} : { advertisement: structuredClone(peer.advertisement) }) })
+    for (const value of candidates) {
+      const current = instances.get(value.instanceId)
+      const selected = selectInstance(current, value)
+      if (selected !== value) continue
+      if (replaceEndpointAlias && (sequence(value) !== undefined || incomingDominates)) {
         for (const [instanceId, instance] of instances) {
-          if (instanceId !== peer.instanceId && instance.endpoint === peer.endpoint) instances.delete(instanceId)
+          if (instanceId !== value.instanceId && instance.endpoint === value.endpoint && sequence(instance) === undefined) {
+            instances.delete(instanceId)
+          }
         }
       }
-      const current = instances.get(peer.instanceId)
-      const currentSequence = current && sequence(current)
-      const nextSequence = sequence(value)
-      const dominates = !current || (nextSequence !== undefined && currentSequence === undefined) ||
-        (nextSequence !== undefined && currentSequence !== undefined && nextSequence > currentSequence) ||
-        (nextSequence === currentSequence && value.lastSeen >= current.lastSeen)
-      if (dominates) instances.set(peer.instanceId, value)
+      instances.set(value.instanceId, value)
     }
   }
   collect(existing)
   collect(incoming, true)
   if (instances.size) merged.instances = [...instances.values()]
-    .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen) || a.instanceId.localeCompare(b.instanceId)).slice(0, 32)
+    .sort((a, b) => a.instanceId.localeCompare(b.instanceId)).slice(0, 32)
 
   if (revokedAt !== undefined && revokedAt !== null) {
     merged.revokedAt = revokedAt
@@ -761,6 +790,27 @@ export class PeerStore {
         }
         return a.deviceId.localeCompare(b.deviceId)
       })
+    })
+  }
+
+  async listDeviceReplicas(workspaceId?: string): Promise<DeviceReplicaRecord[]> {
+    return (await this.listPeers(workspaceId)).map(peer => {
+      const routes = new Map<string, PeerTransportInstance>()
+      for (const route of peer.instances ?? []) routes.set(route.instanceId, structuredClone(route))
+      if (peer.instanceId && !routes.has(peer.instanceId)) routes.set(peer.instanceId, {
+        instanceId: peer.instanceId,
+        endpoint: peer.endpoint,
+        lastSeen: peer.lastSeen,
+        ...(peer.advertisement === undefined ? {} : { advertisement: structuredClone(peer.advertisement) }),
+      })
+      return {
+        scopeId: peer.workspaceId,
+        deviceId: peer.deviceId,
+        personId: peer.personId,
+        role: peer.role,
+        ...(peer.revokedAt === undefined ? {} : { revokedAt: peer.revokedAt }),
+        routes: [...routes.values()].sort((left, right) => left.instanceId.localeCompare(right.instanceId)),
+      }
     })
   }
 

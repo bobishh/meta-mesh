@@ -50,3 +50,7 @@ export function reconcileReplicaSet<T>(left: ReplicaSet<T>, right: ReplicaSet<T>
     tombstones: [...tombstones.values()].sort((a, b) => a.id.localeCompare(b.id)),
   }
 }
+
+export * from "./protocol"
+export * from "./automerge"
+export * from "./gossip"
