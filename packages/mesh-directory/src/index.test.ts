@@ -95,4 +95,15 @@ describe("mesh directory", () => {
     })
     expect(encoded).not.toContain("private")
   })
+
+  it("Given two tabs share one device, when they publish contact routes, then each signed instance remains distinct", async () => {
+    const now = Date.now()
+    const first = await createContactCard(bob, "bob-tab-a", { instanceId: "tab-a", sequence: 1,
+      now })
+    const second = await createContactCard(bob, "bob-tab-b", { instanceId: "tab-b", sequence: 1,
+      now })
+
+    await expect(decodeContactCard(encodeContactCard(first))).resolves.toMatchObject({ version: 2, instanceId: "tab-a" })
+    await expect(decodeContactCard(encodeContactCard(second))).resolves.toMatchObject({ version: 2, instanceId: "tab-b" })
+  })
 })

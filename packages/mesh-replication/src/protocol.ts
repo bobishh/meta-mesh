@@ -85,7 +85,7 @@ type VerifiedWorkspaceAdvertisement = SignedEnvelope<{
   expiresAt?: string
 }>
 
-type VerifiedContactCard = {
+type VerifiedLegacyContactCard = {
   kind: "twang-contact"
   version: 1
   deviceId: string
@@ -99,6 +99,21 @@ type VerifiedContactCard = {
     createdAt: string
   }>
 }
+
+type VerifiedRouteContactCard = {
+  kind: "twang-contact"
+  version: 2
+  identity: { personId: string }
+  deviceId: string
+  instanceId: string
+  endpoint: string
+  sequence: number
+  issuedAt: string
+  expiresAt: string
+  signed: SignedDeviceRoute
+}
+
+type VerifiedContactCard = VerifiedLegacyContactCard | VerifiedRouteContactCard
 
 async function syntheticInstanceId(endpoint: string): Promise<string> {
   const hash = await sha256Base64Url(new TextEncoder().encode(endpoint))
@@ -136,6 +151,17 @@ export async function adaptVerifiedWorkspaceAdvertisement(advertisement: Verifie
 }
 
 export async function adaptVerifiedContactCard(scopeId: string, card: VerifiedContactCard): Promise<DeviceRoute> {
+  if (card?.kind === "twang-contact" && card.version === 2) {
+    const payload = card.signed?.payload
+    if (payload?.kind !== "mesh-device-route" || payload.version !== 1 || payload.scopeId !== `twang:contact:${card.identity.personId}` ||
+      payload.personId !== card.identity.personId || payload.deviceId !== card.deviceId || payload.instanceId !== card.instanceId ||
+      payload.endpoint !== card.endpoint || payload.sequence !== card.sequence || payload.issuedAt !== card.issuedAt ||
+      payload.expiresAt !== card.expiresAt || card.signed.signerKeyId !== card.deviceId) throw new Error("Invalid verified contact route card")
+    const route: DeviceRoute = { ...payload, scopeId, signerKeyId: card.signed.signerKeyId, signature: card.signed.signature,
+      legacyEvidence: card }
+    validateDeviceRoute(route)
+    return route
+  }
   const payload = card?.signed?.payload
   if (card?.kind !== "twang-contact" || card.version !== 1 || payload?.kind !== "contact-card" || payload.version !== 1 ||
     card.deviceId !== payload.deviceId || card.endpoint !== payload.endpoint || card.signed.signerKeyId !== card.deviceId) {

@@ -10,6 +10,11 @@ import {
   type PublicIdentity,
   type SignedEnvelope,
 } from "../../mesh-identity/src/index"
+import {
+  createSignedDeviceRoute,
+  verifySignedDeviceRoute,
+  type SignedDeviceRoute,
+} from "../../mesh-replication/src/protocol"
 
 export const CONTACT_CARD_SIGNATURE_DOMAIN = "TWANG-CONTACT-CARD/1"
 
@@ -27,7 +32,7 @@ export type Contact = {
   updatedAt: string
 }
 
-export type ContactCard = {
+export type LegacyContactCard = {
   kind: "twang-contact"
   version: 1
   identity: PublicIdentity
@@ -43,6 +48,22 @@ export type ContactCard = {
     createdAt: string
   }>
 }
+
+export type ContactRouteCard = {
+  kind: "twang-contact"
+  version: 2
+  identity: PublicIdentity
+  certificates: DeviceCertificate[]
+  deviceId: string
+  instanceId: string
+  endpoint: string
+  sequence: number
+  issuedAt: string
+  expiresAt: string
+  signed: SignedDeviceRoute
+}
+
+export type ContactCard = LegacyContactCard | ContactRouteCard
 
 export type RoomReference = {
   roomId: string
@@ -208,9 +229,34 @@ export function encodeContactCard(card: ContactCard): string {
   return `twang:${toBase64Url(new TextEncoder().encode(JSON.stringify(card)))}`
 }
 
-export async function createContactCard(profile: LocalProfile, endpoint: string, now = Date.now()): Promise<ContactCard> {
+export async function createContactCard(profile: LocalProfile, endpoint: string, now?: number): Promise<LegacyContactCard>
+export async function createContactCard(profile: LocalProfile, endpoint: string, options: {
+  instanceId: string; sequence: number; now?: number; lifetimeMs?: number
+}): Promise<ContactRouteCard>
+export async function createContactCard(profile: LocalProfile, endpoint: string, options: number | {
+  instanceId: string; sequence: number; now?: number; lifetimeMs?: number
+} = Date.now()): Promise<ContactCard> {
   const value = endpoint.trim()
   if (!value || value.length > 2_048) throw new Error("Invalid contact endpoint")
+  if (typeof options === "object") {
+    const now = options.now ?? Date.now()
+    const issuedAt = new Date(now).toISOString()
+    const expiresAt = new Date(now + (options.lifetimeMs ?? 10 * 60_000)).toISOString()
+    const signed = await createSignedDeviceRoute(profile, {
+      scopeId: `twang:contact:${profile.identity.personId}`,
+      instanceId: options.instanceId,
+      endpoint: value,
+      sequence: options.sequence,
+      issuedAt,
+      expiresAt,
+    })
+    return {
+      kind: "twang-contact", version: 2, identity: clone(profile.identity), certificates: [clone(profile.certificate)],
+      deviceId: profile.device.deviceId, instanceId: options.instanceId, endpoint: value,
+      sequence: options.sequence, issuedAt, expiresAt, signed,
+    }
+  }
+  const now = options
   return {
     kind: "twang-contact",
     version: 1,
@@ -237,17 +283,26 @@ export async function decodeContactCard(value: string): Promise<ContactCard> {
   } catch {
     throw new Error("Invalid contact card")
   }
-  if (card?.kind !== "twang-contact" || card.version !== 1 || !card.endpoint ||
+  if (card?.kind !== "twang-contact" || ![1, 2].includes(card.version) || !card.endpoint ||
     card.identity?.personId === undefined || !Array.isArray(card.certificates) ||
-    !card.certificates.some(value => value.payload.deviceId === card.deviceId) ||
-    card.signed?.payload?.kind !== "contact-card" || card.signed.payload.version !== 1 ||
-    card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
-    card.signed.payload.endpoint !== card.endpoint || card.signed.signerKeyId !== card.deviceId) {
+    !card.certificates.some(value => value.payload.deviceId === card.deviceId)) {
     throw new Error("Invalid contact card")
   }
   const deviceKey = await verifyDeviceCertificateChain(card.identity, card.deviceId, card.certificates)
-  if (!await verifyEnvelope(card.signed, deviceKey, CONTACT_CARD_SIGNATURE_DOMAIN)) {
-    throw new Error("Invalid contact card signature")
+  if (card.version === 2) {
+    if (!card.instanceId || card.signed.payload.scopeId !== `twang:contact:${card.identity.personId}` ||
+      card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
+      card.signed.payload.instanceId !== card.instanceId || card.signed.payload.endpoint !== card.endpoint ||
+      card.signed.payload.sequence !== card.sequence || card.signed.payload.issuedAt !== card.issuedAt ||
+      card.signed.payload.expiresAt !== card.expiresAt) throw new Error("Invalid contact route card")
+    await verifySignedDeviceRoute(card.signed, deviceKey)
+  } else {
+    if (card.signed?.payload?.kind !== "contact-card" || card.signed.payload.version !== 1 ||
+      card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
+      card.signed.payload.endpoint !== card.endpoint || card.signed.signerKeyId !== card.deviceId ||
+      !await verifyEnvelope(card.signed, deviceKey, CONTACT_CARD_SIGNATURE_DOMAIN)) {
+      throw new Error("Invalid contact card signature")
+    }
   }
   return card
 }
