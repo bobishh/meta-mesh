@@ -266,6 +266,78 @@ export type DeviceDeliveryResult = {
   attemptedRouteIds: string[]
 }
 
+export type DeviceRouteConnection<T> = {
+  route: DeviceRoute
+  value: T
+  attemptedRouteIds: string[]
+}
+
+export async function connectToDevice<T>(options: {
+  targetDeviceId: ReplicaId
+  routes: readonly DeviceRoute[]
+  connect: (route: DeviceRoute, signal: AbortSignal) => Promise<T>
+  accept?: (value: T, route: DeviceRoute) => boolean | Promise<boolean>
+  fallbackDelayMs?: number
+  routeHealth?: (route: DeviceRoute) => number
+  signal?: AbortSignal
+}): Promise<DeviceRouteConnection<T>> {
+  const routes = options.routes
+    .map((route, index) => ({ route, index, health: options.routeHealth?.(route) ?? 0 }))
+    .filter(item => item.route.deviceId === options.targetDeviceId)
+    .sort((left, right) => right.health - left.health || left.index - right.index)
+    .map(item => item.route)
+  if (routes.length === 0) throw new Error(`No routes for device ${options.targetDeviceId}`)
+  const fallbackDelayMs = options.fallbackDelayMs ?? 250
+  if (!Number.isFinite(fallbackDelayMs) || fallbackDelayMs < 0) throw new Error("Invalid fallback delay")
+  if (options.signal?.aborted) throw options.signal.reason ?? new Error("Connection aborted")
+
+  return new Promise<DeviceRouteConnection<T>>((resolve, reject) => {
+    const controllers = routes.map(() => new AbortController())
+    const attemptedRouteIds: string[] = []
+    const failures: unknown[] = []
+    let next = 0
+    let pending = 0
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const finishFailure = () => {
+      if (!settled && next >= routes.length && pending === 0) {
+        settled = true
+        reject(new AggregateError(failures, `All routes failed for device ${options.targetDeviceId}`))
+      }
+    }
+    const launch = () => {
+      if (settled || next >= routes.length) return finishFailure()
+      const index = next++
+      const route = routes[index]!
+      attemptedRouteIds.push(route.instanceId)
+      pending += 1
+      void options.connect(route, controllers[index]!.signal).then(async value => {
+        if (options.accept && !await options.accept(value, route)) throw new Error(`Rejected connection from ${route.instanceId}`)
+        if (settled) return
+        settled = true
+        if (timer) clearTimeout(timer)
+        controllers.forEach((controller, candidate) => {
+          if (candidate !== index) controller.abort(new Error("Another route connected"))
+        })
+        resolve({ route, value, attemptedRouteIds: [...attemptedRouteIds] })
+      }).catch(error => {
+        failures.push(error)
+        if (!settled && next < routes.length) launch()
+      }).finally(() => { pending -= 1; finishFailure() })
+      if (next < routes.length && !timer) timer = setTimeout(() => { timer = undefined; launch() }, fallbackDelayMs)
+    }
+    options.signal?.addEventListener("abort", () => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      controllers.forEach(controller => controller.abort(options.signal?.reason))
+      reject(options.signal?.reason ?? new Error("Connection aborted"))
+    }, { once: true })
+    launch()
+  })
+}
+
 function required(value: string, label: string): void {
   if (value.length === 0) throw new Error(`Invalid ${label}`)
 }

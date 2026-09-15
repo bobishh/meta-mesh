@@ -8,6 +8,7 @@ import {
   createSignedDeviceRoute,
   createSignedDurableBatchAck,
   deliverBatchToDevice,
+  connectToDevice,
   verifySignedDeviceRoute,
   verifySignedDurableBatchAck,
 } from "./protocol"
@@ -67,6 +68,24 @@ describe("replica-aware delivery", () => {
     expect(result.route.instanceId).toBe("alternate")
     expect(network.attempts).toEqual(["preferred", "alternate"])
     expect(store.hashes()).toEqual(["change-1"])
+  })
+
+  it("Given one device has several live routes, when the preferred connection fails, then the device session uses an alternate route", async () => {
+    const attempts: string[] = []
+    const result = await connectToDevice({
+      targetDeviceId: "device-remote",
+      routes: [deviceRoute("preferred"), deviceRoute("alternate")],
+      fallbackDelayMs: 0,
+      connect: async route => {
+        attempts.push(route.instanceId)
+        if (route.instanceId === "preferred") throw new Error("route closed")
+        return { connectionId: "alternate-connection" }
+      },
+    })
+
+    expect(result.route.instanceId).toBe("alternate")
+    expect(result.value.connectionId).toBe("alternate-connection")
+    expect(attempts).toEqual(["preferred", "alternate"])
   })
 
   it("Given a commit acknowledgement is lost, when another route retries, then storage remains idempotent and returns one logical acknowledgement", async () => {

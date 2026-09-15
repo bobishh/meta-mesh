@@ -49,7 +49,7 @@ const pairingFrameTypes = [
   "enroll-request", "enroll-approved", "enroll-ack", "enroll-complete",
   "workspace-join-request", "workspace-join-response",
   "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready",
-  "mesh-automerge-sync", "mesh-gossip", "mesh-durable-batch", "mesh-durable-ack",
+  "mesh-automerge-sync", "mesh-control-sync", "mesh-gossip", "mesh-durable-batch", "mesh-durable-ack",
 ] as const
 
 export type PairingFrameType = typeof pairingFrameTypes[number]
