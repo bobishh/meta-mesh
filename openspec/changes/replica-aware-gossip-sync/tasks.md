@@ -44,24 +44,24 @@
 
 - [x] 7.1 Add outer real-route Playwright scenarios first: multiple tabs of one device appear as one member/device, one route can receive a workspace update, and a failed/pending durable write never appears delivered.
 - [x] 7.2 Adapt Match signed advertisements and peer storage to the shared route catalog while preserving workspace grants, ownership transfers, succession, and existing IndexedDB data.
-- [ ] 7.3 Replace per-instance replication sessions and application reconnect/topology policy with shared device delivery, Automerge anti-entropy, and scoped gossip.
-- [ ] 7.4 Remove superseded Match-specific lifecycle and replication code; derive connection/delivery UI from shared aggregate state and retain route-level diagnostics.
-- [ ] 7.5 Verify live card movement, reconnect after closing arbitrary tabs, offline edit partition healing, owner/editor/visitor admission, storage failure, and mobile status on real routes.
+- [x] 7.3 Replace per-instance replication sessions and application reconnect/topology policy with shared device delivery, Automerge anti-entropy, and scoped gossip.
+- [x] 7.4 Remove superseded Match-specific lifecycle and replication code; derive connection/delivery UI from shared aggregate state and retain route-level diagnostics.
+- [x] 7.5 Verify live card movement, reconnect after closing arbitrary tabs, offline edit partition healing, owner/editor/visitor admission, storage failure, and mobile status on real routes.
 
 ## 8. Twang integration
 
-- [ ] 8.1 Add outer real-route Playwright scenarios first: two tabs retain separate endpoints under one contact device, either tab can receive one message delivery, sibling UI refreshes locally, and failure remains pending.
-- [ ] 8.2 Introduce Twang contact-route v2 with instance, sequence, and expiry; migrate legacy contact cards and preserve several routes per contact device.
-- [ ] 8.3 Replace complete room-byte overwrites with immutable Automerge change storage, explicit snapshots, and shared local invalidation.
-- [ ] 8.4 Replace four-second full-room/all-endpoint polling with shared device delivery, bounded gossip, and Automerge anti-entropy; keep contact grants, message proofs, call signaling, and blob authorization intact.
-- [ ] 8.5 Adapt blob provider selection to device routes and durable availability evidence without downloading each blob into every tab.
-- [ ] 8.6 Verify direct and group messages, duplicate contact migration, reconnect, calls, attachments, concurrent offline messages, partition healing, and one-hundred-member bounded topology.
+- [x] 8.1 Add outer real-route Playwright scenarios first: two tabs retain separate endpoints under one contact device, either tab can receive one message delivery, sibling UI refreshes locally, and failure remains pending.
+- [x] 8.2 Introduce Twang contact-route v2 with instance, sequence, and expiry; migrate legacy contact cards and preserve several routes per contact device.
+- [x] 8.3 Replace complete room-byte overwrites with immutable Automerge change storage, explicit snapshots, and shared local invalidation.
+- [x] 8.4 Replace four-second full-room/all-endpoint polling with shared device delivery, bounded gossip, and Automerge anti-entropy; keep contact grants, message proofs, call signaling, and blob authorization intact.
+- [x] 8.5 Adapt blob provider selection to device routes and durable availability evidence without downloading each blob into every tab.
+- [x] 8.6 Verify direct and group messages, duplicate contact migration, reconnect, calls, attachments, concurrent offline messages, partition healing, and one-hundred-member bounded topology.
 
 ## 9. Canonical distribution, documentation, and release evidence
 
-- [ ] 9.1 Add deterministic vendor sync and equality checks so Match and Twang consume one reviewed canonical meta-mesh package tree and CI rejects drift.
-- [ ] 9.2 Update meta-mesh README and architecture documentation with identity/device/instance/endpoint boundaries, delivery state machine, gossip topology, anti-entropy flow, browser lifecycle, security limits, and operational traces.
-- [ ] 9.3 Update Match and Twang operator/user documentation to distinguish connection, presence, durable delivery, convergence, offline limitations, and route diagnostics.
-- [ ] 9.4 Run strict OpenSpec validation; canonical meta-mesh tests/check; complete Match and Twang unit, type, build, and required real-route Playwright suites on alternate ports.
-- [ ] 9.5 Record measured connection degree, initial and one-change bytes, convergence under partition, duplicate rate with several tabs, reconnect latency, and remaining E2EE/store-and-forward limitations.
-- [ ] 9.6 Review diffs for unrelated changes and secrets, commit canonical meta-mesh before vendor updates, prepare consumer commits, and report exact deployment readiness without deploying automatically.
+- [x] 9.1 Add deterministic vendor sync and equality checks so Match and Twang consume one reviewed canonical meta-mesh package tree and CI rejects drift.
+- [x] 9.2 Update meta-mesh README and architecture documentation with identity/device/instance/endpoint boundaries, delivery state machine, gossip topology, anti-entropy flow, browser lifecycle, security limits, and operational traces.
+- [x] 9.3 Update Match and Twang operator/user documentation to distinguish connection, presence, durable delivery, convergence, offline limitations, and route diagnostics.
+- [x] 9.4 Run strict OpenSpec validation; canonical meta-mesh tests/check; complete Match and Twang unit, type, build, and required real-route Playwright suites on alternate ports.
+- [x] 9.5 Record measured connection degree, initial and one-change bytes, convergence under partition, duplicate rate with several tabs, reconnect latency, and remaining E2EE/store-and-forward limitations.
+- [x] 9.6 Review diffs for unrelated changes and secrets, commit canonical meta-mesh before vendor updates, prepare consumer commits, and report exact deployment readiness without deploying automatically.
