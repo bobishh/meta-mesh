@@ -283,8 +283,14 @@ type DeliveryOptions = {
   fallbackDelayMs?: number
   retryDelaysMs?: readonly number[]
   routeHealth?: (route: DeviceRoute) => number
+  trace?: MeshReplicationTrace
   signal?: AbortSignal
 }
+
+export type MeshReplicationTrace = (
+  event: string,
+  fields: Readonly<Record<string, string | number | boolean>>,
+) => void
 
 export type DeviceDeliveryResult = {
   route: DeviceRoute
@@ -305,6 +311,7 @@ export async function connectToDevice<T>(options: {
   accept?: (value: T, route: DeviceRoute) => boolean | Promise<boolean>
   fallbackDelayMs?: number
   routeHealth?: (route: DeviceRoute) => number
+  trace?: MeshReplicationTrace
   signal?: AbortSignal
 }): Promise<DeviceRouteConnection<T>> {
   const routes = options.routes
@@ -337,6 +344,7 @@ export async function connectToDevice<T>(options: {
       const index = next++
       const route = routes[index]!
       attemptedRouteIds.push(route.instanceId)
+      options.trace?.("route.attempt", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, endpoint: route.endpoint })
       pending += 1
       void options.connect(route, controllers[index]!.signal).then(async value => {
         if (options.accept && !await options.accept(value, route)) throw new Error(`Rejected connection from ${route.instanceId}`)
@@ -346,9 +354,11 @@ export async function connectToDevice<T>(options: {
         controllers.forEach((controller, candidate) => {
           if (candidate !== index) controller.abort(new Error("Another route connected"))
         })
+        options.trace?.("route.selected", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, endpoint: route.endpoint })
         resolve({ route, value, attemptedRouteIds: [...attemptedRouteIds] })
       }).catch(error => {
         failures.push(error)
+        options.trace?.("route.failed", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, error: error instanceof Error ? error.message : String(error) })
         if (!settled && next < routes.length) launch()
       }).finally(() => { pending -= 1; finishFailure() })
       if (next < routes.length && !timer) timer = setTimeout(() => { timer = undefined; launch() }, fallbackDelayMs)
@@ -461,6 +471,7 @@ async function deliverBatchRound(options: DeliveryOptions): Promise<DeviceDelive
       const index = nextIndex++
       const route = routes[index]
       attemptedRouteIds.push(route.instanceId)
+      options.trace?.("delivery.route.attempt", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId })
       pending += 1
       void options.send(route, options.batch, controllers[index].signal).then(async ack => {
         if (!ackMatches(ack, options.batch, options.targetDeviceId) || !await options.verifyAck(ack)) {
@@ -472,9 +483,11 @@ async function deliverBatchRound(options: DeliveryOptions): Promise<DeviceDelive
         controllers.forEach((controller, routeIndex) => {
           if (routeIndex !== index) controller.abort(new Error("Another route acknowledged"))
         })
+        options.trace?.("delivery.ack.durable", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId, acceptedChanges: ack.acceptedHashes.length })
         resolve({ route, ack, attemptedRouteIds: [...attemptedRouteIds] })
       }).catch(error => {
         failures.push(error)
+        options.trace?.("delivery.route.failed", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId, error: error instanceof Error ? error.message : String(error) })
         if (!settled && nextIndex < routes.length) launch()
       }).finally(() => {
         pending -= 1

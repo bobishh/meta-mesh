@@ -163,6 +163,7 @@ describe("Automerge anti-entropy", () => {
       signerKeyId: rightProfile.device.deviceId, signature: "route-signature",
     })
     const attempted: string[] = []
+    const trace: string[] = []
 
     const result = await syncAutomergeDocumentToDevice({
       engine: left,
@@ -171,6 +172,7 @@ describe("Automerge anti-entropy", () => {
       routes: [route("closed-tab"), route("live-tab")],
       fallbackDelayMs: 0,
       retryDelaysMs: [],
+      trace: event => trace.push(event),
       send: async (candidate, request) => {
         attempted.push(candidate.instanceId)
         if (candidate.instanceId === "closed-tab") throw new Error("closed")
@@ -184,6 +186,9 @@ describe("Automerge anti-entropy", () => {
     expect(attempted).toContain("closed-tab")
     expect(attempted).toContain("live-tab")
     expect(result.routeInstanceIds).toContain("live-tab")
+    expect(trace).toContain("delivery.route.failed")
+    expect(trace).toContain("delivery.ack.durable")
+    expect(trace.at(-1)).toBe("sync.converged")
     expect(rightAdapter.document.messages).toEqual(["one"])
     expect(Automerge.getHeads(rightAdapter.document)).toEqual(Automerge.getHeads(leftAdapter.document))
   })

@@ -127,6 +127,7 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
   fallbackDelayMs?: number
   retryDelaysMs?: readonly number[]
   maximumRounds?: number
+  trace?: import("./protocol.js").MeshReplicationTrace
   signal?: AbortSignal
 }): Promise<{ rounds: number; routeInstanceIds: string[] }> {
   const maximumRounds = options.maximumRounds ?? 64
@@ -134,8 +135,12 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
   const routeInstanceIds: string[] = []
   let frame = await options.engine.generate(options.adapter, options.targetDeviceId)
   for (let rounds = 0; rounds < maximumRounds; rounds += 1) {
-    if (!frame) return { rounds, routeInstanceIds }
+    if (!frame) {
+      options.trace?.("sync.converged", { targetDeviceId: options.targetDeviceId, documentId: options.adapter.documentId, rounds })
+      return { rounds, routeInstanceIds }
+    }
     const batch = await syncBatch(frame)
+    options.trace?.("sync.round", { targetDeviceId: options.targetDeviceId, documentId: options.adapter.documentId, round: rounds + 1, batchId: batch.batchId })
     const request: AutomergeDeviceSyncRequest = {
       kind: "mesh-automerge-device-sync",
       version: 1,
@@ -150,6 +155,7 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
       fallbackDelayMs: options.fallbackDelayMs,
       retryDelaysMs: options.retryDelaysMs,
       routeHealth: options.routeHealth,
+      trace: options.trace,
       signal: options.signal,
       send: async (route, _batch, signal) => {
         const response = await options.send(route, request, signal)
