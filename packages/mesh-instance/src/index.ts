@@ -14,7 +14,7 @@ export type MeshInstanceLease = {
 export type MeshInstanceLeaseOptions = {
   namespace: string
   compatibilityLockNames?: string[]
-  locks?: MeshInstanceLocks
+  locks?: MeshInstanceLocks | null
   preferredInstanceId?: string | null
   slots?: number
 }
@@ -33,7 +33,7 @@ function validNamespace(value: string): string {
 
 export async function acquireMeshInstanceLease(options: MeshInstanceLeaseOptions): Promise<MeshInstanceLease> {
   const namespace = validNamespace(options.namespace)
-  const locks = options.locks ?? (typeof navigator !== "undefined" && navigator.locks
+  const locks = options.locks === null ? undefined : options.locks ?? (typeof navigator !== "undefined" && navigator.locks
     ? navigator.locks as MeshInstanceLocks : undefined)
   if (!locks) {
     const preferred = options.preferredInstanceId
@@ -88,7 +88,7 @@ export async function acquireMeshInstanceLease(options: MeshInstanceLeaseOptions
 export async function tryAcquireMeshLeaderLease(options: MeshLeaderLeaseOptions): Promise<MeshInstanceLease | null> {
   const namespace = validNamespace(options.namespace)
   const name = validNamespace(options.name)
-  const locks = options.locks ?? (typeof navigator !== "undefined" && navigator.locks
+  const locks = options.locks === null ? undefined : options.locks ?? (typeof navigator !== "undefined" && navigator.locks
     ? navigator.locks as MeshInstanceLocks : undefined)
   if (!locks) return { instanceId: "leader", release: async () => {} }
 

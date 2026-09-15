@@ -44,7 +44,7 @@ describe("mesh runtime instance", () => {
 
   it("Given Web Locks are unavailable, when a tab reloads, then its preferred session id remains stable", async () => {
     const instanceId = "ephemeral-8cc6b3bb-fdee-42c4-8d58-57ad04f47303"
-    const lease = await acquireMeshInstanceLease({ namespace: "match", locks: undefined, preferredInstanceId: instanceId })
+    const lease = await acquireMeshInstanceLease({ namespace: "match", locks: null, preferredInstanceId: instanceId })
 
     expect(lease.instanceId).toBe(instanceId)
   })

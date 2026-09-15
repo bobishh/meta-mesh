@@ -65,6 +65,8 @@ Small meshes can connect fully. Larger meshes keep bounded neighbors and rely on
 
 Each tab owns its Iroh node, `instanceId`, route lease, and AbortControllers. IndexedDB owns durable documents, changes, outbox claims, route catalog, and device identity. `BroadcastChannel` carries invalidation hints only; durable state remains authoritative.
 
+Browser stores discover missing object stores and perform an additive IndexedDB version upgrade. Existing stores and records remain intact. New replica journals may also use a separate database when an application cannot coordinate an upgrade with older deployed tabs.
+
 Closing a tab ends only its route. Other instances for the same device remain valid. A reopened tab publishes a fresh signed route, reloads durable state, and resumes repair. Stale route records may remain for diagnostics until expiry; dial selection ignores expired records.
 
 ## Security boundary

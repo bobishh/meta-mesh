@@ -75,16 +75,46 @@ export class BrowserMeshStore implements MeshStore {
   ) {}
 
   private open(): Promise<IDBDatabase> {
-    return this.database ??= new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.name, 1)
+    if (!this.database) {
+      this.database = this.openWithStores().catch(error => {
+        this.database = undefined
+        throw error
+      })
+    }
+    return this.database
+  }
+
+  private requestOpen(version?: number): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = version === undefined ? indexedDB.open(this.name) : indexedDB.open(this.name, version)
       request.onupgradeneeded = () => {
         for (const store of this.stores) {
           if (!request.result.objectStoreNames.contains(store)) request.result.createObjectStore(store)
         }
       }
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        request.result.onversionchange = () => request.result.close()
+        resolve(request.result)
+      }
       request.onerror = () => reject(request.error ?? new Error("IndexedDB failed to open"))
+      request.onblocked = () => reject(new Error("IndexedDB schema upgrade blocked by another tab"))
     })
+  }
+
+  private async openWithStores(): Promise<IDBDatabase> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = await this.requestOpen()
+      const missing = this.stores.filter(store => !current.objectStoreNames.contains(store))
+      if (missing.length === 0) return current
+      const version = current.version + 1
+      current.close()
+      try {
+        return await this.requestOpen(version)
+      } catch (error) {
+        if (attempt === 2) throw error
+      }
+    }
+    throw new Error("IndexedDB schema upgrade failed")
   }
 
   private async request<T>(store: string, mode: IDBTransactionMode, run: (value: IDBObjectStore) => IDBRequest<T>): Promise<T> {
