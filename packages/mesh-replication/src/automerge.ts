@@ -1,4 +1,7 @@
-import * as Automerge from "@automerge/automerge"
+import type * as Automerge from "@automerge/automerge"
+
+export type AutomergeRuntime = Pick<typeof Automerge,
+  "initSyncState" | "generateSyncMessage" | "receiveSyncMessage" | "clone" | "getChanges" | "getHeads">
 
 export type SyncTrigger = "local-commit" | "remote-commit" | "connection" | "scope-discovery" | "scheduled-repair"
 
@@ -43,6 +46,7 @@ export class AutomergeAntiEntropy {
 
   constructor(
     private readonly localDeviceId: string,
+    private readonly automerge: AutomergeRuntime,
     private readonly options: { maximumFrameBytes?: number; proof?: (scopeId: string, documentId: string, remoteDeviceId: string) => unknown } = {},
   ) {}
 
@@ -82,9 +86,9 @@ export class AutomergeAntiEntropy {
     return this.exclusive(key, async () => {
       if (!await adapter.authorize(remoteDeviceId, undefined, "send")) throw new Error("Unauthorized Automerge sync")
       const document = await adapter.current()
-      let state = this.states.get(key) ?? Automerge.initSyncState()
+      let state = this.states.get(key) ?? this.automerge.initSyncState()
       let message: Automerge.SyncMessage | null
-      ;[state, message] = Automerge.generateSyncMessage(document, state)
+      ;[state, message] = this.automerge.generateSyncMessage(document, state)
       this.states.set(key, state)
       if (!message) return null
       if (message.byteLength > this.maximumFrameBytes()) throw new Error("Automerge sync frame exceeds size limit")
@@ -110,11 +114,11 @@ export class AutomergeAntiEntropy {
       this.validateFrame(frame, adapter as AutomergeDocumentAdapter<Record<string, unknown>>, remoteDeviceId)
       if (!await adapter.authorize(remoteDeviceId, frame.proof, "receive")) throw new Error("Unauthorized Automerge sync")
       const before = await adapter.current()
-      const writable = Automerge.clone(before)
-      let state = this.states.get(key) ?? Automerge.initSyncState()
+      const writable = this.automerge.clone(before)
+      let state = this.states.get(key) ?? this.automerge.initSyncState()
       let candidate: Automerge.Doc<T>
-      ;[candidate, state] = Automerge.receiveSyncMessage(writable, state, frame.message)
-      const changes = Automerge.getChanges(before, candidate)
+      ;[candidate, state] = this.automerge.receiveSyncMessage(writable, state, frame.message)
+      const changes = this.automerge.getChanges(before, candidate)
       if (changes.length > 0) {
         const admission = { before, candidate, changes, remoteDeviceId, proof: frame.proof }
         await adapter.validateCandidate(admission)
@@ -122,13 +126,13 @@ export class AutomergeAntiEntropy {
       }
       this.states.set(key, state)
       const current = changes.length > 0 ? candidate : before
-      const heads = Automerge.getHeads(current)
+      const heads = this.automerge.getHeads(current)
       if (changes.length > 0) {
         await adapter.snapshot?.(current, heads)
         await adapter.publish?.(adapter.documentId, heads, "remote-commit")
       }
       let responseMessage: Automerge.SyncMessage | null
-      ;[state, responseMessage] = Automerge.generateSyncMessage(current, state)
+      ;[state, responseMessage] = this.automerge.generateSyncMessage(current, state)
       this.states.set(key, state)
       if (responseMessage && responseMessage.byteLength > this.maximumFrameBytes()) throw new Error("Automerge sync frame exceeds size limit")
       return {
@@ -175,21 +179,22 @@ export class AutomergeSyncScheduler {
 }
 
 export function reconcileAutomergePeers<T extends Record<string, unknown>>(
+  automerge: AutomergeRuntime,
   initialLeft: Automerge.Doc<T>,
   initialRight: Automerge.Doc<T>,
   maximumMessages = 1_000,
 ): [Automerge.Doc<T>, Automerge.Doc<T>] {
   let left = initialLeft
   let right = initialRight
-  let leftState = Automerge.initSyncState()
-  let rightState = Automerge.initSyncState()
+  let leftState = automerge.initSyncState()
+  let rightState = automerge.initSyncState()
   for (let count = 0; count < maximumMessages; count += 1) {
     let progressed = false
     let message: Automerge.SyncMessage | null
-    ;[leftState, message] = Automerge.generateSyncMessage(left, leftState)
-    if (message) { ;[right, rightState] = Automerge.receiveSyncMessage(Automerge.clone(right), rightState, message); progressed = true }
-    ;[rightState, message] = Automerge.generateSyncMessage(right, rightState)
-    if (message) { ;[left, leftState] = Automerge.receiveSyncMessage(Automerge.clone(left), leftState, message); progressed = true }
+    ;[leftState, message] = automerge.generateSyncMessage(left, leftState)
+    if (message) { ;[right, rightState] = automerge.receiveSyncMessage(automerge.clone(right), rightState, message); progressed = true }
+    ;[rightState, message] = automerge.generateSyncMessage(right, rightState)
+    if (message) { ;[left, leftState] = automerge.receiveSyncMessage(automerge.clone(left), leftState, message); progressed = true }
     if (!progressed) return [left, right]
   }
   throw new Error("Automerge sync exceeded message bound")

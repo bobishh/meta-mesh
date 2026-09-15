@@ -42,8 +42,8 @@
 
 ## 7. Match integration
 
-- [ ] 7.1 Add outer real-route Playwright scenarios first: multiple tabs of one device appear as one member/device, one route can receive a workspace update, and a failed/pending durable write never appears delivered.
-- [ ] 7.2 Adapt Match signed advertisements and peer storage to the shared route catalog while preserving workspace grants, ownership transfers, succession, and existing IndexedDB data.
+- [x] 7.1 Add outer real-route Playwright scenarios first: multiple tabs of one device appear as one member/device, one route can receive a workspace update, and a failed/pending durable write never appears delivered.
+- [x] 7.2 Adapt Match signed advertisements and peer storage to the shared route catalog while preserving workspace grants, ownership transfers, succession, and existing IndexedDB data.
 - [ ] 7.3 Replace per-instance replication sessions and application reconnect/topology policy with shared device delivery, Automerge anti-entropy, and scoped gossip.
 - [ ] 7.4 Remove superseded Match-specific lifecycle and replication code; derive connection/delivery UI from shared aggregate state and retain route-level diagnostics.
 - [ ] 7.5 Verify live card movement, reconnect after closing arbitrary tabs, offline edit partition healing, owner/editor/visitor admission, storage failure, and mobile status on real routes.

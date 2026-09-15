@@ -245,7 +245,7 @@ describe("sparse gossip and anti-entropy", () => {
     let author = Automerge.clone(base)
     author = Automerge.change(author, doc => { doc.messages.push("missed") })
 
-    const [healedAuthor, healedSleeping] = reconcileAutomergePeers(author, sleeping)
+    const [healedAuthor, healedSleeping] = reconcileAutomergePeers(Automerge, author, sleeping)
 
     expect(healedAuthor.messages).toEqual(["missed"])
     expect(healedSleeping.messages).toEqual(["missed"])
@@ -257,7 +257,7 @@ describe("sparse gossip and anti-entropy", () => {
     const left = Automerge.change(Automerge.clone(base), doc => { doc.messages.push("left") })
     const right = Automerge.change(Automerge.clone(base), doc => { doc.messages.push("right") })
 
-    const [healedLeft, healedRight] = reconcileAutomergePeers(left, right)
+    const [healedLeft, healedRight] = reconcileAutomergePeers(Automerge, left, right)
 
     expect([...healedLeft.messages].sort()).toEqual(["left", "right"])
     expect([...healedRight.messages].sort()).toEqual(["left", "right"])

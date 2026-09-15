@@ -47,8 +47,8 @@ describe("Automerge anti-entropy", () => {
     const base = Automerge.from<Chat>({ messages: [] })
     const leftAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("hello") }))
     const rightAdapter = new MemoryAdapter(Automerge.clone(base))
-    const left = new AutomergeAntiEntropy("left")
-    const right = new AutomergeAntiEntropy("right")
+    const left = new AutomergeAntiEntropy("left", Automerge)
+    const right = new AutomergeAntiEntropy("right", Automerge)
 
     await exchange(left, leftAdapter, right, rightAdapter)
 
@@ -64,8 +64,8 @@ describe("Automerge anti-entropy", () => {
     }
     const leftAdapter = new MemoryAdapter(base)
     const rightAdapter = new MemoryAdapter(Automerge.init<Chat>())
-    const left = new AutomergeAntiEntropy("left")
-    const right = new AutomergeAntiEntropy("right")
+    const left = new AutomergeAntiEntropy("left", Automerge)
+    const right = new AutomergeAntiEntropy("right", Automerge)
     await exchange(left, leftAdapter, right, rightAdapter)
     leftAdapter.document = Automerge.change(leftAdapter.document, doc => { doc.messages.push("increment") })
 
@@ -80,8 +80,8 @@ describe("Automerge anti-entropy", () => {
     const base = Automerge.from<Chat>({ messages: [] })
     const leftAdapter = new MemoryAdapter(Automerge.change(Automerge.clone(base), doc => { doc.messages.push("left") }))
     const rightAdapter = new MemoryAdapter(Automerge.change(Automerge.clone(base), doc => { doc.messages.push("right") }))
-    const left = new AutomergeAntiEntropy("left")
-    const right = new AutomergeAntiEntropy("right")
+    const left = new AutomergeAntiEntropy("left", Automerge)
+    const right = new AutomergeAntiEntropy("right", Automerge)
     const missed = await left.generate(leftAdapter, "right")
     expect(missed).not.toBeNull()
     left.reset("chat-1", "right")
@@ -100,8 +100,8 @@ describe("Automerge anti-entropy", () => {
     source = Automerge.change(source, doc => { doc.messages.push("dependent") })
     const leftAdapter = new MemoryAdapter(source)
     const rightAdapter = new MemoryAdapter(Automerge.init<Chat>())
-    const left = new AutomergeAntiEntropy("left")
-    const right = new AutomergeAntiEntropy("right")
+    const left = new AutomergeAntiEntropy("left", Automerge)
+    const right = new AutomergeAntiEntropy("right", Automerge)
     const hello = await left.generate(leftAdapter, "right")
     const request = (await right.receive(rightAdapter, "left", hello!)).response
     const changes = (await left.receive(leftAdapter, "right", request!)).response
@@ -116,7 +116,7 @@ describe("Automerge anti-entropy", () => {
 
   it("Given an oversized or unauthorized frame, when received, then trusted document state does not advance", async () => {
     const adapter = new MemoryAdapter(Automerge.from<Chat>({ messages: [] }))
-    const engine = new AutomergeAntiEntropy("right", { maximumFrameBytes: 16 })
+    const engine = new AutomergeAntiEntropy("right", Automerge, { maximumFrameBytes: 16 })
     const frame: AutomergeSyncFrame = {
       version: 1, scopeId: "room-1", documentId: "chat-1", fromDeviceId: "left", toDeviceId: "right",
       message: new Uint8Array(17),
