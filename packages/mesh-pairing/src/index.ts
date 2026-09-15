@@ -59,6 +59,10 @@ export type PairingFrameType =
   | "mesh-handshake-response"
   | "mesh-handoff-request"
   | "mesh-handoff-ready"
+  | "mesh-automerge-sync"
+  | "mesh-gossip"
+  | "mesh-durable-batch"
+  | "mesh-durable-ack"
 
 export class PairingError extends Error {}
 

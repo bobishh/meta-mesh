@@ -47,7 +47,10 @@ export class AutomergeAntiEntropy {
   constructor(
     private readonly localDeviceId: string,
     private readonly automerge: AutomergeRuntime,
-    private readonly options: { maximumFrameBytes?: number; proof?: (scopeId: string, documentId: string, remoteDeviceId: string) => unknown } = {},
+    private readonly options: {
+      maximumFrameBytes?: number
+      proof?: (scopeId: string, documentId: string, remoteDeviceId: string) => unknown | Promise<unknown>
+    } = {},
   ) {}
 
   private key(documentId: string, remoteDeviceId: string): string {
@@ -99,7 +102,7 @@ export class AutomergeAntiEntropy {
         fromDeviceId: this.localDeviceId,
         toDeviceId: remoteDeviceId,
         message,
-        ...(this.options.proof ? { proof: this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
+        ...(this.options.proof ? { proof: await this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
       }
     })
   }
@@ -145,7 +148,7 @@ export class AutomergeAntiEntropy {
           fromDeviceId: this.localDeviceId,
           toDeviceId: remoteDeviceId,
           message: responseMessage,
-          ...(this.options.proof ? { proof: this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
+          ...(this.options.proof ? { proof: await this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
         } : null,
       }
     })
