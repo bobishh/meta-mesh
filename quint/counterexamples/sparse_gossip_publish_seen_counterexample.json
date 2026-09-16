@@ -1,0 +1,46 @@
+{
+  "subsystem": "sparse_gossip",
+  "component": "packages/mesh-replication/src/gossip.ts::SparseGossip",
+  "discrepancy": "Local publish failed to populate seen cache, triggering infinite rumor amplification on reflection",
+  "formalInvariantViolated": "invStoreInSeen (store.get(d).subseteq(seen.get(d))) and invNoSeenReAdmission",
+  "reproductionTrace": [
+    {
+      "step": 0,
+      "action": "init",
+      "state": {
+        "store": { "d1": ["c1"], "d2": [], "d3": [] },
+        "seen": { "d1": ["c1"], "d2": [], "d3": [] }
+      }
+    },
+    {
+      "step": 1,
+      "action": "publishOffer",
+      "params": { "fromDevice": "d1", "hash": "c1" },
+      "state": {
+        "store": { "d1": ["c1"] },
+        "seen": { "d1": ["c1"] },
+        "inFlightOffers": [{ "fromDevice": "d1", "toDevice": "d2", "hash": "c1" }, { "fromDevice": "d1", "toDevice": "d3", "hash": "c1" }]
+      }
+    },
+    {
+      "step": 2,
+      "action": "handleChanges",
+      "params": { "fromDevice": "d2", "toDevice": "d1", "hash": "c1" },
+      "intendedQuintSemantics": {
+        "d1SeenContainsC1": true,
+        "admittedCount": 0,
+        "forwardDispatches": []
+      },
+      "unfixedTypeScriptBehavior": {
+        "d1SeenContainsC1": false,
+        "admittedCount": 1,
+        "forwardDispatches": [{ "targetDeviceId": "d3", "hashes": ["c1"] }]
+      }
+    }
+  ],
+  "fix": {
+    "file": "packages/mesh-replication/src/gossip.ts",
+    "method": "SparseGossip.publish",
+    "code": "for (const hash of bounded) this.remember(`${scopeId}\\u0000${documentId}\\u0000${hash}`)"
+  }
+}

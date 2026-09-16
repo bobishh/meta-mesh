@@ -1,0 +1,45 @@
+{
+  "subsystem": "durable_delivery",
+  "component": "packages/mesh-replication/src/protocol.ts::deliverBatchToDevice / ackMatches",
+  "discrepancy": "Incomplete or empty ACK accepted as successful batch delivery",
+  "formalInvariantViolated": "invDeliveryRequiresAck ((phase == 'DELIVERED') implies lastAckAcceptedHashes == BATCH_HASHES)",
+  "reproductionTrace": [
+    {
+      "step": 0,
+      "action": "init",
+      "batch": { "batchId": "batch-1", "changes": ["change-1", "change-2"] },
+      "state": { "phase": "RUNNING", "targetStore": [] }
+    },
+    {
+      "step": 1,
+      "action": "launchRoute",
+      "route": "route-a",
+      "state": { "phase": "RUNNING", "activeRoutes": ["route-a"] }
+    },
+    {
+      "step": 2,
+      "action": "routeCommitAndAck",
+      "route": "route-a",
+      "ackReceived": {
+        "batchId": "batch-1",
+        "receiverDeviceId": "device-remote",
+        "acceptedHashes": []
+      },
+      "intendedQuintSemantics": {
+        "ackMatches": false,
+        "phase": "RUNNING (or retry / fail)",
+        "explanation": "A durable ACK must acknowledge the exact changes in the batch"
+      },
+      "unfixedTypeScriptBehavior": {
+        "ackMatches": true,
+        "phase": "DELIVERED",
+        "result": { "acceptedHashes": [] }
+      }
+    }
+  ],
+  "fix": {
+    "file": "packages/mesh-replication/src/protocol.ts",
+    "function": "ackMatches",
+    "code": "return ack.acceptedHashes.length === expected.size && new Set(ack.acceptedHashes).size === expected.size && ack.acceptedHashes.every(hash => expected.has(hash))"
+  }
+}

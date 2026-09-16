@@ -143,6 +143,7 @@ export class SparseGossip {
   async publish(scopeId: string, documentId: string, hashes: readonly string[]): Promise<GossipDispatch[]> {
     const bounded = [...new Set(hashes)].slice(0, this.bounds.maximumOfferHashes)
     if (bounded.length === 0) return []
+    for (const hash of bounded) this.remember(`${scopeId}\u0000${documentId}\u0000${hash}`)
     const batchId = bounded.join(".")
     const result: GossipDispatch[] = []
     for (const targetDeviceId of this.neighborDevices(scopeId).slice(0, this.bounds.eagerFanout)) {

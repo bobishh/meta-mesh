@@ -437,7 +437,9 @@ function ackMatches(ack: DurableBatchAck, batch: DeviceBatch, targetDeviceId: Re
   if (ack.scopeId !== batch.scopeId || ack.documentId !== batch.documentId || ack.batchId !== batch.batchId) return false
   if (ack.receiverDeviceId !== targetDeviceId || ack.signature.length === 0) return false
   const expected = new Set(batch.changes.map(change => change.hash))
-  return ack.acceptedHashes.length <= expected.size && ack.acceptedHashes.every(hash => expected.has(hash))
+  return ack.acceptedHashes.length === expected.size &&
+    new Set(ack.acceptedHashes).size === expected.size &&
+    ack.acceptedHashes.every(hash => expected.has(hash))
 }
 
 async function deliverBatchRound(options: DeliveryOptions): Promise<DeviceDeliveryResult> {

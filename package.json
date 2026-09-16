@@ -3,18 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "build:site": "vite build --config vite.site.config.ts",
     "test": "vitest run",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "quint:check": "quint typecheck quint/durable_delivery.qnt && quint typecheck quint/sparse_gossip.qnt",
+    "quint:test": "quint test quint/durable_delivery.qnt --main=durable_delivery_instance && quint test quint/sparse_gossip.qnt --main=sparse_gossip_instance",
+    "quint:run": "quint run quint/durable_delivery.qnt --main=durable_delivery_instance --invariants=invAll --max-samples=1000 --max-steps=20 && quint run quint/sparse_gossip.qnt --main=sparse_gossip_instance --invariants=invAll --max-samples=1000 --max-steps=20",
+    "quint:mbt": "vitest run packages/mesh-replication/src/mbt",
+    "quint:verify": "quint verify quint/durable_delivery.qnt --main=durable_delivery_instance --invariants=invAll && quint verify quint/sparse_gossip.qnt --main=sparse_gossip_instance --invariants=invAll"
   },
   "dependencies": {
+    "@automerge/automerge": "^3.4.1",
     "@noble/ed25519": "^3.0.0",
-    "@scure/bip39": "^2.0.1",
-    "@automerge/automerge": "^3.4.1"
+    "@scure/bip39": "^2.0.1"
   },
   "devDependencies": {
+    "@informalsystems/quint": "^0.32.0",
     "@types/node": "^24.0.0",
     "typescript": "~5.8.3",
     "vite": "^7.1.3",

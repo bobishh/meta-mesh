@@ -1,0 +1,39 @@
+name: Quint Deep Verification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1' # Weekly on Mondays at 03:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'quint/**'
+
+permissions:
+  contents: read
+
+jobs:
+  deep-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - run: npm ci
+      # Deep state-space verification using Apalache / symbolic model checking
+      - name: Verify Durable Delivery (Apalache)
+        run: npx quint verify quint/durable_delivery.qnt --main=durable_delivery_instance --invariants=invAll --max-steps=15
+      - name: Verify Sparse Gossip (Apalache)
+        run: npx quint verify quint/sparse_gossip.qnt --main=sparse_gossip_instance --invariants=invAll --max-steps=15
+      # Extensive simulation fuzzing (10,000 samples each)
+      - name: Deep Simulation (Durable Delivery 10k samples)
+        run: npx quint run quint/durable_delivery.qnt --main=durable_delivery_instance --invariants=invAll --max-samples=10000 --max-steps=50
+      - name: Deep Simulation (Sparse Gossip 10k samples)
+        run: npx quint run quint/sparse_gossip.qnt --main=sparse_gossip_instance --invariants=invAll --max-samples=10000 --max-steps=50
