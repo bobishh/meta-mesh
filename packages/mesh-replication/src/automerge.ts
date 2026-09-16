@@ -14,6 +14,10 @@ export type AutomergeRuntime = Pick<typeof Automerge,
 
 export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load">
 
+/** Keeps one materialized WASM document per durable document id.
+ * Replacements only drop the old reference: active readers may still own it,
+ * so FinalizationRegistry performs the safe release after those readers finish.
+ */
 export class AutomergeDocumentCache<T extends Record<string, unknown>> {
   private readonly documents = new Map<string, Automerge.Doc<T>>()
 
