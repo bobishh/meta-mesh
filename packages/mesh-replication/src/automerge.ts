@@ -12,7 +12,7 @@ import {
 export type AutomergeRuntime = Pick<typeof Automerge,
   "initSyncState" | "generateSyncMessage" | "receiveSyncMessage" | "clone" | "getChanges" | "getHeads">
 
-export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load" | "free">
+export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load">
 
 export class AutomergeDocumentCache<T extends Record<string, unknown>> {
   private readonly documents = new Map<string, Automerge.Doc<T>>()
@@ -27,19 +27,12 @@ export class AutomergeDocumentCache<T extends Record<string, unknown>> {
     return document
   }
 
-  remember(documentId: string, document: Automerge.Doc<T>, options: { independent?: boolean } = {}): void {
-    const previous = this.documents.get(documentId)
-    if (options.independent && previous && previous !== document) this.release(previous)
+  remember(documentId: string, document: Automerge.Doc<T>): void {
     this.documents.set(documentId, document)
   }
 
   clear(): void {
-    for (const document of this.documents.values()) this.release(document)
     this.documents.clear()
-  }
-
-  private release(document: Automerge.Doc<T>): void {
-    try { this.automerge.free(document) } catch {}
   }
 }
 
