@@ -31,6 +31,11 @@ Public contact invitations use durable identity locators (`twang-contact` versio
 3. **Idempotent admission:** Incoming contact requests are keyed and deduplicated by `senderPersonId`. Repeated clicks, reconnects, or requests from multiple devices of the same sender update the single existing pending request rather than creating duplicate contacts or duplicate rooms.
 4. **Internal route exchange:** Once the recipient accepts the contact request (or if the contact was already established), both peers exchange fresh, signed 10-minute `DeviceRoute` records directly over the secure channel. Short-lived device routes remain strictly internal to active communication.
 
+### Availability and decentralization contract
+
+1. **Zero central sync services:** The system does not depend on a central sync service, hosted directory, or hardcoded `syncServiceUrl`. Identity roots and rendezvous endpoints are fully self-sovereign and derived locally via Ed25519 and HKDF-SHA256.
+2. **Durability vs. reachability:** The public locator card is durable and permanent (it never expires and requires no refresh). However, rendezvous requires an active host: the recipient must have at least one online instance hosting their deterministic rendezvous endpoint on Iroh transport to receive requests in real time.
+3. **Store-and-retry delivery:** When the recipient is offline, the sender's device keeps the outgoing request persisted in its local pending queue and automatically retries upon reconnect or background polling. Once the recipient comes online, the handshake completes transparently without requiring new links or re-authorization.
 
 ## Delivery state machine
 

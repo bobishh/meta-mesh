@@ -165,5 +165,13 @@ describe("mesh directory", () => {
     expect(seed1).toEqual(seed2)
     expect(seed1).not.toEqual(rotated)
   })
+
+  it("Given a contact locator published too far in the future, when decoded, then verification fails", async () => {
+    const now = 1_000_000
+    const locator = await createContactLocator(bob, "bob-rendezvous-endpoint-12345678901234567890123456789012", { now: now + 10 * 60_000 })
+    const encoded = encodeContactCard(locator)
+
+    await expect(decodeContactCard(encoded, { now })).rejects.toThrow("Invalid contact locator card")
+  })
 })
 

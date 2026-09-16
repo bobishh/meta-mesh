@@ -350,6 +350,11 @@ export async function decodeContactCard(
   }
   const deviceKey = await verifyDeviceCertificateChain(card.identity, card.deviceId, card.certificates)
   if (card.version === 3) {
+    const publishedTime = Date.parse(card.publishedAt)
+    if (!Number.isFinite(publishedTime) || new Date(publishedTime).toISOString() !== card.publishedAt ||
+      publishedTime > (options.now ?? Date.now()) + 5 * 60_000) {
+      throw new Error("Invalid contact locator card")
+    }
     if (!card.rendezvousEndpoint ||
       card.signed?.payload?.kind !== "contact-locator" || card.signed.payload.version !== 1 ||
       card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
