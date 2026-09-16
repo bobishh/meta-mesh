@@ -215,6 +215,7 @@ export function decodeWireMessage(bytes: Uint8Array): unknown {
 
 export class IrohMeshNode {
   private stopped = false
+  private readonly outbound = new Map<string, { connection: Promise<IrohConnection> }>()
 
   constructor(
     private readonly node: IrohNode,
@@ -236,26 +237,50 @@ export class IrohMeshNode {
 
   get endpointId(): string { return this.node.endpointId }
 
+  private outboundConnection(endpoint: string): { connection: Promise<IrohConnection> } {
+    if (this.stopped) throw new Error("Mesh node is closed")
+    const existing = this.outbound.get(endpoint)
+    if (existing) return existing
+    const session = { connection: this.node.dialRelay(endpoint) }
+    this.outbound.set(endpoint, session)
+    void session.connection.catch(() => {
+      if (this.outbound.get(endpoint) === session) this.outbound.delete(endpoint)
+    })
+    return session
+  }
+
+  private discardOutbound(endpoint: string, session: { connection: Promise<IrohConnection> }): void {
+    if (this.outbound.get(endpoint) !== session) return
+    this.outbound.delete(endpoint)
+    void session.connection.then(connection => connection.close()).catch(() => undefined)
+  }
+
   async request(endpoint: string, payload: unknown, timeoutMs = 8_000): Promise<unknown> {
+    const session = this.outboundConnection(endpoint)
     const operation = (async () => {
-      const connection = await this.node.dialRelay(endpoint)
+      const connection = await session.connection
+      let response: { error?: string }
       try {
         const stream = await connection.openStream()
         await stream.send(encodeWireMessage(payload))
         await stream.closeSend()
-        const response = decodeWireMessage(await stream.read()) as { error?: string }
-        if (response?.error) throw new Error(response.error)
-        return response
-      } finally {
-        await connection.close().catch(() => undefined)
+        response = decodeWireMessage(await stream.read()) as { error?: string }
+      } catch (error) {
+        this.discardOutbound(endpoint, session)
+        throw error
       }
+      if (response?.error) throw new Error(response.error)
+      return response
     })()
-    let timer = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<never>((_, reject) => {
-      timer = window.setTimeout(() => reject(new Error("Peer is offline")), timeoutMs)
+      timer = globalThis.setTimeout(() => {
+        this.discardOutbound(endpoint, session)
+        reject(new Error("Peer is offline"))
+      }, timeoutMs)
     })
     try { return await Promise.race([operation, timeout]) }
-    finally { window.clearTimeout(timer) }
+    finally { clearTimeout(timer) }
   }
 
   async listen(handler: WireHandler): Promise<void> {
@@ -289,8 +314,13 @@ export class IrohMeshNode {
 
   async close(): Promise<void> {
     this.stopped = true
+    const outbound = [...this.outbound.values()]
+    this.outbound.clear()
     await Promise.race([
-      this.node.close("Mesh node closed").catch(() => undefined),
+      Promise.allSettled([
+        this.node.close("Mesh node closed"),
+        ...outbound.map(session => session.connection.then(connection => connection.close())),
+      ]).then(() => undefined),
       new Promise<void>(resolve => globalThis.setTimeout(resolve, this.closeTimeoutMs)),
     ])
   }
