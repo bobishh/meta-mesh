@@ -2,6 +2,7 @@ import * as Automerge from "@automerge/automerge"
 import { describe, expect, it, vi } from "vitest"
 import {
   AutomergeAntiEntropy,
+  AutomergeDocumentCache,
   AutomergeSyncScheduler,
   receiveAutomergeDeviceSync,
   syncAutomergeDocumentToDevice,
@@ -9,6 +10,42 @@ import {
   type AutomergeDocumentAdapter,
   type AutomergeSyncFrame,
 } from "./automerge"
+
+describe("Automerge document lifecycle", () => {
+  it("Given one stored document, when UI snapshots read it repeatedly, then WASM loads it once and releases it on shutdown", () => {
+    const document = { room: "one" } as unknown as Automerge.Doc<Chat>
+    const runtime = {
+      load: vi.fn(() => document),
+      free: vi.fn(),
+    } as unknown as Pick<typeof Automerge, "load" | "free">
+    const cache = new AutomergeDocumentCache<Chat>(runtime)
+    const bytes = new Uint8Array([1, 2, 3])
+
+    expect(cache.getOrLoad("room-1", bytes)).toBe(document)
+    expect(cache.getOrLoad("room-1", bytes)).toBe(document)
+    expect(runtime.load).toHaveBeenCalledOnce()
+
+    cache.clear()
+    expect(runtime.free).toHaveBeenCalledOnce()
+  })
+
+  it("Given an independently loaded replacement, when remembered, then the previous WASM document is released", () => {
+    const first = { room: "first" } as unknown as Automerge.Doc<Chat>
+    const second = { room: "second" } as unknown as Automerge.Doc<Chat>
+    const runtime = {
+      load: vi.fn(() => first),
+      free: vi.fn(),
+    } as unknown as Pick<typeof Automerge, "load" | "free">
+    const cache = new AutomergeDocumentCache<Chat>(runtime)
+
+    cache.getOrLoad("room-1", new Uint8Array([1]))
+    cache.remember("room-1", second, { independent: true })
+
+    expect(runtime.free).toHaveBeenCalledWith(first)
+    cache.clear()
+    expect(runtime.free).toHaveBeenLastCalledWith(second)
+  })
+})
 import { createRecoverableIdentity, verifyDeviceCertificateChain } from "@meta-uber/mesh-identity"
 import { verifySignedDurableBatchAck, type DeviceRoute } from "./protocol"
 

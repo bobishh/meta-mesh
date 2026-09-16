@@ -12,6 +12,37 @@ import {
 export type AutomergeRuntime = Pick<typeof Automerge,
   "initSyncState" | "generateSyncMessage" | "receiveSyncMessage" | "clone" | "getChanges" | "getHeads">
 
+export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load" | "free">
+
+export class AutomergeDocumentCache<T extends Record<string, unknown>> {
+  private readonly documents = new Map<string, Automerge.Doc<T>>()
+
+  constructor(private readonly automerge: AutomergeDocumentRuntime) {}
+
+  getOrLoad(documentId: string, bytes: Uint8Array): Automerge.Doc<T> {
+    const existing = this.documents.get(documentId)
+    if (existing) return existing
+    const document = this.automerge.load<T>(bytes)
+    this.documents.set(documentId, document)
+    return document
+  }
+
+  remember(documentId: string, document: Automerge.Doc<T>, options: { independent?: boolean } = {}): void {
+    const previous = this.documents.get(documentId)
+    if (options.independent && previous && previous !== document) this.release(previous)
+    this.documents.set(documentId, document)
+  }
+
+  clear(): void {
+    for (const document of this.documents.values()) this.release(document)
+    this.documents.clear()
+  }
+
+  private release(document: Automerge.Doc<T>): void {
+    try { this.automerge.free(document) } catch {}
+  }
+}
+
 export type SyncTrigger = "local-commit" | "remote-commit" | "connection" | "scope-discovery" | "scheduled-repair"
 
 export type AutomergeSyncFrame = {
