@@ -275,7 +275,10 @@ export async function createContactCard(profile: LocalProfile, endpoint: string,
   }
 }
 
-export async function decodeContactCard(value: string): Promise<ContactCard> {
+export async function decodeContactCard(
+  value: string,
+  options: { now?: number; allowExpired?: boolean } = {},
+): Promise<ContactCard> {
   const encoded = value.trim().replace(/^twang:/, "")
   let card: ContactCard
   try {
@@ -295,7 +298,7 @@ export async function decodeContactCard(value: string): Promise<ContactCard> {
       card.signed.payload.instanceId !== card.instanceId || card.signed.payload.endpoint !== card.endpoint ||
       card.signed.payload.sequence !== card.sequence || card.signed.payload.issuedAt !== card.issuedAt ||
       card.signed.payload.expiresAt !== card.expiresAt) throw new Error("Invalid contact route card")
-    await verifySignedDeviceRoute(card.signed, deviceKey)
+    await verifySignedDeviceRoute(card.signed, deviceKey, options)
   } else {
     if (card.signed?.payload?.kind !== "contact-card" || card.signed.payload.version !== 1 ||
       card.signed.payload.personId !== card.identity.personId || card.signed.payload.deviceId !== card.deviceId ||
@@ -305,4 +308,13 @@ export async function decodeContactCard(value: string): Promise<ContactCard> {
     }
   }
   return card
+}
+
+export async function decodeContactLink(value: string, now = Date.now()): Promise<ContactCard> {
+  try {
+    return await decodeContactCard(value, { now })
+  } catch (error) {
+    if (error instanceof Error && error.message === "Device route expired") throw new Error("Link expired")
+    throw error
+  }
 }

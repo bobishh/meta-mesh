@@ -9,6 +9,7 @@ import {
   createDirectory,
   createContactCard,
   decodeContactCard,
+  decodeContactLink,
   encodeContactCard,
   mergeDirectories,
   putContact,
@@ -105,5 +106,17 @@ describe("mesh directory", () => {
 
     await expect(decodeContactCard(encodeContactCard(first))).resolves.toMatchObject({ version: 2, instanceId: "tab-a" })
     await expect(decodeContactCard(encodeContactCard(second))).resolves.toMatchObject({ version: 2, instanceId: "tab-b" })
+  })
+
+  it("Given an expired public contact link, when opened, then it fails before contact state is created", async () => {
+    const card = await createContactCard(bob, "bob-endpoint", {
+      instanceId: "tab-a",
+      sequence: 1,
+      now: 1_000,
+      lifetimeMs: 10 * 60_000,
+    })
+
+    await expect(decodeContactLink(encodeContactCard(card), 1_000 + 10 * 60_000))
+      .rejects.toThrow("Link expired")
   })
 })
