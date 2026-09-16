@@ -423,3 +423,8 @@ export function contactTimeline(doc: ContactChannel): ContactTimelineEntry[] {
     isJoinRequest: false,
   }))].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
 }
+
+export function contactRequestIdempotencyKey(request: ContactRequest): string {
+  return request.identity.personId
+}
+

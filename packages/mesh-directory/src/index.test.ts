@@ -8,6 +8,8 @@ import {
   contacts,
   createDirectory,
   createContactCard,
+  createContactLocator,
+  contactRendezvousSeedFromProfile,
   decodeContactCard,
   decodeContactLink,
   encodeContactCard,
@@ -119,4 +121,49 @@ describe("mesh directory", () => {
     await expect(decodeContactLink(encodeContactCard(card), 1_000 + 10 * 60_000))
       .rejects.toThrow("Link expired")
   })
+
+  it("Given a durable contact locator, when created, then it verifies and remains valid beyond device route TTL", async () => {
+    const now = 1_000_000
+    const locator = await createContactLocator(bob, "bob-rendezvous-endpoint-12345678901234567890123456789012", { now })
+    const encoded = encodeContactCard(locator)
+
+    const decoded = await decodeContactCard(encoded, { now: now + 30 * 24 * 3600 * 1000 })
+    expect(decoded).toMatchObject({
+      kind: "twang-contact",
+      version: 3,
+      deviceId: bob.device.deviceId,
+      rendezvousEndpoint: "bob-rendezvous-endpoint-12345678901234567890123456789012",
+      identity: { personId: bob.identity.personId },
+    })
+
+    await expect(decodeContactLink(encoded, now + 30 * 24 * 3600 * 1000)).resolves.toMatchObject({
+      version: 3,
+      rendezvousEndpoint: "bob-rendezvous-endpoint-12345678901234567890123456789012",
+    })
+  })
+
+  it("Given a tampered contact locator, when decoded, then verification fails", async () => {
+    const locator = await createContactLocator(bob, "bob-rendezvous-endpoint-12345678901234567890123456789012")
+    const tampered = { ...locator, rendezvousEndpoint: "eve-intercept-endpoint" }
+    const encoded = encodeContactCard(tampered as unknown as typeof locator)
+
+    await expect(decodeContactCard(encoded)).rejects.toThrow("Invalid contact locator card")
+  })
+
+  it("Given an old version 1 contact card older than route TTL, when decoded, then it throws Link expired", async () => {
+    const oldCard = await createContactCard(bob, "bob-endpoint", 1_000)
+    await expect(decodeContactLink(encodeContactCard(oldCard), 1_000 + 11 * 60_000))
+      .rejects.toThrow("Link expired")
+  })
+
+  it("Given a local profile, when deriving contact rendezvous seed, then it is deterministic and rotates with index", async () => {
+    const seed1 = await contactRendezvousSeedFromProfile(bob, 0)
+    const seed2 = await contactRendezvousSeedFromProfile(bob, 0)
+    const rotated = await contactRendezvousSeedFromProfile(bob, 1)
+
+    expect(seed1).toHaveLength(32)
+    expect(seed1).toEqual(seed2)
+    expect(seed1).not.toEqual(rotated)
+  })
 })
+

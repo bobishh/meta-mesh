@@ -9,6 +9,7 @@ import {
   createContactRequest,
   appendContactMessage,
   contactTimeline,
+  contactRequestIdempotencyKey,
   mergeContactChannels,
   saveContactChannel,
   verifyContactDecision,
@@ -158,4 +159,14 @@ describe("contact mesh protocol", () => {
 
     await expect(mergeContactChannels(local, saveContactChannel(remote), now)).rejects.toThrow("signature")
   })
+
+  it("Given multiple requests from one identity, then the idempotency key deduplicates by sender personId", async () => {
+    const first = await createContactRequest(visitor, { firstMessage: "First greeting" })
+    const second = await createContactRequest(visitor, { firstMessage: "Second greeting" })
+
+    expect(contactRequestIdempotencyKey(first)).toBe(visitor.identity.personId)
+    expect(contactRequestIdempotencyKey(second)).toBe(visitor.identity.personId)
+    expect(contactRequestIdempotencyKey(first)).toBe(contactRequestIdempotencyKey(second))
+  })
 })
+
