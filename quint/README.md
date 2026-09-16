@@ -63,7 +63,7 @@ npx quint run quint/durable_delivery.qnt --main=durable_delivery_instance --inva
 npx quint run quint/sparse_gossip.qnt --main=sparse_gossip_instance --invariants=invAll --max-samples=10000 --max-steps=50
 ```
 
-GitHub Actions automatically runs deep checks on a schedule and via `workflow_dispatch` in `.github/workflows/quint-deep-verify.yml`.
+GitHub Actions automatically runs fast checks and MBT on PRs and pushes to `main` and `codex/quint-mbt` in `.github/workflows/ci.yml`, and deep verification on pushes to `main` and `codex/quint-mbt`, weekly schedule, and `workflow_dispatch` in `.github/workflows/quint-deep-verify.yml`.
 
 ---
 

@@ -2,7 +2,7 @@ name: Verify
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/quint-mbt]
   pull_request:
 
 permissions:
@@ -23,4 +23,5 @@ jobs:
       - run: npm run quint:check
       - run: npm run quint:test
       - run: npm run quint:run
+      - run: npm run quint:mbt
       - run: npm test

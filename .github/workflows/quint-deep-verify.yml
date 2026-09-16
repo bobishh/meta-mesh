@@ -5,9 +5,7 @@ on:
   schedule:
     - cron: '0 3 * * 1' # Weekly on Mondays at 03:00 UTC
   push:
-    branches: [main]
-    paths:
-      - 'quint/**'
+    branches: [main, codex/quint-mbt]
 
 permissions:
   contents: read
