@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, MeshNetworkError, MeshReconnectPolicy, MeshTraceBuffer, startMeshHeartbeat, type IrohNode, type MeshConnection } from "./index"
+import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, MeshNetworkError, MeshReconnectPolicy, MeshTraceBuffer, startMeshHeartbeat, type IrohNode, type MeshConnection } from "./index"
 
 describe("mesh transport wire", () => {
   it("Given a structured payload, when sent over the wire, then its shape survives", () => {
@@ -49,6 +49,25 @@ describe("mesh transport wire", () => {
 
     await expect(policy.dial(node, "phone", "endpoint")).resolves.toBe(relay)
     expect(node.dialRelay).toHaveBeenCalledOnce()
+  })
+
+  it("Given every device route fails on the network, when failures are aggregated, then reconnect remains an offline state", () => {
+    const directAndRelay = new AggregateError([
+      new MeshNetworkError("direct unavailable"),
+      new MeshNetworkError("relay unavailable"),
+    ], "All promises were rejected")
+    const routes = new AggregateError([directAndRelay], "All routes failed for device phone")
+
+    expect(isMeshNetworkFailure(routes)).toBe(true)
+  })
+
+  it("Given an aggregate contains a protocol failure, when classified, then it is not hidden as offline", () => {
+    const routes = new AggregateError([
+      new MeshNetworkError("relay unavailable"),
+      new Error("Unexpected mesh peer"),
+    ], "All routes failed for device phone")
+
+    expect(isMeshNetworkFailure(routes)).toBe(false)
   })
 
   it("Given one heartbeat is pending, when another interval passes, then probes do not stack", async () => {

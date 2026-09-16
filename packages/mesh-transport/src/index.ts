@@ -63,6 +63,9 @@ export function meshNetworkConnection<TConnection extends MeshConnection>(connec
 }
 
 export function isMeshNetworkFailure(error: unknown): boolean {
+  if (error instanceof AggregateError) {
+    return error.errors.length > 0 && error.errors.every(isMeshNetworkFailure)
+  }
   return error instanceof MeshNetworkError || /bootstrap|connection|closed by peer|offline|relay|network|stream chunk|timed out|timeout|webrtc/i
     .test(error instanceof Error ? error.message : String(error))
 }
