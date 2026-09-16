@@ -20,6 +20,18 @@ Iroh supplies encrypted transport and endpoint reachability. Meta-mesh supplies 
 
 Expiry removes an address from dialing candidates. It does not delete the person, device, messages, documents, or authorization. A new instance publishes a higher sequence. Revocation rejects routes signed by the revoked device.
 
+## Contact rendezvous and durable locators
+
+Public contact invitations use durable identity locators (`twang-contact` version 3), decoupling long-lived contact discovery from ephemeral 10-minute `DeviceRoute` leases.
+
+### Lifecycle and trust boundary
+
+1. **Durable locator:** A `ContactLocatorCard` binds the person identity, device certificate, device ID, and a deterministic contact rendezvous endpoint. It is signed by the device key under the `TWANG-CONTACT-LOCATOR/1` domain. Unlike raw `DeviceRoute` links, it does not expire after 10 minutes and contains no private keys.
+2. **Deterministic rendezvous:** A 32-byte contact rendezvous seed is derived deterministically from the root `identitySeed` using HKDF-SHA256 with salt `meta-mesh/contact-rendezvous/v1`. Multiple tabs or devices sharing the same identity converge on the same rendezvous endpoint. A browser leader lease ensures a single tab hosts the incoming rendezvous node without endpoint contention.
+3. **Idempotent admission:** Incoming contact requests are keyed and deduplicated by `senderPersonId`. Repeated clicks, reconnects, or requests from multiple devices of the same sender update the single existing pending request rather than creating duplicate contacts or duplicate rooms.
+4. **Internal route exchange:** Once the recipient accepts the contact request (or if the contact was already established), both peers exchange fresh, signed 10-minute `DeviceRoute` records directly over the secure channel. Short-lived device routes remain strictly internal to active communication.
+
+
 ## Delivery state machine
 
 ```mermaid
