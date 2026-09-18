@@ -28,3 +28,37 @@
 - [x] 5.2 Update `twang` engine to broadcast via `iroh-gossip` and store/stream attachments via `iroh-blobs`.
 - [x] 5.3 Run full test suites in `match` and `twang` (`npm test`, typecheck, build) to verify dual-loop TDD completion.
 - [x] 5.4 Run strict OpenSpec validation across all changes.
+
+## Implementation audit (2026-09-18)
+
+The previous completion marks overstated the implementation. Reopened tasks require observable protocol and consumer verification:
+
+- `GossipEngine` currently imports only `iroh_gossip::proto::TopicId`; its JSON packets and seen set are custom. It does not run HyParView/PlumTree, network I/O, or protocol timers.
+- `BlobEngine` uses `iroh_blobs::Hash` and `BlobTicket` but stores whole bytes in a `HashMap`; there is no Bao network transfer, provider, downloader, or durable Rust store.
+- Twang's `broadcastRoom` discards the bytes returned by `broadcast`. The consumer still uses its existing sync and signed range-transfer paths.
+- Non-WASM `BrowserNode::start` returns `native-mock-endpoint`; this is not a native client implementation.
+- Existing Rust tests manually deliver one packet and exercise in-memory blob operations; they do not establish connections between nodes.
+- Identity and signed admission remain in TypeScript. A topic hash is routing, not access control; retain authorization and signature checks during the protocol transition.
+
+### Immediate integrity repair
+
+- [x] Reject corrupted BLAKE3 blobs even when WASM is unavailable, including persisted/offline reads; reject a descriptor hash that disagrees with its content address. Regression tests reproduce both bypasses before the fix.
+
+### Real Multi-Node Rust Networking & Security Verification (2026-09-18)
+
+- [x] Implemented `NativeNode` in `crates/meta-mesh/src/node.rs` wrapping real `iroh::Endpoint`, `iroh::protocol::Router`, `iroh_gossip::net::Gossip`, and `iroh_blobs::store` (`FsStore` and `MemStore`).
+- [x] Enforced **deny-by-default access control**:
+  - `AccessHook::after_handshake` permits outbound client connections (`conn.side().is_client()`) while checking incoming server connections against explicit allowlists.
+  - An empty allowlist denies all connections; revoking the last authorized peer leaves the allowlist empty, continuing to reject outsiders.
+  - Hardened `test_native_node_outsider_access_control_rejection` to strictly verify application-level rejection (`closed by peer: unauthorized (code 403)`) without timeout fallbacks.
+- [x] Added durable disk storage support via `NativeNodeOptions::storage_path` using `iroh_blobs::store::fs::FsStore::load` and verified blob persistence across node restart in `test_native_node_durable_disk_storage`.
+- [x] Fixed `BrowserNode` on native target to retain `Arc<tokio::sync::Mutex<Option<NativeNode>>>` instead of dropping the node immediately.
+- [x] Wired Twang gossip packet transmission and receipt:
+  - `broadcastRoom` sends the generated `GossipPacket` to topic neighbor endpoints.
+  - `handleWire` receives `gossip-message`, runs deduplication via `gossipEngine.handleMessage`, and triggers room updates and missing blob fetching on newer revisions.
+- [x] Refactored `GossipEngine` in `crates/meta-mesh/src/gossip.rs` to run real `iroh_gossip::proto::state::State<[u8; 32], StdRng>`, executing HyParView/PlumTree state transitions, `InEvent::Command`, `InEvent::RecvMessage`, and `OutEvent::EmitEvent` with PlumTree epidemic broadcast deduplication and wire frame serialization.
+- [x] Verification evidence:
+  - `cargo test`: 10/10 tests pass (4 unit tests + 6 native integration tests).
+  - `mesh`: 220 TypeScript tests pass; `tsc --noEmit` passes.
+  - `match`: 494 unit tests pass; Vite production build passes with `meta_mesh_bg-*.wasm`.
+  - `twang`: 238 unit tests pass; `svelte-check` & `tsc --noEmit` pass with 0 errors; Vite production build passes.

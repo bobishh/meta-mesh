@@ -1,12 +1,48 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::{Arc, RwLock},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, RwLock},
 };
-use iroh_gossip::proto::TopicId;
+use bytes::Bytes;
+use iroh_gossip::proto::{
+    state::{InEvent, OutEvent, State},
+    topic::{Command, Event},
+    Config, Message, PeerData, Scope, TopicId,
+};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-const SEEN_CAPACITY: usize = 2048;
+#[derive(Serialize, Deserialize)]
+struct WireGossip {
+    id: [u8; 32],
+    content: Bytes,
+    scope: WireDeliveryScope,
+}
+
+#[derive(Serialize, Deserialize)]
+enum WireDeliveryScope {
+    Swarm(u16),
+    Neighbors,
+}
+
+#[derive(Serialize, Deserialize)]
+enum WirePlumtreeMessage {
+    Gossip(WireGossip),
+    Prune,
+}
+
+#[derive(Serialize, Deserialize)]
+enum WireTopicMessage {
+    Swarm(()),
+    Gossip(WirePlumtreeMessage),
+}
+
+#[derive(Serialize, Deserialize)]
+struct WireMessage {
+    topic: TopicId,
+    message: WireTopicMessage,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GossipPacket {
@@ -16,26 +52,54 @@ pub struct GossipPacket {
     pub content: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
-pub struct GossipTopicState {
-    pub topic_id: TopicId,
-    pub topic_name: String,
-    pub neighbors: HashSet<String>,
+pub fn peer_id_from_str(s: &str) -> [u8; 32] {
+    if s.len() == 64 {
+        if let Ok(bytes) = hex::decode(s) {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            return arr;
+        }
+    }
+    *blake3::hash(s.as_bytes()).as_bytes()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GossipEngine {
-    local_peer_id: String,
-    topics: Arc<RwLock<HashMap<String, GossipTopicState>>>,
-    seen: Arc<RwLock<(HashSet<String>, VecDeque<String>)>>,
+    local_peer_str: String,
+    local_peer_id: [u8; 32],
+    state: Arc<Mutex<State<[u8; 32], StdRng>>>,
+    peer_names: Arc<RwLock<HashMap<[u8; 32], String>>>,
+    topic_names: Arc<RwLock<HashMap<TopicId, String>>>,
+    active_neighbors: Arc<RwLock<HashMap<String, HashSet<String>>>>,
 }
 
 impl GossipEngine {
+    pub fn local_peer_id(&self) -> [u8; 32] {
+        self.local_peer_id
+    }
     pub fn new(local_peer_id: &str) -> Self {
+        let local_id = peer_id_from_str(local_peer_id);
+        let mut seed_bytes = [0u8; 8];
+        seed_bytes.copy_from_slice(&local_id[0..8]);
+        let rng = StdRng::seed_from_u64(u64::from_le_bytes(seed_bytes));
+
+        let state = State::new(
+            local_id,
+            PeerData::default(),
+            Config::default(),
+            rng,
+        );
+
+        let mut peer_names = HashMap::new();
+        peer_names.insert(local_id, local_peer_id.to_string());
+
         Self {
-            local_peer_id: local_peer_id.to_string(),
-            topics: Arc::new(RwLock::new(HashMap::new())),
-            seen: Arc::new(RwLock::new((HashSet::new(), VecDeque::new()))),
+            local_peer_str: local_peer_id.to_string(),
+            local_peer_id: local_id,
+            state: Arc::new(Mutex::new(state)),
+            peer_names: Arc::new(RwLock::new(peer_names)),
+            topic_names: Arc::new(RwLock::new(HashMap::new())),
+            active_neighbors: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -48,107 +112,215 @@ impl GossipEngine {
         let topic_id = Self::topic_id_for_name(topic_name);
         let topic_hex = hex::encode(topic_id.as_bytes());
 
-        let mut topics = self.topics.write().map_err(|e| e.to_string())?;
-        let mut neighbors = HashSet::new();
+        let peer_ids: Vec<[u8; 32]> = {
+            let mut names = self.peer_names.write().map_err(|e| e.to_string())?;
+            bootstrap_peers
+                .iter()
+                .filter(|p| p.as_str() != self.local_peer_str.as_str())
+                .map(|p| {
+                    let pid = peer_id_from_str(p);
+                    names.insert(pid, p.clone());
+                    pid
+                })
+                .collect()
+        };
+
+        self.topic_names
+            .write()
+            .map_err(|e| e.to_string())?
+            .insert(topic_id, topic_name.to_string());
+
+        let now = n0_future::time::Instant::now();
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        let out_events: Vec<OutEvent<[u8; 32]>> = state
+            .handle(
+                InEvent::Command(topic_id, Command::Join(peer_ids)),
+                now,
+                None,
+            )
+            .collect();
+
+        // Track neighbors
+        let mut neighbors_set = HashSet::new();
         for peer in bootstrap_peers {
-            if peer != self.local_peer_id {
-                neighbors.insert(peer);
+            if peer != self.local_peer_str {
+                neighbors_set.insert(peer);
+            }
+        }
+        for event in out_events {
+            if let OutEvent::EmitEvent(t, Event::NeighborUp(p)) = event {
+                if t == topic_id {
+                    if let Ok(names) = self.peer_names.read() {
+                        if let Some(name) = names.get(&p) {
+                            neighbors_set.insert(name.clone());
+                        } else {
+                            neighbors_set.insert(hex::encode(p));
+                        }
+                    }
+                }
             }
         }
 
-        topics.insert(
-            topic_name.to_string(),
-            GossipTopicState {
-                topic_id,
-                topic_name: topic_name.to_string(),
-                neighbors,
-            },
-        );
+        self.active_neighbors
+            .write()
+            .map_err(|e| e.to_string())?
+            .insert(topic_name.to_string(), neighbors_set);
 
         Ok(topic_hex)
     }
 
     pub fn leave_topic(&mut self, topic_name: &str) -> Result<(), String> {
-        let mut topics = self.topics.write().map_err(|e| e.to_string())?;
-        topics.remove(topic_name);
+        let topic_id = Self::topic_id_for_name(topic_name);
+        let now = n0_future::time::Instant::now();
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+        let _ = state
+            .handle(InEvent::Command(topic_id, Command::Quit), now, None)
+            .collect::<Vec<_>>();
+
+        self.active_neighbors
+            .write()
+            .map_err(|e| e.to_string())?
+            .remove(topic_name);
+
+        self.topic_names
+            .write()
+            .map_err(|e| e.to_string())?
+            .remove(&topic_id);
+
         Ok(())
     }
 
     pub fn broadcast(&self, topic_name: &str, content: &[u8]) -> Result<Vec<u8>, String> {
-        let topics = self.topics.read().map_err(|e| e.to_string())?;
-        if !topics.contains_key(topic_name) {
+        let topic_id = Self::topic_id_for_name(topic_name);
+        let now = n0_future::time::Instant::now();
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+
+        if state.state(&topic_id).is_none() {
             return Err(format!("Not joined to topic '{}'", topic_name));
         }
 
-        // Derive deterministic message ID
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(topic_name.as_bytes());
-        hasher.update(self.local_peer_id.as_bytes());
-        hasher.update(content);
-        let message_id = hasher.finalize().to_hex().to_string();
+        let out_events: Vec<OutEvent<[u8; 32]>> = state
+            .handle(
+                InEvent::Command(
+                    topic_id,
+                    Command::Broadcast(Bytes::copy_from_slice(content), Scope::Swarm),
+                ),
+                now,
+                None,
+            )
+            .collect();
 
-        self.mark_seen(&message_id)?;
-
-        let packet = GossipPacket {
-            topic: topic_name.to_string(),
-            sender: self.local_peer_id.clone(),
-            message_id,
-            content: content.to_vec(),
-        };
-
-        serde_json::to_vec(&packet).map_err(|e| e.to_string())
-    }
-
-    pub fn handle_message(&self, _sender: &str, raw_packet: &[u8]) -> Result<Option<Vec<u8>>, String> {
-        let packet: GossipPacket = match serde_json::from_slice(raw_packet) {
-            Ok(p) => p,
-            Err(_) => return Ok(None),
-        };
-
-        if self.is_seen(&packet.message_id)? {
-            return Ok(None); // Suppress duplicate message
-        }
-
-        self.mark_seen(&packet.message_id)?;
-
-        // Record neighbor if topic is joined
-        {
-            let mut topics = self.topics.write().map_err(|e| e.to_string())?;
-            if let Some(state) = topics.get_mut(&packet.topic) {
-                if packet.sender != self.local_peer_id {
-                    state.neighbors.insert(packet.sender.clone());
-                }
+        // If eager push emitted a SendMessage, serialize it
+        for event in out_events {
+            if let OutEvent::SendMessage(_peer, msg) = event {
+                return postcard::to_stdvec(&msg).map_err(|e| e.to_string());
             }
         }
 
-        Ok(Some(packet.content))
+        // Standard wire message format matching iroh-gossip proto
+        let msg_id = *blake3::hash(content).as_bytes();
+        let wire_msg = WireMessage {
+            topic: topic_id,
+            message: WireTopicMessage::Gossip(WirePlumtreeMessage::Gossip(WireGossip {
+                id: msg_id,
+                content: Bytes::copy_from_slice(content),
+                scope: WireDeliveryScope::Swarm(0),
+            })),
+        };
+        postcard::to_stdvec(&wire_msg).map_err(|e| e.to_string())
+    }
+
+    pub fn handle_message(&self, sender: &str, raw_packet: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        let sender_id = peer_id_from_str(sender);
+        {
+            if let Ok(mut names) = self.peer_names.write() {
+                names.insert(sender_id, sender.to_string());
+            }
+        }
+
+        let iroh_msg: Message<[u8; 32]> = match postcard::from_bytes(raw_packet) {
+            Ok(msg) => msg,
+            Err(_) => {
+                // Backward-compatibility: JSON GossipPacket
+                if let Ok(packet) = serde_json::from_slice::<GossipPacket>(raw_packet) {
+                    let topic_id = Self::topic_id_for_name(&packet.topic);
+                    let msg_id = *blake3::hash(&packet.content).as_bytes();
+                    let wire_msg = WireMessage {
+                        topic: topic_id,
+                        message: WireTopicMessage::Gossip(WirePlumtreeMessage::Gossip(WireGossip {
+                            id: msg_id,
+                            content: Bytes::copy_from_slice(&packet.content),
+                            scope: WireDeliveryScope::Swarm(0),
+                        })),
+                    };
+                    let encoded = postcard::to_stdvec(&wire_msg).map_err(|e| e.to_string())?;
+                    match postcard::from_bytes(&encoded) {
+                        Ok(m) => m,
+                        Err(_) => return Ok(None),
+                    }
+                } else {
+                    return Ok(None);
+                }
+            }
+        };
+
+        let now = n0_future::time::Instant::now();
+        let mut state = self.state.lock().map_err(|e| e.to_string())?;
+
+        let out_events: Vec<OutEvent<[u8; 32]>> = state
+            .handle(InEvent::RecvMessage(sender_id, iroh_msg), now, None)
+            .collect();
+
+        let mut delivered_content = None;
+        for event in out_events {
+            match event {
+                OutEvent::EmitEvent(topic_id, Event::Received(gossip_ev)) => {
+                    delivered_content = Some(gossip_ev.content.to_vec());
+                    if let Ok(topic_names) = self.topic_names.read() {
+                        if let Some(topic_name) = topic_names.get(&topic_id) {
+                            if let Ok(mut active) = self.active_neighbors.write() {
+                                if let Some(set) = active.get_mut(topic_name) {
+                                    if sender != self.local_peer_str {
+                                        set.insert(sender.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                OutEvent::EmitEvent(topic_id, Event::NeighborUp(peer)) => {
+                    if let Ok(topic_names) = self.topic_names.read() {
+                        if let Some(topic_name) = topic_names.get(&topic_id) {
+                            if let Ok(mut active) = self.active_neighbors.write() {
+                                if let Some(set) = active.get_mut(topic_name) {
+                                    let peer_str = self
+                                        .peer_names
+                                        .read()
+                                        .ok()
+                                        .and_then(|names| names.get(&peer).cloned())
+                                        .unwrap_or_else(|| hex::encode(peer));
+                                    if peer_str != self.local_peer_str {
+                                        set.insert(peer_str);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(delivered_content)
     }
 
     pub fn active_neighbors(&self, topic_name: &str) -> Vec<String> {
-        if let Ok(topics) = self.topics.read() {
-            if let Some(state) = topics.get(topic_name) {
-                return state.neighbors.iter().cloned().collect();
+        if let Ok(active) = self.active_neighbors.read() {
+            if let Some(set) = active.get(topic_name) {
+                return set.iter().cloned().collect();
             }
         }
         Vec::new()
-    }
-
-    fn is_seen(&self, message_id: &str) -> Result<bool, String> {
-        let seen = self.seen.read().map_err(|e| e.to_string())?;
-        Ok(seen.0.contains(message_id))
-    }
-
-    fn mark_seen(&self, message_id: &str) -> Result<(), String> {
-        let mut seen = self.seen.write().map_err(|e| e.to_string())?;
-        if seen.0.insert(message_id.to_string()) {
-            seen.1.push_back(message_id.to_string());
-            if seen.1.len() > SEEN_CAPACITY {
-                if let Some(oldest) = seen.1.pop_front() {
-                    seen.0.remove(&oldest);
-                }
-            }
-        }
-        Ok(())
     }
 }
 

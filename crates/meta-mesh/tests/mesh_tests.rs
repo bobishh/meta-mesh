@@ -25,6 +25,95 @@ fn test_gossip_topic_and_broadcast() {
 }
 
 #[test]
+fn test_iroh_gossip_state_machine_direct() {
+    use bytes::Bytes;
+    use iroh_gossip::proto::{
+        state::{InEvent, OutEvent, State},
+        topic::{Command, Event},
+        Config, PeerData, TopicId, Message,
+    };
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize)]
+    struct WireGossip {
+        id: [u8; 32],
+        content: Bytes,
+        scope: WireDeliveryScope,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    enum WireDeliveryScope {
+        Swarm(u16),
+        Neighbors,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    enum WirePlumtreeMessage {
+        Gossip(WireGossip),
+        Prune,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    enum WireTopicMessage {
+        Swarm(()),
+        Gossip(WirePlumtreeMessage),
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct WireMessage {
+        topic: TopicId,
+        message: WireTopicMessage,
+    }
+
+    let peer_a: [u8; 32] = [1u8; 32];
+    let peer_b: [u8; 32] = [2u8; 32];
+    let topic_id = TopicId::from_bytes([42u8; 32]);
+
+    let mut state_b = State::new(peer_b, PeerData::default(), Config::default(), StdRng::seed_from_u64(2));
+    let now = n0_future::time::Instant::now();
+
+    // Peer B joins topic
+    let _ = state_b.handle(InEvent::Command(topic_id, Command::Join(vec![])), now, None).collect::<Vec<_>>();
+
+    // Create a broadcast wire message from Peer A
+    let payload = b"hello from real iroh gossip";
+    let msg_id = *blake3::hash(payload).as_bytes();
+    let wire_msg = WireMessage {
+        topic: topic_id,
+        message: WireTopicMessage::Gossip(WirePlumtreeMessage::Gossip(WireGossip {
+            id: msg_id,
+            content: Bytes::copy_from_slice(payload),
+            scope: WireDeliveryScope::Swarm(0),
+        })),
+    };
+
+    let encoded = postcard::to_stdvec(&wire_msg).expect("serialize wire msg");
+
+    // Deserialize as real iroh_gossip::proto::Message
+    let iroh_msg: Message<[u8; 32]> = postcard::from_bytes(&encoded).expect("deserialize as real iroh_gossip message");
+
+    // Peer B handles the received message in State!
+    let out_events: Vec<OutEvent<[u8; 32]>> = state_b.handle(InEvent::RecvMessage(peer_a, iroh_msg.clone()), now, None).collect();
+
+    let mut received_content = None;
+    for event in out_events {
+        if let OutEvent::EmitEvent(t, Event::Received(gossip_ev)) = event {
+            assert_eq!(t, topic_id);
+            received_content = Some(gossip_ev.content);
+        }
+    }
+
+    assert_eq!(received_content.as_deref(), Some(&payload[..]));
+
+    // Sending duplicate to Peer B state machine suppresses it!
+    let out_dup: Vec<OutEvent<[u8; 32]>> = state_b.handle(InEvent::RecvMessage(peer_a, iroh_msg), now, None).collect();
+    let received_dup = out_dup.iter().any(|e| matches!(e, OutEvent::EmitEvent(_, Event::Received(_))));
+    assert!(!received_dup, "Real iroh-gossip state machine must suppress duplicate message!");
+}
+
+#[test]
 fn test_blob_engine_storage_and_verification() {
     let engine = BlobEngine::new();
     let data = b"Hello from iroh-blobs test data for p2p sync";

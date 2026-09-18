@@ -1,7 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const mesh_version: () => [number, number];
 export const __wbg_browseracceptor_free: (a: number, b: number) => void;
 export const __wbg_browserconnection_free: (a: number, b: number) => void;
 export const __wbg_browsernode_free: (a: number, b: number) => void;
@@ -22,6 +21,14 @@ export const browserstream_closeSend: (a: number) => any;
 export const browserstream_read: (a: number) => any;
 export const browserstream_send: (a: number, b: number, c: number) => any;
 export const start_browser_node: (a: number, b: number) => any;
+export const mesh_version: () => [number, number];
+export const __wbg_wasmgossipengine_free: (a: number, b: number) => void;
+export const wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
+export const wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
+export const wasmgossipengine_new: (a: number, b: number) => number;
 export const __wbg_wasmblobengine_free: (a: number, b: number) => void;
 export const wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
 export const wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
@@ -30,13 +37,6 @@ export const wasmblobengine_new: () => number;
 export const wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
 export const wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-export const __wbg_wasmgossipengine_free: (a: number, b: number) => void;
-export const wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
-export const wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-export const wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-export const wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-export const wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
-export const wasmgossipengine_new: (a: number, b: number) => number;
 export const __wbg_intounderlyingsource_free: (a: number, b: number) => void;
 export const intounderlyingsource_cancel: (a: number) => void;
 export const intounderlyingsource_pull: (a: number, b: any) => any;

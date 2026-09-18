@@ -9,6 +9,9 @@ pub use node::{start_browser_node, BrowserNode};
 #[cfg(target_family = "wasm")]
 pub use node::{BrowserAcceptor, BrowserConnection, BrowserStream};
 
+#[cfg(not(target_family = "wasm"))]
+pub use node::{GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions};
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

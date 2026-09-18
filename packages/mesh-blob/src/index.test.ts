@@ -8,6 +8,7 @@ import {
   createBlobRequest,
   createBlobResponse,
   createIrohBlobDescriptor,
+  verifyBlobBytes,
   verifyBlobRequest,
   verifyBlobResponse,
   type BlobEngineInterface,
@@ -87,5 +88,39 @@ describe("mesh blob transfer", () => {
     const blake3BlobId = "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     const request = await createBlobRequest(alice, "room-1", blake3BlobId, 0, 8)
     await expect(verifyBlobRequest(request, alice.identity, [alice.certificate], "room-1")).resolves.toEqual(request)
+  })
+})
+
+
+describe("Blake3 content addressing", () => {
+  const bytes = new TextEncoder().encode("abc")
+  const hash = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+  const descriptor = {
+    kind: "blob" as const, version: 1 as const, blobId: `blake3:${hash}`,
+    name: "abc.txt", mediaType: "text/plain", size: 3,
+  }
+
+  it("verifies persisted bytes without a running WASM node", async () => {
+    const storage = new MemoryMeshStore()
+    const store = new MeshBlobStore(storage)
+    await store.put(descriptor, bytes)
+    await expect(store.getVerified(descriptor)).resolves.toEqual(bytes)
+    await store.putUnsafe(descriptor.blobId, new TextEncoder().encode("xyz"))
+    await expect(store.getVerified(descriptor)).rejects.toThrow("Blob content does not match descriptor")
+  })
+
+  it("rejects corrupt bytes before persistence", async () => {
+    const storage = new MemoryMeshStore()
+    const store = new MeshBlobStore(storage)
+    await expect(store.put(descriptor, new TextEncoder().encode("xyz")))
+      .rejects.toThrow("Blob content does not match descriptor")
+    expect(await storage.get("blobs", descriptor.blobId)).toBeUndefined()
+  })
+
+  it("does not let a redundant hash override the content address", async () => {
+    const other = { ...descriptor, hash: "0".repeat(64) }
+    const engine = { verifyBlob: vi.fn(() => true) } as unknown as BlobEngineInterface
+    await expect(verifyBlobBytes(other, bytes, engine)).rejects.toThrow("Invalid blob descriptor")
+    expect(engine.verifyBlob).not.toHaveBeenCalled()
   })
 })

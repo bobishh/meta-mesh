@@ -106,7 +106,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly mesh_version: () => [number, number];
     readonly __wbg_browseracceptor_free: (a: number, b: number) => void;
     readonly __wbg_browserconnection_free: (a: number, b: number) => void;
     readonly __wbg_browsernode_free: (a: number, b: number) => void;
@@ -127,6 +126,14 @@ export interface InitOutput {
     readonly browserstream_read: (a: number) => any;
     readonly browserstream_send: (a: number, b: number, c: number) => any;
     readonly start_browser_node: (a: number, b: number) => any;
+    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
+    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_new: (a: number, b: number) => number;
     readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
     readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
@@ -135,13 +142,6 @@ export interface InitOutput {
     readonly wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
     readonly wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
-    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_new: (a: number, b: number) => number;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;

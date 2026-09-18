@@ -1,3 +1,5 @@
+import { blake3 } from "@noble/hashes/blake3.js"
+import { bytesToHex } from "@noble/hashes/utils.js"
 import type { MeshStore } from "../../mesh-browser-store/src/index"
 import {
   fromBase64Url,
@@ -79,6 +81,7 @@ export function isValidBlobId(blobId: string): boolean {
 export function validateBlobDescriptor(value: BlobDescriptor): BlobDescriptor {
   if (value?.kind !== "blob" || value.version !== 1 ||
     !isValidBlobId(value?.blobId) ||
+    (value.hash !== undefined && (!value.blobId.startsWith("blake3:") || value.hash !== value.blobId.slice(7))) ||
     normalizeName(value.name) !== value.name || normalizeMediaType(value.mediaType) !== value.mediaType ||
     !Number.isSafeInteger(value.size) || value.size < 1 || value.size > MAX_BLOB_BYTES) {
     throw new Error(`Invalid blob descriptor; files must be 1 byte–${MAX_BLOB_BYTES / 1024 / 1024} MiB`)
@@ -121,12 +124,9 @@ export async function verifyBlobBytes(descriptor: BlobDescriptor, bytes: Uint8Ar
     throw new Error("Blob content does not match descriptor")
   }
   if (descriptor.blobId.startsWith("blake3:")) {
-    const hash = descriptor.hash ?? descriptor.blobId.replace("blake3:", "")
-    if (engine) {
-      if (!engine.verifyBlob(hash, bytes)) {
-        throw new Error("Blob content does not match descriptor")
-      }
-    }
+    const hash = descriptor.blobId.slice(7)
+    const valid = engine ? engine.verifyBlob(hash, bytes) : bytesToHex(blake3(bytes)) === hash.toLowerCase()
+    if (!valid) throw new Error("Blob content does not match descriptor")
   } else {
     if (await blobIdFor(bytes) !== descriptor.blobId) {
       throw new Error("Blob content does not match descriptor")
