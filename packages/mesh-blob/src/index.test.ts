@@ -82,4 +82,10 @@ describe("mesh blob transfer", () => {
     expect(loaded).toEqual(bytes)
     expect(await store.has(descriptor)).toBe(true)
   })
+
+  it("Given a blake3 blobId, when blob request is created and verified, then it succeeds", async () => {
+    const blake3BlobId = "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    const request = await createBlobRequest(alice, "room-1", blake3BlobId, 0, 8)
+    await expect(verifyBlobRequest(request, alice.identity, [alice.certificate], "room-1")).resolves.toEqual(request)
+  })
 })

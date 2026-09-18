@@ -72,11 +72,13 @@ function normalizeMediaType(value: string): string {
   return mediaType.slice(0, 120)
 }
 
+export function isValidBlobId(blobId: string): boolean {
+  return typeof blobId === "string" && (/^sha256:[A-Za-z0-9_-]{43}$/.test(blobId) || /^blake3:[0-9a-fA-F]{64}$/.test(blobId))
+}
+
 export function validateBlobDescriptor(value: BlobDescriptor): BlobDescriptor {
-  const isSha256 = /^sha256:[A-Za-z0-9_-]{43}$/.test(value?.blobId)
-  const isBlake3 = /^blake3:[0-9a-fA-F]{64}$/.test(value?.blobId)
   if (value?.kind !== "blob" || value.version !== 1 ||
-    (!isSha256 && !isBlake3) ||
+    !isValidBlobId(value?.blobId) ||
     normalizeName(value.name) !== value.name || normalizeMediaType(value.mediaType) !== value.mediaType ||
     !Number.isSafeInteger(value.size) || value.size < 1 || value.size > MAX_BLOB_BYTES) {
     throw new Error(`Invalid blob descriptor; files must be 1 byte–${MAX_BLOB_BYTES / 1024 / 1024} MiB`)
@@ -141,7 +143,7 @@ export async function createBlobRequest(
   length = BLOB_CHUNK_BYTES,
   now = Date.now(),
 ): Promise<BlobRequest> {
-  if (!conversationId || !/^sha256:[A-Za-z0-9_-]{43}$/.test(blobId) ||
+  if (!conversationId || !isValidBlobId(blobId) ||
     !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 1 || length > BLOB_CHUNK_BYTES) {
     throw new Error("Invalid blob request")
   }
@@ -163,7 +165,7 @@ export async function verifyBlobRequest(
   if (!payload || payload.kind !== "blob-request" || payload.version !== 1 ||
     payload.conversationId !== conversationId || payload.requesterPersonId !== identity.personId ||
     payload.requesterDeviceId !== request.signerKeyId || !payload.requestId ||
-    !/^sha256:[A-Za-z0-9_-]{43}$/.test(payload.blobId) ||
+    !isValidBlobId(payload.blobId) ||
     !Number.isSafeInteger(payload.offset) || payload.offset < 0 ||
     !Number.isSafeInteger(payload.length) || payload.length < 1 || payload.length > BLOB_CHUNK_BYTES) {
     throw new Error("Invalid blob request")
