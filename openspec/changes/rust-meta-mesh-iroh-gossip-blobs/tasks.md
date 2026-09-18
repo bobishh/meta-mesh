@@ -24,7 +24,7 @@
 
 ## 5. Match & Twang Consumer Integration & Verification
 
-- [ ] 5.1 Update `match` to consume the new WASM artifacts and integrate `iroh-gossip` and `iroh-blobs`.
-- [ ] 5.2 Update `twang` engine to broadcast via `iroh-gossip` and store/stream attachments via `iroh-blobs`.
-- [ ] 5.3 Run full test suites in `match` and `twang` (`npm test`, typecheck, build) to verify dual-loop TDD completion.
-- [ ] 5.4 Run strict OpenSpec validation across all changes.
+- [x] 5.1 Update `match` to consume the new WASM artifacts and integrate `iroh-gossip` and `iroh-blobs`.
+- [x] 5.2 Update `twang` engine to broadcast via `iroh-gossip` and store/stream attachments via `iroh-blobs`.
+- [x] 5.3 Run full test suites in `match` and `twang` (`npm test`, typecheck, build) to verify dual-loop TDD completion.
+- [x] 5.4 Run strict OpenSpec validation across all changes.
