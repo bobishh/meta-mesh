@@ -174,4 +174,31 @@ describe("mesh transport wire", () => {
     ])
     expect(sink.warn).toHaveBeenCalledOnce()
   })
+
+  it("Given an IrohMeshNode started with module, when gossip or blob engines are requested, then WASM engines are instantiated", () => {
+    class MockGossip {
+      constructor(public peerId: string) {}
+    }
+    class MockBlob {}
+    const mockModule = {
+      default: vi.fn(),
+      BrowserNode: { start: vi.fn() },
+      WasmGossipEngine: MockGossip,
+      WasmBlobEngine: MockBlob,
+    }
+    const node = {
+      endpointId: "peer-abc-123",
+      dialRelay: vi.fn(),
+      accept: vi.fn(),
+      close: vi.fn(),
+    } satisfies IrohNode
+
+    const meshNode = new IrohMeshNode(node, 1000, mockModule)
+    const gossipEngine = meshNode.createGossipEngine()
+    expect(gossipEngine).toBeInstanceOf(MockGossip)
+    expect(gossipEngine.peerId).toBe("peer-abc-123")
+
+    const blobEngine = meshNode.createBlobEngine()
+    expect(blobEngine).toBeInstanceOf(MockBlob)
+  })
 })

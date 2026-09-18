@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryMeshStore } from "../../mesh-browser-store/src/index"
 import { BrowserIdentityStore } from "../../mesh-identity/src/index"
 import {
@@ -7,8 +7,10 @@ import {
   createBlobDescriptor,
   createBlobRequest,
   createBlobResponse,
+  createIrohBlobDescriptor,
   verifyBlobRequest,
   verifyBlobResponse,
+  type BlobEngineInterface,
 } from "./index"
 
 describe("mesh blob transfer", () => {
@@ -41,5 +43,43 @@ describe("mesh blob transfer", () => {
     await store.putUnsafe(descriptor.blobId, new TextEncoder().encode("wrong"))
 
     await expect(store.getVerified(descriptor)).rejects.toThrow("Blob content does not match descriptor")
+  })
+
+  it("Given iroh-blobs engine and file bytes, when described and stored, then Automerge descriptor retains Blake3 metadata and ticket", async () => {
+    const mockBlobEngine: BlobEngineInterface = {
+      createBlob: vi.fn((data: Uint8Array, name: string, mediaType: string, nodeEndpoint?: string | null) => {
+        const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        return {
+          kind: "blob" as const,
+          version: 1 as const,
+          blobId: `blake3:${hash}`,
+          hash,
+          ticket: `blob:${hash}@${nodeEndpoint || "local"}`,
+          name,
+          mediaType,
+          size: data.byteLength,
+        }
+      }),
+      putBlob: vi.fn(),
+      getBlob: vi.fn((hash: string) => hash.includes("0123") ? new TextEncoder().encode("iroh blob payload") : undefined),
+      hasBlob: vi.fn((hash: string) => hash.includes("0123")),
+      verifyBlob: vi.fn((hash: string, data: Uint8Array) => hash.includes("0123") && data.byteLength === 17),
+    }
+
+    const bytes = new TextEncoder().encode("iroh blob payload")
+    const descriptor = await createIrohBlobDescriptor(mockBlobEngine, bytes, "image.png", "image/png", "endpoint-1")
+
+    expect(descriptor.blobId).toMatch(/^blake3:[0-9a-f]{64}$/)
+    expect(descriptor.hash).toBe("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    expect(descriptor.ticket).toContain("endpoint-1")
+    expect(descriptor.size).toBe(bytes.byteLength)
+
+    const store = new MeshBlobStore(new MemoryMeshStore(), "blobs", mockBlobEngine)
+    await store.put(descriptor, bytes)
+    expect(mockBlobEngine.putBlob).toHaveBeenCalledWith(descriptor.hash, bytes)
+
+    const loaded = await store.getVerified(descriptor)
+    expect(loaded).toEqual(bytes)
+    expect(await store.has(descriptor)).toBe(true)
   })
 })

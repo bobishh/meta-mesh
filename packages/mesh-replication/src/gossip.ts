@@ -217,3 +217,40 @@ export class SparseGossip {
     if (byteLength > this.bounds.maximumFrameBytes) throw new Error("Gossip frame exceeds byte limit")
   }
 }
+
+export interface GossipEngineInterface {
+  joinTopic(topicName: string, bootstrapPeers: string[]): string
+  leaveTopic(topicName: string): void
+  broadcast(topicName: string, content: Uint8Array): Uint8Array
+  handleMessage(sender: string, rawPacket: Uint8Array): Uint8Array | undefined
+  activeNeighbors(topicName: string): string[]
+}
+
+export class IrohGossipTopic {
+  readonly topicId: string
+
+  constructor(
+    readonly topicName: string,
+    private readonly engine: GossipEngineInterface,
+    bootstrapPeers: string[] = [],
+  ) {
+    this.topicId = this.engine.joinTopic(topicName, bootstrapPeers)
+  }
+
+  broadcast(message: Uint8Array): Uint8Array {
+    return this.engine.broadcast(this.topicName, message)
+  }
+
+  receive(sender: string, rawPacket: Uint8Array): Uint8Array | undefined {
+    return this.engine.handleMessage(sender, rawPacket)
+  }
+
+  activeNeighbors(): string[] {
+    return this.engine.activeNeighbors(this.topicName)
+  }
+
+  leave(): void {
+    this.engine.leaveTopic(this.topicName)
+  }
+}
+

@@ -17,9 +17,11 @@ export type IrohNode = {
   close(reason?: string): Promise<void>
 }
 
-type IrohModule = {
+export type IrohModule = {
   default(input?: { module_or_path: string }): Promise<void>
   BrowserNode: { start(seed?: Uint8Array): Promise<IrohNode> }
+  WasmGossipEngine?: { new(localPeerId: string): any }
+  WasmBlobEngine?: { new(): any }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
@@ -220,9 +222,10 @@ export class IrohMeshNode {
   constructor(
     private readonly node: IrohNode,
     private readonly closeTimeoutMs = 1_500,
+    readonly module?: IrohModule,
   ) {}
 
-  static async start(moduleUrl: string, seed?: Uint8Array): Promise<IrohMeshNode> {
+  static async loadModule(moduleUrl: string): Promise<IrohModule> {
     const sourceUrl = new URL(moduleUrl, window.location.href)
     if (sourceUrl.origin !== window.location.origin) throw new Error("Iroh module must be same-origin")
     const response = await fetch(sourceUrl)
@@ -231,8 +234,28 @@ export class IrohMeshNode {
     let module: IrohModule
     try { module = await import(/* @vite-ignore */ blobUrl) as IrohModule }
     finally { URL.revokeObjectURL(blobUrl) }
-    await module.default({ module_or_path: new URL("match_iroh_bg.wasm", sourceUrl).href })
-    return new IrohMeshNode(await module.BrowserNode.start(seed))
+    const wasmName = sourceUrl.pathname.includes("meta_mesh") ? "meta_mesh_bg.wasm" : "match_iroh_bg.wasm"
+    await module.default({ module_or_path: new URL(wasmName, sourceUrl).href })
+    return module
+  }
+
+  static async start(moduleUrl: string, seed?: Uint8Array): Promise<IrohMeshNode> {
+    const module = await IrohMeshNode.loadModule(moduleUrl)
+    return new IrohMeshNode(await module.BrowserNode.start(seed), undefined, module)
+  }
+
+  createGossipEngine(): any {
+    if (this.module?.WasmGossipEngine) {
+      return new this.module.WasmGossipEngine(this.endpointId)
+    }
+    return undefined
+  }
+
+  createBlobEngine(): any {
+    if (this.module?.WasmBlobEngine) {
+      return new this.module.WasmBlobEngine()
+    }
+    return undefined
   }
 
   get endpointId(): string { return this.node.endpointId }

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { DEFAULT_GOSSIP_BOUNDS, SparseGossip, selectScopedNeighbors, type GossipDispatch, type GossipFrame } from "./gossip"
+import { describe, expect, it, vi } from "vitest"
+import { DEFAULT_GOSSIP_BOUNDS, SparseGossip, selectScopedNeighbors, IrohGossipTopic, type GossipDispatch, type GossipFrame } from "./gossip"
 
 describe("sparse scoped gossip", () => {
   it("Given a device has several instance routes, when neighbors are selected, then it occupies one bounded replica slot", () => {
@@ -132,6 +132,39 @@ describe("sparse scoped gossip", () => {
       changes: [{ hash: "hash-1", bytes: "not-bytes" as unknown as Uint8Array }],
     })).rejects.toThrow("change bytes")
     expect(stored.size).toBe(0)
+  })
+
+  it("Given iroh-gossip topic overlay, when messages are broadcast, then peers receive content and duplicates are suppressed", () => {
+    const seen = new Set<string>()
+    const mockEngine = {
+      joinTopic: vi.fn((topic: string) => `topic-hash-${topic}`),
+      leaveTopic: vi.fn(),
+      broadcast: vi.fn((_topic: string, content: Uint8Array) => content),
+      handleMessage: vi.fn((_sender: string, raw: Uint8Array) => {
+        const key = new TextDecoder().decode(raw)
+        if (seen.has(key)) return undefined
+        seen.add(key)
+        return raw
+      }),
+      activeNeighbors: vi.fn(() => ["peer-2", "peer-3"]),
+    }
+
+    const topic = new IrohGossipTopic("workspace-updates", mockEngine, ["peer-2"])
+    expect(topic.topicId).toBe("topic-hash-workspace-updates")
+    expect(topic.activeNeighbors()).toEqual(["peer-2", "peer-3"])
+
+    const msg = new TextEncoder().encode("change-notification")
+    const packet = topic.broadcast(msg)
+    expect(packet).toEqual(msg)
+
+    const first = topic.receive("peer-2", packet)
+    expect(first).toEqual(msg)
+
+    const duplicate = topic.receive("peer-3", packet)
+    expect(duplicate).toBeUndefined()
+
+    topic.leave()
+    expect(mockEngine.leaveTopic).toHaveBeenCalledWith("workspace-updates")
   })
 })
 
