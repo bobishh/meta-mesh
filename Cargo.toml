@@ -3,5 +3,9 @@ members = [
   "crates/meta-mesh-core",
   "crates/meta-mesh",
 ]
-exclude = ["crates/meta-mesh-native", "crates/meta-mesh-mobile"]
+exclude = [
+  "crates/meta-mesh-native",
+  "crates/meta-mesh-mobile",
+  "tools/uniffi-bindgen",
+]
 resolver = "3"

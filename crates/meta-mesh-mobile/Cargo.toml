@@ -7,9 +7,6 @@ publish = false
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
 
-[features]
-bindgen = ["uniffi/cli"]
-
 [dependencies]
 iroh = "1.2.0"
 iroh-blobs = "0.103.0"
@@ -23,8 +20,3 @@ uniffi = { version = "0.32.1", default-features = false }
 
 [dev-dependencies]
 automerge = "0.12"
-
-[[bin]]
-name = "uniffi-bindgen"
-path = "src/bin/uniffi-bindgen.rs"
-required-features = ["bindgen"]
