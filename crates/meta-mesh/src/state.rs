@@ -38,7 +38,7 @@ impl WasmStateCore {
 
     #[wasm_bindgen(js_name = hasConflictingOwnershipTransfers)]
     pub fn has_conflicting_ownership_transfers(records: JsValue) -> Result<bool, JsValue> {
-        let records: Vec<WorkspaceOwnershipTransfer> = from_value(records)?;
+        let records: Vec<serde_json::Value> = from_value(records)?;
         Ok(meta_mesh_core::has_conflicting_ownership_transfers(
             &records,
         ))

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
@@ -124,17 +125,36 @@ pub struct WorkspaceSuccessionClaimPayload {
 
 pub type WorkspaceSuccessionClaim = SignedEnvelope<WorkspaceSuccessionClaimPayload>;
 
-pub fn has_conflicting_ownership_transfers(records: &[WorkspaceOwnershipTransfer]) -> bool {
+pub fn has_conflicting_ownership_transfers(records: &[Value]) -> bool {
     let mut successors: HashMap<(u64, &str), HashSet<&str>> = HashMap::new();
     for record in records {
-        let payload = &record.payload;
-        if payload.from_owner_person_id.is_empty() || payload.to_owner_person_id.is_empty() {
+        let Some(payload) = record.get("payload") else {
+            continue;
+        };
+        let Some(epoch) = payload.get("epoch").and_then(Value::as_u64) else {
+            continue;
+        };
+        let Some(from_owner) = payload
+            .get("fromOwnerPersonId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let Some(to_owner) = payload
+            .get("toOwnerPersonId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if epoch > 9_007_199_254_740_991 {
             continue;
         }
         successors
-            .entry((payload.epoch, &payload.from_owner_person_id))
+            .entry((epoch, from_owner))
             .or_default()
-            .insert(&payload.to_owner_person_id);
+            .insert(to_owner);
     }
     successors.values().any(|values| values.len() > 1)
 }

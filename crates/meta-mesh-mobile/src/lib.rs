@@ -381,7 +381,7 @@ pub fn mesh_verify_workspace_grant_json(
 pub fn mesh_has_conflicting_ownership_transfers_json(
     records_json: String,
 ) -> Result<bool, MobileMeshError> {
-    let records: Vec<WorkspaceOwnershipTransfer> = from_json(&records_json)?;
+    let records: Vec<Value> = from_json(&records_json)?;
     Ok(has_conflicting_ownership_transfers(&records))
 }
 
