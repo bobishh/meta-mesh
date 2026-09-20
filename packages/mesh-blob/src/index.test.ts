@@ -84,6 +84,31 @@ describe("mesh blob transfer", () => {
     expect(await store.has(descriptor)).toBe(true)
   })
 
+  it("Given an asynchronous native blob engine, when bytes are described and loaded, then every operation is awaited", async () => {
+    const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    const bytes = new TextEncoder().encode("native blob")
+    const engine: BlobEngineInterface = {
+      createBlob: vi.fn(async (_data, name, mediaType) => ({
+        kind: "blob" as const, version: 1 as const, blobId: `blake3:${hash}`, hash,
+        ticket: "blob-ticket", name, mediaType, size: bytes.byteLength,
+      })),
+      putBlob: vi.fn(async () => undefined),
+      getBlob: vi.fn(async () => bytes),
+      hasBlob: vi.fn(async () => true),
+      verifyBlob: vi.fn(async () => true),
+      fetchBlob: vi.fn(async () => bytes),
+    }
+
+    const descriptor = await createIrohBlobDescriptor(engine, bytes, "native.jpg", "image/jpeg")
+    const store = new MeshBlobStore(new MemoryMeshStore(), "blobs", engine)
+    await store.put(descriptor, bytes)
+
+    await expect(store.getVerified(descriptor)).resolves.toEqual(bytes)
+    await expect(store.has(descriptor)).resolves.toBe(true)
+    expect(engine.createBlob).toHaveBeenCalledOnce()
+    expect(engine.putBlob).toHaveBeenCalledOnce()
+  })
+
   it("Given a blake3 blobId, when blob request is created and verified, then it succeeds", async () => {
     const blake3BlobId = "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     const request = await createBlobRequest(alice, "room-1", blake3BlobId, 0, 8)

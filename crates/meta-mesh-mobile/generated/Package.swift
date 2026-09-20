@@ -20,7 +20,8 @@ let package = Package(
                 "meta_mesh_mobileFFI.h",
                 "meta_mesh_mobileFFI.modulemap",
             ],
-            sources: ["meta_mesh_mobile.swift"]
+            sources: ["meta_mesh_mobile.swift"],
+            linkerSettings: [.linkedFramework("SystemConfiguration")]
         ),
     ]
 )

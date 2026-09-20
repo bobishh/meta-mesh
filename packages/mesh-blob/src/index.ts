@@ -18,6 +18,8 @@ export const MAX_BLOB_BYTES = 8 * 1024 * 1024
 export const BLOB_CHUNK_BYTES = 256 * 1024
 export const MAX_ATTACHMENTS = 4
 
+type MaybePromise<T> = T | Promise<T>
+
 export type BlobDescriptor = {
   kind: "blob"
   version: 1
@@ -30,11 +32,12 @@ export type BlobDescriptor = {
 }
 
 export interface BlobEngineInterface {
-  createBlob(data: Uint8Array, name: string, mediaType: string, nodeEndpoint?: string | null): BlobDescriptor
-  putBlob(hash: string, data: Uint8Array): void
-  getBlob(hash: string): Uint8Array | undefined
-  hasBlob(hash: string): boolean
-  verifyBlob(hash: string, data: Uint8Array): boolean
+  createBlob(data: Uint8Array, name: string, mediaType: string, nodeEndpoint?: string | null): MaybePromise<BlobDescriptor>
+  putBlob(hash: string, data: Uint8Array): MaybePromise<void>
+  getBlob(hash: string): MaybePromise<Uint8Array | undefined>
+  hasBlob(hash: string): MaybePromise<boolean>
+  verifyBlob(hash: string, data: Uint8Array): MaybePromise<boolean>
+  fetchBlob?(ticket: string): MaybePromise<Uint8Array>
 }
 
 export type BlobRequestPayload = {
@@ -94,6 +97,10 @@ export async function blobIdFor(bytes: Uint8Array): Promise<string> {
   return `sha256:${toBase64Url(new Uint8Array(digest))}`
 }
 
+export function blake3HashFor(bytes: Uint8Array): string {
+  return bytesToHex(blake3(bytes))
+}
+
 export async function createBlobDescriptor(bytes: Uint8Array, name: string, mediaType: string): Promise<BlobDescriptor> {
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_BLOB_BYTES) {
     throw new Error(`File must be 1 byte–${MAX_BLOB_BYTES / 1024 / 1024} MiB`)
@@ -114,7 +121,7 @@ export async function createIrohBlobDescriptor(
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_BLOB_BYTES) {
     throw new Error(`File must be 1 byte–${MAX_BLOB_BYTES / 1024 / 1024} MiB`)
   }
-  const descriptor = engine.createBlob(bytes, normalizeName(name), normalizeMediaType(mediaType), nodeEndpoint)
+  const descriptor = await engine.createBlob(bytes, normalizeName(name), normalizeMediaType(mediaType), nodeEndpoint)
   return validateBlobDescriptor(descriptor)
 }
 
@@ -125,7 +132,7 @@ export async function verifyBlobBytes(descriptor: BlobDescriptor, bytes: Uint8Ar
   }
   if (descriptor.blobId.startsWith("blake3:")) {
     const hash = descriptor.blobId.slice(7)
-    const valid = engine ? engine.verifyBlob(hash, bytes) : bytesToHex(blake3(bytes)) === hash.toLowerCase()
+    const valid = engine ? await engine.verifyBlob(hash, bytes) : bytesToHex(blake3(bytes)) === hash.toLowerCase()
     if (!valid) throw new Error("Blob content does not match descriptor")
   } else {
     if (await blobIdFor(bytes) !== descriptor.blobId) {
@@ -216,7 +223,7 @@ export class MeshBlobStore {
     if (this.engine) {
       const hash = descriptor.hash ?? (descriptor.blobId.startsWith("blake3:") ? descriptor.blobId.replace("blake3:", "") : undefined)
       if (hash) {
-        this.engine.putBlob(hash, bytes)
+        await this.engine.putBlob(hash, bytes)
       }
     }
     await this.store.put(this.storeName, descriptor.blobId, bytes)
@@ -229,7 +236,7 @@ export class MeshBlobStore {
   async get(blobId: string): Promise<Uint8Array | undefined> {
     if (this.engine) {
       const hash = blobId.startsWith("blake3:") ? blobId.replace("blake3:", "") : blobId
-      const fromEngine = this.engine.getBlob(hash)
+      const fromEngine = await this.engine.getBlob(hash)
       if (fromEngine) return fromEngine
     }
     return this.store.get<Uint8Array>(this.storeName, blobId)
@@ -238,7 +245,7 @@ export class MeshBlobStore {
   async getVerified(descriptor: BlobDescriptor): Promise<Uint8Array | undefined> {
     let bytes = await this.get(descriptor.blobId)
     if (!bytes && descriptor.hash && this.engine) {
-      bytes = this.engine.getBlob(descriptor.hash)
+      bytes = await this.engine.getBlob(descriptor.hash)
     }
     return bytes ? verifyBlobBytes(descriptor, bytes, this.engine) : undefined
   }
@@ -246,7 +253,7 @@ export class MeshBlobStore {
   async has(descriptor: BlobDescriptor): Promise<boolean> {
     if (this.engine) {
       const hash = descriptor.hash ?? (descriptor.blobId.startsWith("blake3:") ? descriptor.blobId.replace("blake3:", "") : undefined)
-      if (hash && this.engine.hasBlob(hash)) return true
+      if (hash && await this.engine.hasBlob(hash)) return true
     }
     return Boolean(await this.getVerified(descriptor))
   }
