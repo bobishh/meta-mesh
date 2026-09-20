@@ -28,6 +28,7 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub const RPC_ALPN: &[u8] = b"meta-mesh/rpc/1";
+const BROWSER_RPC_ALPN: &[u8] = b"match/sync/0";
 pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
 const RPC_QUEUE_CAPACITY: usize = 64;
 
@@ -267,10 +268,12 @@ impl NativeNode {
         let rpc_inbox = Arc::new(NativeRpcInbox {
             receiver: Mutex::new(rpc_receiver),
         });
+        let rpc = RpcProtocol { sender: rpc_sender };
         let router = iroh::protocol::Router::builder(endpoint.clone())
             .accept(GOSSIP_ALPN, gossip.clone())
             .accept(BLOBS_ALPN, blobs)
-            .accept(RPC_ALPN, RpcProtocol { sender: rpc_sender })
+            .accept(RPC_ALPN, rpc.clone())
+            .accept(BROWSER_RPC_ALPN, rpc)
             .spawn();
 
         Ok(Self {
@@ -329,13 +332,14 @@ impl NativeNode {
             return Err(io_error("RPC request exceeds size limit"));
         }
         tokio::time::timeout(timeout, async {
-            let connection = self.endpoint.connect(endpoint_addr, RPC_ALPN).await?;
-            let (mut send, mut receive) = connection.open_bi().await?;
-            send.write_all(payload).await?;
-            send.finish()?;
-            let response = receive.read_to_end(MAX_RPC_BYTES).await?;
-            connection.close(0u32.into(), b"request complete");
-            Ok::<Vec<u8>, BoxError>(response)
+            let mut last_error = None;
+            for alpn in [RPC_ALPN, BROWSER_RPC_ALPN] {
+                match rpc_roundtrip(&self.endpoint, endpoint_addr.clone(), alpn, payload).await {
+                    Ok(response) => return Ok(response),
+                    Err(error) => last_error = Some(error),
+                }
+            }
+            Err(last_error.unwrap_or_else(|| io_error("RPC negotiation failed")))
         })
         .await
         .map_err(|_| io_error("RPC request timed out"))?
@@ -410,6 +414,21 @@ impl NativeNode {
         self.router.shutdown().await?;
         Ok(())
     }
+}
+
+async fn rpc_roundtrip(
+    endpoint: &Endpoint,
+    endpoint_addr: EndpointAddr,
+    alpn: &[u8],
+    payload: &[u8],
+) -> Result<Vec<u8>, BoxError> {
+    let connection = endpoint.connect(endpoint_addr, alpn).await?;
+    let (mut send, mut receive) = connection.open_bi().await?;
+    send.write_all(payload).await?;
+    send.finish()?;
+    let response = receive.read_to_end(MAX_RPC_BYTES).await?;
+    connection.close(0u32.into(), b"request complete");
+    Ok(response)
 }
 
 fn io_error(message: &'static str) -> BoxError {
