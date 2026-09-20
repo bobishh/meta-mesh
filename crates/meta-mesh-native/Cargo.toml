@@ -6,8 +6,10 @@ publish = false
 
 [dependencies]
 meta-mesh-core = { path = "../meta-mesh-core" }
+bytes = "1.12"
+blake3 = "1.8"
+futures-lite = "2"
 iroh = "1.2.0"
 iroh-gossip = { version = "0.101.0", features = ["net"] }
 iroh-blobs = "0.103.0"
 tokio = { version = "1", features = ["full"] }
-

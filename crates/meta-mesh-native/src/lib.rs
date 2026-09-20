@@ -1,7 +1,9 @@
 pub mod node;
 
 pub use meta_mesh_core::{PAIRING_VERSION, PairingCodec, PairingFrameHeader};
-pub use node::{NativeNode, NativeNodeOptions};
+pub use node::{
+    GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions,
+};
 
 pub const IROH_VERSION: &str = "1.2.0";
 pub const IROH_GOSSIP_VERSION: &str = "0.101.0";

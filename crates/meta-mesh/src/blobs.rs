@@ -1,15 +1,12 @@
+use bytes::Bytes;
+use iroh::EndpointAddr;
+use iroh_blobs::{BlobFormat, Hash, ticket::BlobTicket};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     str::FromStr,
     sync::{Arc, RwLock},
 };
-use bytes::Bytes;
-use iroh_blobs::{
-    ticket::BlobTicket,
-    BlobFormat, Hash,
-};
-use iroh::EndpointAddr;
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +150,9 @@ pub struct WasmBlobEngine {
 impl WasmBlobEngine {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        Self { inner: BlobEngine::new() }
+        Self {
+            inner: BlobEngine::new(),
+        }
     }
 
     #[wasm_bindgen(js_name = createBlob)]
@@ -164,19 +163,25 @@ impl WasmBlobEngine {
         media_type: &str,
         node_endpoint: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        let desc = self.inner.create_blob(data, name, media_type, node_endpoint.as_deref())
+        let desc = self
+            .inner
+            .create_blob(data, name, media_type, node_endpoint.as_deref())
             .map_err(|e| JsError::new(&e))?;
         serde_wasm_bindgen::to_value(&desc).map_err(|e| JsError::new(&e.to_string()).into())
     }
 
     #[wasm_bindgen(js_name = putBlob)]
     pub fn put_blob(&self, hash: &str, data: &[u8]) -> Result<(), JsValue> {
-        self.inner.put_blob(hash, data).map_err(|e| JsError::new(&e).into())
+        self.inner
+            .put_blob(hash, data)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = getBlob)]
     pub fn get_blob(&self, hash: &str) -> Result<Option<Vec<u8>>, JsValue> {
-        self.inner.get_blob(hash).map_err(|e| JsError::new(&e).into())
+        self.inner
+            .get_blob(hash)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = hasBlob)]
@@ -186,7 +191,9 @@ impl WasmBlobEngine {
 
     #[wasm_bindgen(js_name = verifyBlob)]
     pub fn verify_blob(&self, hash: &str, data: &[u8]) -> Result<bool, JsValue> {
-        self.inner.verify_blob(hash, data).map_err(|e| JsError::new(&e).into())
+        self.inner
+            .verify_blob(hash, data)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = parseTicket)]

@@ -1,16 +1,16 @@
+use bytes::Bytes;
+use iroh_gossip::proto::{
+    Config, Message, PeerData, Scope, TopicId,
+    state::{InEvent, OutEvent, State},
+    topic::{Command, Event},
+};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex, RwLock},
 };
-use bytes::Bytes;
-use iroh_gossip::proto::{
-    state::{InEvent, OutEvent, State},
-    topic::{Command, Event},
-    Config, Message, PeerData, Scope, TopicId,
-};
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize, Deserialize)]
@@ -83,12 +83,7 @@ impl GossipEngine {
         seed_bytes.copy_from_slice(&local_id[0..8]);
         let rng = StdRng::seed_from_u64(u64::from_le_bytes(seed_bytes));
 
-        let state = State::new(
-            local_id,
-            PeerData::default(),
-            Config::default(),
-            rng,
-        );
+        let state = State::new(local_id, PeerData::default(), Config::default(), rng);
 
         let mut peer_names = HashMap::new();
         peer_names.insert(local_id, local_peer_id.to_string());
@@ -108,7 +103,11 @@ impl GossipEngine {
         TopicId::from_bytes(*digest.as_bytes())
     }
 
-    pub fn join_topic(&mut self, topic_name: &str, bootstrap_peers: Vec<String>) -> Result<String, String> {
+    pub fn join_topic(
+        &mut self,
+        topic_name: &str,
+        bootstrap_peers: Vec<String>,
+    ) -> Result<String, String> {
         let topic_id = Self::topic_id_for_name(topic_name);
         let topic_hex = hex::encode(topic_id.as_bytes());
 
@@ -230,7 +229,11 @@ impl GossipEngine {
         postcard::to_stdvec(&wire_msg).map_err(|e| e.to_string())
     }
 
-    pub fn handle_message(&self, sender: &str, raw_packet: &[u8]) -> Result<Option<Vec<u8>>, String> {
+    pub fn handle_message(
+        &self,
+        sender: &str,
+        raw_packet: &[u8],
+    ) -> Result<Option<Vec<u8>>, String> {
         let sender_id = peer_id_from_str(sender);
         {
             if let Ok(mut names) = self.peer_names.write() {
@@ -247,11 +250,13 @@ impl GossipEngine {
                     let msg_id = *blake3::hash(&packet.content).as_bytes();
                     let wire_msg = WireMessage {
                         topic: topic_id,
-                        message: WireTopicMessage::Gossip(WirePlumtreeMessage::Gossip(WireGossip {
-                            id: msg_id,
-                            content: Bytes::copy_from_slice(&packet.content),
-                            scope: WireDeliveryScope::Swarm(0),
-                        })),
+                        message: WireTopicMessage::Gossip(WirePlumtreeMessage::Gossip(
+                            WireGossip {
+                                id: msg_id,
+                                content: Bytes::copy_from_slice(&packet.content),
+                                scope: WireDeliveryScope::Swarm(0),
+                            },
+                        )),
                     };
                     let encoded = postcard::to_stdvec(&wire_msg).map_err(|e| e.to_string())?;
                     match postcard::from_bytes(&encoded) {
@@ -340,23 +345,39 @@ impl WasmGossipEngine {
     }
 
     #[wasm_bindgen(js_name = joinTopic)]
-    pub fn join_topic(&mut self, topic_name: &str, bootstrap_peers: Vec<String>) -> Result<String, JsValue> {
-        self.inner.join_topic(topic_name, bootstrap_peers).map_err(|e| JsError::new(&e).into())
+    pub fn join_topic(
+        &mut self,
+        topic_name: &str,
+        bootstrap_peers: Vec<String>,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .join_topic(topic_name, bootstrap_peers)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = leaveTopic)]
     pub fn leave_topic(&mut self, topic_name: &str) -> Result<(), JsValue> {
-        self.inner.leave_topic(topic_name).map_err(|e| JsError::new(&e).into())
+        self.inner
+            .leave_topic(topic_name)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = broadcast)]
     pub fn broadcast(&self, topic_name: &str, content: &[u8]) -> Result<Vec<u8>, JsValue> {
-        self.inner.broadcast(topic_name, content).map_err(|e| JsError::new(&e).into())
+        self.inner
+            .broadcast(topic_name, content)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = handleMessage)]
-    pub fn handle_message(&self, sender: &str, raw_packet: &[u8]) -> Result<Option<Vec<u8>>, JsValue> {
-        self.inner.handle_message(sender, raw_packet).map_err(|e| JsError::new(&e).into())
+    pub fn handle_message(
+        &self,
+        sender: &str,
+        raw_packet: &[u8],
+    ) -> Result<Option<Vec<u8>>, JsValue> {
+        self.inner
+            .handle_message(sender, raw_packet)
+            .map_err(|e| JsError::new(&e).into())
     }
 
     #[wasm_bindgen(js_name = activeNeighbors)]
