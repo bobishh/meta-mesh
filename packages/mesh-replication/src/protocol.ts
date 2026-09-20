@@ -104,7 +104,24 @@ type VerifiedRouteContactCard = {
   signed: SignedDeviceRoute
 }
 
-type VerifiedContactCard = VerifiedLegacyContactCard | VerifiedRouteContactCard
+type VerifiedLocatorContactCard = {
+  kind: "twang-contact"
+  version: 3
+  identity: { personId: string }
+  deviceId: string
+  rendezvousEndpoint: string
+  publishedAt: string
+  signed: SignedEnvelope<{
+    kind: "contact-locator"
+    version: 1
+    personId: string
+    deviceId: string
+    rendezvousEndpoint: string
+    publishedAt: string
+  }>
+}
+
+type VerifiedContactCard = VerifiedLegacyContactCard | VerifiedRouteContactCard | VerifiedLocatorContactCard
 
 async function syntheticInstanceId(endpoint: string): Promise<string> {
   const hash = await sha256Base64Url(new TextEncoder().encode(endpoint))
@@ -150,6 +167,31 @@ export async function adaptVerifiedContactCard(scopeId: string, card: VerifiedCo
       payload.expiresAt !== card.expiresAt || card.signed.signerKeyId !== card.deviceId) throw new Error("Invalid verified contact route card")
     const route: DeviceRoute = { ...payload, scopeId, signerKeyId: card.signed.signerKeyId, signature: card.signed.signature,
       legacyEvidence: card }
+    validateDeviceRoute(route)
+    return route
+  }
+  if (card?.kind === "twang-contact" && card.version === 3) {
+    const payload = card.signed?.payload
+    if (payload?.kind !== "contact-locator" || payload.version !== 1 || payload.personId !== card.identity.personId ||
+      payload.deviceId !== card.deviceId || payload.rendezvousEndpoint !== card.rendezvousEndpoint ||
+      payload.publishedAt !== card.publishedAt || card.signed.signerKeyId !== card.deviceId) {
+      throw new Error("Invalid verified contact locator card")
+    }
+    const route: DeviceRoute = {
+      kind: "mesh-device-route",
+      version: 1,
+      scopeId,
+      personId: payload.personId,
+      deviceId: payload.deviceId,
+      instanceId: await syntheticInstanceId(payload.rendezvousEndpoint),
+      endpoint: payload.rendezvousEndpoint,
+      sequence: 1,
+      issuedAt: payload.publishedAt,
+      expiresAt: boundedLegacyExpiry(payload.publishedAt),
+      signerKeyId: card.signed.signerKeyId,
+      signature: card.signed.signature,
+      legacyEvidence: card,
+    }
     validateDeviceRoute(route)
     return route
   }

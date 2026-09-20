@@ -244,6 +244,35 @@ describe("replica-aware delivery", () => {
     expect(workspace.instanceId).toBe(contact.instanceId)
     expect(workspace.instanceId).toMatch(/^legacy:/)
   })
+
+  it("Given a verified stable contact locator, when adapted for room delivery, then its rendezvous endpoint remains authenticated evidence", async () => {
+    const locator = await adaptVerifiedContactCard("room-1", {
+      kind: "twang-contact",
+      version: 3,
+      identity: { personId: "person-1" },
+      deviceId: "device-1",
+      rendezvousEndpoint: "iroh://stable-contact",
+      publishedAt: "2026-09-15T10:00:00.000Z",
+      signed: {
+        payload: {
+          kind: "contact-locator", version: 1, personId: "person-1", deviceId: "device-1",
+          rendezvousEndpoint: "iroh://stable-contact", publishedAt: "2026-09-15T10:00:00.000Z",
+        },
+        signerKeyId: "device-1",
+        signature: "locator-signature",
+      },
+    })
+
+    expect(locator).toMatchObject({
+      scopeId: "room-1",
+      personId: "person-1",
+      deviceId: "device-1",
+      endpoint: "iroh://stable-contact",
+      signerKeyId: "device-1",
+    })
+    expect(locator.instanceId).toMatch(/^legacy:/)
+    expect(locator.legacyEvidence).toMatchObject({ version: 3 })
+  })
 })
 
 describe("sparse gossip and anti-entropy", () => {
