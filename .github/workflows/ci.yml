@@ -19,5 +19,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: cargo test --workspace
       - run: npm run check
       - run: npm test

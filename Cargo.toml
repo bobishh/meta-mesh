@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "crates/meta-mesh-core",
+  "crates/meta-mesh",
+]
+resolver = "3"

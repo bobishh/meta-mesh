@@ -66,6 +66,8 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 ## 6. Complete Rust Core and Mobile Reuse
 
 - [ ] 6.1 Split platform-neutral protocol/core code from browser transport and native Iroh runtime dependencies.
+  - [x] Extract `meta-mesh-core` with no browser, WASM, or Iroh dependency; pairing framing now compiles and tests there.
+  - [ ] Split browser and native runtime adapters into separate dependency graphs.
 - [ ] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
 - [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
