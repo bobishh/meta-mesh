@@ -39,24 +39,6 @@ export type GossipFrame =
 
 export type GossipDispatch = { targetDeviceId: string; frame: GossipFrame }
 
-function validateBounds(bounds: GossipBounds): void {
-  const values = Object.values(bounds)
-  if (values.some(value => !Number.isSafeInteger(value) || value < 0) ||
-    bounds.low > bounds.target || bounds.target > bounds.high || bounds.eagerFanout > bounds.high ||
-    bounds.maximumOfferHashes < 1 || bounds.maximumWants < 1 || bounds.maximumChanges < 1 || bounds.maximumFrameBytes < 1 ||
-    bounds.seenCapacity < 1 || bounds.baseBackoffMs < 1) throw new Error("Invalid gossip bounds")
-}
-
-function stableScore(localDeviceId: string, candidate: string, rotation: number): number {
-  const value = `${localDeviceId}\u0000${candidate}\u0000${rotation}`
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return hash >>> 0
-}
-
 export function selectScopedNeighbors(input: {
   localDeviceId: string
   candidates: readonly GossipCandidate[]
@@ -65,26 +47,13 @@ export function selectScopedNeighbors(input: {
   rotation?: number
 }): string[] {
   const bounds = input.bounds ?? DEFAULT_GOSSIP_BOUNDS
-  validateBounds(bounds)
-  const now = input.now ?? Date.now()
-  const byDevice = new Map<string, GossipCandidate>()
-  for (const candidate of input.candidates) {
-    if (!candidate.deviceId || candidate.deviceId === input.localDeviceId || (candidate.backedOffUntil ?? 0) > now) continue
-    const current = byDevice.get(candidate.deviceId)
-    if (!current || (candidate.health ?? 0) > (current.health ?? 0)) byDevice.set(candidate.deviceId, candidate)
-  }
-  const eligible = [...byDevice.values()]
-  const ring = [...eligible.map(value => value.deviceId), input.localDeviceId].sort()
-  const localIndex = ring.indexOf(input.localDeviceId)
-  const mandatory = new Set<string>()
-  if (ring.length > 1 && bounds.target > 0) mandatory.add(ring[(localIndex + 1) % ring.length])
-  if (ring.length > 2 && bounds.target > 1) mandatory.add(ring[(localIndex - 1 + ring.length) % ring.length])
-  const remainder = eligible
-    .filter(candidate => !mandatory.has(candidate.deviceId))
-    .sort((left, right) => (right.health ?? 0) - (left.health ?? 0) ||
-      stableScore(input.localDeviceId, left.deviceId, input.rotation ?? 0) - stableScore(input.localDeviceId, right.deviceId, input.rotation ?? 0) ||
-      left.deviceId.localeCompare(right.deviceId))
-  return [...mandatory, ...remainder.map(value => value.deviceId)].slice(0, Math.min(bounds.target, bounds.high))
+  return meshRustRuntime().state.selectScopedNeighbors(
+    input.localDeviceId,
+    input.candidates,
+    bounds,
+    input.now ?? Date.now(),
+    input.rotation ?? 0,
+  )
 }
 
 type GossipOptions = {
@@ -106,7 +75,7 @@ export class SparseGossip {
 
   constructor(private readonly localDeviceId: string, private readonly options: GossipOptions) {
     this.bounds = { ...DEFAULT_GOSSIP_BOUNDS, ...options.bounds }
-    validateBounds(this.bounds)
+    meshRustRuntime().state.selectScopedNeighbors(this.localDeviceId, [], this.bounds, 0, 0)
   }
 
   updateScope(scopeId: string, candidates: readonly GossipCandidate[], rotation = 0): string[] {
@@ -253,4 +222,5 @@ export class IrohGossipTopic {
     this.engine.leaveTopic(this.topicName)
   }
 }
+import { meshRustRuntime } from "./runtime"
 

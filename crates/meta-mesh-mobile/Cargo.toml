@@ -15,10 +15,14 @@ iroh = "1.2.0"
 iroh-blobs = "0.103.0"
 meta-mesh-core = { path = "../meta-mesh-core" }
 meta-mesh-native = { path = "../meta-mesh-native" }
+serde = "1"
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 uniffi = { version = "0.32.1", default-features = false }
+
+[dev-dependencies]
+automerge = "0.12"
 
 [[bin]]
 name = "uniffi-bindgen"

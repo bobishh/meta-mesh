@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-meta-mesh-core = { path = "../meta-mesh-core" }
+meta-mesh-core = { path = "../meta-mesh-core", features = ["wasm"] }
 iroh = { version = "0.98.2", default-features = false }
 iroh-webrtc-transport = { version = "0.1.0-alpha.2", default-features = false, features = ["browser"] }
 iroh-gossip = { version = "0.98.0", default-features = false }

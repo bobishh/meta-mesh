@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./automerge": "./src/automerge.ts",
-    "./gossip": "./src/gossip.ts"
+    "./gossip": "./src/gossip.ts",
+    "./runtime": "./src/runtime.ts"
   },
   "dependencies": {
     "@meta-uber/mesh-identity": "*"

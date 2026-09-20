@@ -1,3 +1,5 @@
+#[cfg(target_family = "wasm")]
+pub mod automerge;
 pub mod blobs;
 pub mod gossip;
 #[cfg(target_family = "wasm")]
@@ -6,12 +8,16 @@ pub mod identity;
 pub mod invitation;
 pub mod node;
 pub mod pairing;
+#[cfg(target_family = "wasm")]
+pub mod state;
 
 pub use blobs::{BlobDescriptor, BlobEngine, ParsedTicket, WasmBlobEngine};
 pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
 pub use pairing::WasmPairingCodec;
 
+#[cfg(target_family = "wasm")]
+pub use automerge::WasmAutomergeSyncEngine;
 #[cfg(target_family = "wasm")]
 pub use identity::WasmIdentityCrypto;
 #[cfg(target_family = "wasm")]
@@ -20,6 +26,8 @@ pub use invitation::WasmInvitations;
 pub use node::{
     BrowserAcceptor, BrowserConnection, BrowserNode, BrowserStream, start_browser_node,
 };
+#[cfg(target_family = "wasm")]
+pub use state::{WasmDeviceRouteCatalog, WasmStateCore};
 
 use wasm_bindgen::prelude::*;
 

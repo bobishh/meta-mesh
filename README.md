@@ -4,7 +4,7 @@ Reusable browser P2P primitives for identity, signed routes, durable delivery, s
 
 Rust layout:
 
-- `crates/meta-mesh-core`: platform-neutral protocol code. No browser, WASM, or Iroh dependency; owns pairing frames, identity/recovery crypto, Ed25519 envelopes, grants, invitations, and certificate admission for web, iOS, Android, and native clients.
+- `crates/meta-mesh-core`: platform-neutral protocol code. No browser, WASM, or Iroh dependency; owns pairing frames, identity/recovery crypto, Ed25519 envelopes, grants, invitations, certificate admission, peer/replica merge policy, route/ACK policy, and Automerge sync state for web, iOS, Android, and native clients.
 - `crates/meta-mesh-native`: native/mobile runtime on current Iroh, iroh-gossip, and iroh-blobs. Owns endpoint identity, admission, gossip, Bao blob transfer, and memory/disk stores.
 - `crates/meta-mesh-mobile`: UniFFI adapter over the same core and native runtime. `scripts/generate-mobile-bindings.sh` emits checked-in Swift and Kotlin APIs for iOS and Android clients.
 - `crates/meta-mesh`: browser-only WASM adapter on the WebRTC transport's pinned Iroh version. No native runtime fallback.

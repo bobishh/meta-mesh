@@ -481,6 +481,22 @@ fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -597,6 +613,201 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
         writeBytes(&buf, value)
     }
 }
+
+
+
+
+public protocol MobileAutomergeSyncEngineProtocol: AnyObject, Sendable {
+
+    func generateJson(documentId: String, remoteDeviceId: String, authorized: Bool, proofJson: String?) throws  -> String?
+
+    func heads(documentId: String) throws  -> [String]
+
+    func loadDocument(scopeId: String, documentId: String, bytes: Data) throws
+
+    func receiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?) throws  -> String
+
+    func reset(documentId: String, remoteDeviceId: String) throws
+
+    func saveDocument(documentId: String) throws  -> Data
+
+}
+open class MobileAutomergeSyncEngine: MobileAutomergeSyncEngineProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_meta_mesh_mobile_fn_clone_mobileautomergesyncengine(self.handle, $0) }
+    }
+public convenience init(localDeviceId: String, maximumFrameBytes: UInt64?)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_constructor_mobileautomergesyncengine_new(
+        FfiConverterString.lower(localDeviceId),
+        FfiConverterOptionUInt64.lower(maximumFrameBytes),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_meta_mesh_mobile_fn_free_mobileautomergesyncengine(handle, $0) }
+    }
+
+
+
+
+open func generateJson(documentId: String, remoteDeviceId: String, authorized: Bool, proofJson: String?)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_generate_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),
+        FfiConverterString.lower(remoteDeviceId),
+        FfiConverterBool.lower(authorized),
+        FfiConverterOptionString.lower(proofJson),uniffiCallStatus
+    )
+})
+}
+
+open func heads(documentId: String)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_heads(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),uniffiCallStatus
+    )
+})
+}
+
+open func loadDocument(scopeId: String, documentId: String, bytes: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_load_document(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(scopeId),
+        FfiConverterString.lower(documentId),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+}
+}
+
+open func receiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_receive_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(remoteDeviceId),
+        FfiConverterString.lower(frameJson),
+        FfiConverterBool.lower(authorized),
+        FfiConverterOptionString.lower(responseProofJson),uniffiCallStatus
+    )
+})
+}
+
+open func reset(documentId: String, remoteDeviceId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_reset(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),
+        FfiConverterString.lower(remoteDeviceId),uniffiCallStatus
+    )
+}
+}
+
+open func saveDocument(documentId: String)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_save_document(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),uniffiCallStatus
+    )
+})
+}
+
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileAutomergeSyncEngine: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = MobileAutomergeSyncEngine
+
+    public static func lift(_ handle: UInt64) throws -> MobileAutomergeSyncEngine {
+        return MobileAutomergeSyncEngine(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: MobileAutomergeSyncEngine) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileAutomergeSyncEngine {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MobileAutomergeSyncEngine, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileAutomergeSyncEngine_lift(_ handle: UInt64) throws -> MobileAutomergeSyncEngine {
+    return try FfiConverterTypeMobileAutomergeSyncEngine.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileAutomergeSyncEngine_lower(_ value: MobileAutomergeSyncEngine) -> UInt64 {
+    return FfiConverterTypeMobileAutomergeSyncEngine.lower(value)
+}
+
+
 
 
 
@@ -1152,6 +1363,30 @@ public func FfiConverterTypeMobileMeshError_lower(_ value: MobileMeshError) -> R
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -1309,6 +1544,16 @@ public func meshDeriveDeviceSeed(entropy: Data)throws  -> Data  {
     )
 })
 }
+public func meshDurableAckMatchesJson(ackJson: String, batchJson: String, targetDeviceId: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_durable_ack_matches_json(
+        FfiConverterString.lower(ackJson),
+        FfiConverterString.lower(batchJson),
+        FfiConverterString.lower(targetDeviceId),uniffiCallStatus
+    )
+})
+}
 public func meshIdentitySecurityForRecovery(recoveryKey: String) -> MobileIdentitySecurity?  {
     return try!  FfiConverterOptionTypeMobileIdentitySecurity.lift(try! rustCall() {
         uniffiCallStatus in
@@ -1322,6 +1567,15 @@ public func meshLegacyRecoveryFromSamples(samples: [UInt16])throws  -> String  {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_func_mesh_legacy_recovery_from_samples(
         FfiConverterSequenceUInt16.lower(samples),uniffiCallStatus
+    )
+})
+}
+public func meshMergePeerRecordsJson(existingJson: String, incomingJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_merge_peer_records_json(
+        FfiConverterString.lower(existingJson),
+        FfiConverterString.lower(incomingJson),uniffiCallStatus
     )
 })
 }
@@ -1340,6 +1594,15 @@ public func meshOpenIdentitySeedWithPassphrase(envelopeJson: String, passphrase:
     uniffi_meta_mesh_mobile_fn_func_mesh_open_identity_seed_with_passphrase(
         FfiConverterString.lower(envelopeJson),
         FfiConverterString.lower(passphrase),uniffiCallStatus
+    )
+})
+}
+public func meshOrderDeliveryRoutesJson(targetDeviceId: String, routesJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_order_delivery_routes_json(
+        FfiConverterString.lower(targetDeviceId),
+        FfiConverterString.lower(routesJson),uniffiCallStatus
     )
 })
 }
@@ -1365,6 +1628,15 @@ public func meshPublicKeyId(publicKey: String)throws  -> String  {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_func_mesh_public_key_id(
         FfiConverterString.lower(publicKey),uniffiCallStatus
+    )
+})
+}
+public func meshReconcileReplicaSetsJson(leftJson: String, rightJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_reconcile_replica_sets_json(
+        FfiConverterString.lower(leftJson),
+        FfiConverterString.lower(rightJson),uniffiCallStatus
     )
 })
 }
@@ -1409,6 +1681,38 @@ public func meshSealIdentitySeedWithPassphrase(seed: Data, personId: String, pas
     )
 })
 }
+public func meshSelectScopedNeighborsJson(localDeviceId: String, candidatesJson: String, boundsJson: String, nowMs: Int64, rotation: UInt32)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_select_scoped_neighbors_json(
+        FfiConverterString.lower(localDeviceId),
+        FfiConverterString.lower(candidatesJson),
+        FfiConverterString.lower(boundsJson),
+        FfiConverterInt64.lower(nowMs),
+        FfiConverterUInt32.lower(rotation),uniffiCallStatus
+    )
+})
+}
+public func meshSignDeviceRouteJson(seed: Data, signerKeyId: String, payloadJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_sign_device_route_json(
+        FfiConverterData.lower(seed),
+        FfiConverterString.lower(signerKeyId),
+        FfiConverterString.lower(payloadJson),uniffiCallStatus
+    )
+})
+}
+public func meshSignDurableAckJson(seed: Data, signerKeyId: String, payloadJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_sign_durable_ack_json(
+        FfiConverterData.lower(seed),
+        FfiConverterString.lower(signerKeyId),
+        FfiConverterString.lower(payloadJson),uniffiCallStatus
+    )
+})
+}
 public func meshSignEnvelopeJson(seed: Data, payloadJson: String, signerKeyId: String, domain: String?)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -1417,6 +1721,33 @@ public func meshSignEnvelopeJson(seed: Data, payloadJson: String, signerKeyId: S
         FfiConverterString.lower(payloadJson),
         FfiConverterString.lower(signerKeyId),
         FfiConverterOptionString.lower(domain),uniffiCallStatus
+    )
+})
+}
+public func meshValidateDeviceRouteJson(routeJson: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_validate_device_route_json(
+        FfiConverterString.lower(routeJson),uniffiCallStatus
+    )
+}
+}
+public func meshVerifyDeviceRouteJson(envelopeJson: String, publicKey: String, nowMs: Int64, allowExpired: Bool)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_device_route_json(
+        FfiConverterString.lower(envelopeJson),
+        FfiConverterString.lower(publicKey),
+        FfiConverterInt64.lower(nowMs),
+        FfiConverterBool.lower(allowExpired),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyDurableAckJson(envelopeJson: String, publicKey: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_durable_ack_json(
+        FfiConverterString.lower(envelopeJson),
+        FfiConverterString.lower(publicKey),uniffiCallStatus
     )
 })
 }
@@ -1452,16 +1783,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_derive_device_seed() != 44621) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_durable_ack_matches_json() != 65242) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_identity_security_for_recovery() != 28347) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_legacy_recovery_from_samples() != 34514) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json() != 40981) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed() != 28030) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed_with_passphrase() != 46729) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_order_delivery_routes_json() != 43997) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_parse_invitation_json() != 40510) {
@@ -1471,6 +1811,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_public_key_id() != 57269) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_reconcile_replica_sets_json() != 54112) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_recovery_phrase_from_entropy() != 55038) {
@@ -1485,10 +1828,46 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_seal_identity_seed_with_passphrase() != 5383) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_select_scoped_neighbors_json() != 27209) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_sign_device_route_json() != 2428) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_sign_durable_ack_json() != 54136) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_sign_envelope_json() != 3383) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_validate_device_route_json() != 21434) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_device_route_json() != 46667) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_durable_ack_json() != 43941) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_envelope_json() != 51558) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() != 63608) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_heads() != 12877) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document() != 20124) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json() != 42173) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_reset() != 19357) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_save_document() != 55459) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_broadcast() != 899) {
@@ -1522,6 +1901,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_revoke_peer() != 38064) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() != 18983) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() != 14801) {

@@ -75,6 +75,18 @@ export class IntoUnderlyingSource {
     pull(controller: ReadableStreamDefaultController): Promise<any>;
 }
 
+export class WasmAutomergeSyncEngine {
+    free(): void;
+    [Symbol.dispose](): void;
+    generate(document_id: string, remote_device_id: string, authorized: boolean, proof: any): any;
+    heads(document_id: string): string[];
+    loadDocument(scope_id: string, document_id: string, bytes: Uint8Array): void;
+    constructor(local_device_id: string, maximum_frame_bytes?: number | null);
+    receive(remote_device_id: string, frame: any, authorized: boolean, response_proof: any): any;
+    reset(document_id: string, remote_device_id: string): void;
+    saveDocument(document_id: string): Uint8Array;
+}
+
 export class WasmBlobEngine {
     free(): void;
     [Symbol.dispose](): void;
@@ -85,6 +97,14 @@ export class WasmBlobEngine {
     static parseTicket(ticket: string): any;
     putBlob(hash: string, data: Uint8Array): void;
     verifyBlob(hash: string, data: Uint8Array): boolean;
+}
+
+export class WasmDeviceRouteCatalog {
+    free(): void;
+    [Symbol.dispose](): void;
+    admit(route: any): any;
+    constructor();
+    routesFor(scope_id: string, device_id: string): any;
 }
 
 export class WasmGossipEngine {
@@ -142,6 +162,22 @@ export class WasmPairingCodec {
     constructor();
 }
 
+export class WasmStateCore {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    static durableAckMatches(ack: any, batch: any, target_device_id: string): boolean;
+    static mergePeerRecords(existing: any, incoming: any): any;
+    static orderDeliveryRoutes(target_device_id: string, routes: any): any;
+    static reconcileReplicaSets(left: any, right: any): any;
+    static selectScopedNeighbors(local_device_id: string, candidates: any, bounds: any, now_ms: number, rotation: number): string[];
+    static signDeviceRoute(seed: Uint8Array, signer_key_id: string, payload: any): any;
+    static signDurableAck(seed: Uint8Array, signer_key_id: string, payload: any): any;
+    static validateDeviceRoute(route: any): void;
+    static verifyDeviceRoute(envelope: any, public_key: string, now_ms: number, allow_expired: boolean): any;
+    static verifyDurableAck(envelope: any, public_key: string): any;
+}
+
 export function mesh_version(): string;
 
 export function start_browser_node(secret?: Uint8Array | null): Promise<BrowserNode>;
@@ -150,31 +186,20 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
-    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
-    readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasmblobengine_hasBlob: (a: number, b: number, c: number) => number;
-    readonly wasmblobengine_new: () => number;
-    readonly wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
-    readonly wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
-    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
-    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
-    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
-    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_new: (a: number, b: number) => number;
+    readonly __wbg_wasmautomergesyncengine_free: (a: number, b: number) => void;
+    readonly __wbg_wasmdeviceroutecatalog_free: (a: number, b: number) => void;
     readonly __wbg_wasmidentitycrypto_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
-    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
+    readonly wasmautomergesyncengine_generate: (a: number, b: number, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
+    readonly wasmautomergesyncengine_heads: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmautomergesyncengine_loadDocument: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly wasmautomergesyncengine_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmautomergesyncengine_receive: (a: number, b: number, c: number, d: any, e: number, f: any) => [number, number, number];
+    readonly wasmautomergesyncengine_reset: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly wasmautomergesyncengine_saveDocument: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmdeviceroutecatalog_admit: (a: number, b: any) => [number, number, number];
+    readonly wasmdeviceroutecatalog_new: () => number;
+    readonly wasmdeviceroutecatalog_routesFor: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_canonicalizeJson: (a: any) => [number, number, number, number];
     readonly wasmidentitycrypto_certificateHash: (a: any) => [number, number, number, number];
     readonly wasmidentitycrypto_deriveDeviceSeed: (a: number, b: number) => [number, number, number, number];
@@ -192,10 +217,44 @@ export interface InitOutput {
     readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
     readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
+    readonly wasmstatecore_durableAckMatches: (a: any, b: any, c: number, d: number) => [number, number, number];
+    readonly wasmstatecore_mergePeerRecords: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_orderDeliveryRoutes: (a: number, b: number, c: any) => [number, number, number];
+    readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
+    readonly wasmstatecore_signDeviceRoute: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
+    readonly wasmstatecore_signDurableAck: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
+    readonly wasmstatecore_validateDeviceRoute: (a: any) => [number, number];
+    readonly wasmstatecore_verifyDeviceRoute: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_verifyDurableAck: (a: any, b: number, c: number) => [number, number, number];
+    readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
+    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmblobengine_hasBlob: (a: number, b: number, c: number) => number;
+    readonly wasmblobengine_new: () => number;
+    readonly wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
+    readonly wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_new: (a: number, b: number) => number;
     readonly wasmpairingcodec_decode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmpairingcodec_new: () => number;
+    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
+    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
+    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
+    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
     readonly __wbg_browseracceptor_free: (a: number, b: number) => void;
     readonly __wbg_browserconnection_free: (a: number, b: number) => void;
     readonly __wbg_browsernode_free: (a: number, b: number) => void;

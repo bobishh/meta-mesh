@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+wasm = ["automerge/wasm"]
+
 [dependencies]
 aes-gcm = "0.10"
+automerge = "0.12"
 base64 = "0.22"
 bip39 = { version = "2", default-features = false, features = ["std"] }
 ed25519-compact = { version = "2.1.1", default-features = false, features = ["std"] }

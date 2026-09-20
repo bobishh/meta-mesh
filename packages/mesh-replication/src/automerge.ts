@@ -8,9 +8,10 @@ import {
   type DurableBatchAck,
   type SignedDurableBatchAck,
 } from "./protocol"
+import { meshRustRuntime, type RustAutomergeSyncEngine } from "./runtime"
 
 export type AutomergeRuntime = Pick<typeof Automerge,
-  "initSyncState" | "generateSyncMessage" | "receiveSyncMessage" | "clone" | "getChanges" | "getHeads">
+  "load" | "save" | "getChanges" | "getHeads" | "clone" | "initSyncState" | "generateSyncMessage" | "receiveSyncMessage">
 
 export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load">
 
@@ -205,38 +206,26 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
 }
 
 export class AutomergeAntiEntropy {
-  private readonly states = new Map<string, Automerge.SyncState>()
   private readonly busy = new Set<string>()
+  private readonly engine: RustAutomergeSyncEngine
 
   constructor(
-    private readonly localDeviceId: string,
+    localDeviceId: string,
     private readonly automerge: AutomergeRuntime,
     private readonly options: {
       maximumFrameBytes?: number
       proof?: (scopeId: string, documentId: string, remoteDeviceId: string) => unknown | Promise<unknown>
     } = {},
-  ) {}
+  ) {
+    this.engine = meshRustRuntime().createAutomergeSyncEngine(localDeviceId, options.maximumFrameBytes)
+  }
 
   private key(documentId: string, remoteDeviceId: string): string {
     return `${documentId}\u0000${remoteDeviceId}`
   }
 
   reset(documentId: string, remoteDeviceId: string): void {
-    this.states.delete(this.key(documentId, remoteDeviceId))
-  }
-
-  private maximumFrameBytes(): number {
-    return this.options.maximumFrameBytes ?? 256 * 1024
-  }
-
-  private validateFrame(frame: AutomergeSyncFrame, adapter: AutomergeDocumentAdapter<Record<string, unknown>>, remoteDeviceId: string): void {
-    if (frame?.version !== 1 || frame.scopeId !== adapter.scopeId || frame.documentId !== adapter.documentId ||
-      frame.fromDeviceId !== remoteDeviceId || frame.toDeviceId !== this.localDeviceId || !(frame.message instanceof Uint8Array)) {
-      throw new Error("Invalid Automerge sync frame")
-    }
-    if (frame.message.byteLength === 0 || frame.message.byteLength > this.maximumFrameBytes()) {
-      throw new Error("Automerge sync frame exceeds size limit")
-    }
+    this.engine.reset(documentId, remoteDeviceId)
   }
 
   private async exclusive<T>(key: string, run: () => Promise<T>): Promise<T> {
@@ -253,21 +242,10 @@ export class AutomergeAntiEntropy {
     return this.exclusive(key, async () => {
       if (!await adapter.authorize(remoteDeviceId, undefined, "send")) throw new Error("Unauthorized Automerge sync")
       const document = await adapter.current()
-      let state = this.states.get(key) ?? this.automerge.initSyncState()
-      let message: Automerge.SyncMessage | null
-      ;[state, message] = this.automerge.generateSyncMessage(document, state)
-      this.states.set(key, state)
-      if (!message) return null
-      if (message.byteLength > this.maximumFrameBytes()) throw new Error("Automerge sync frame exceeds size limit")
-      return {
-        version: 1,
-        scopeId: adapter.scopeId,
-        documentId: adapter.documentId,
-        fromDeviceId: this.localDeviceId,
-        toDeviceId: remoteDeviceId,
-        message,
-        ...(this.options.proof ? { proof: await this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
-      }
+      this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(document))
+      const proof = await this.options.proof?.(adapter.scopeId, adapter.documentId, remoteDeviceId)
+      const frame = this.engine.generate(adapter.documentId, remoteDeviceId, true, proof) as AutomergeSyncFrame | null
+      return frame ? normalizeRustFrame(frame) : null
     })
   }
 
@@ -278,45 +256,40 @@ export class AutomergeAntiEntropy {
   ): Promise<AutomergeSyncResult> {
     const key = this.key(adapter.documentId, remoteDeviceId)
     return this.exclusive(key, async () => {
-      this.validateFrame(frame, adapter as AutomergeDocumentAdapter<Record<string, unknown>>, remoteDeviceId)
       if (!await adapter.authorize(remoteDeviceId, frame.proof, "receive")) throw new Error("Unauthorized Automerge sync")
       const before = await adapter.current()
-      const writable = this.automerge.clone(before)
-      let state = this.states.get(key) ?? this.automerge.initSyncState()
-      let candidate: Automerge.Doc<T>
-      ;[candidate, state] = this.automerge.receiveSyncMessage(writable, state, frame.message)
+      this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(before))
+      const responseProof = await this.options.proof?.(adapter.scopeId, adapter.documentId, remoteDeviceId)
+      const result = this.engine.receive(remoteDeviceId, frame, true, responseProof) as {
+        acceptedChanges: number
+        heads: string[]
+        document: Uint8Array | number[]
+        response?: AutomergeSyncFrame | null
+      }
+      const candidate = this.automerge.load<T>(new Uint8Array(result.document))
       const changes = this.automerge.getChanges(before, candidate)
       if (changes.length > 0) {
         const admission = { before, candidate, changes, remoteDeviceId, proof: frame.proof }
         await adapter.validateCandidate(admission)
         await adapter.commit(admission)
       }
-      this.states.set(key, state)
       const current = changes.length > 0 ? candidate : before
-      const heads = this.automerge.getHeads(current)
+      const heads = result.heads
       if (changes.length > 0) {
         await adapter.snapshot?.(current, heads)
         await adapter.publish?.(adapter.documentId, heads, "remote-commit")
       }
-      let responseMessage: Automerge.SyncMessage | null
-      ;[state, responseMessage] = this.automerge.generateSyncMessage(current, state)
-      this.states.set(key, state)
-      if (responseMessage && responseMessage.byteLength > this.maximumFrameBytes()) throw new Error("Automerge sync frame exceeds size limit")
       return {
-        acceptedChanges: changes.length,
+        acceptedChanges: result.acceptedChanges,
         heads,
-        response: responseMessage ? {
-          version: 1,
-          scopeId: adapter.scopeId,
-          documentId: adapter.documentId,
-          fromDeviceId: this.localDeviceId,
-          toDeviceId: remoteDeviceId,
-          message: responseMessage,
-          ...(this.options.proof ? { proof: await this.options.proof(adapter.scopeId, adapter.documentId, remoteDeviceId) } : {}),
-        } : null,
+        response: result.response ? normalizeRustFrame(result.response) : null,
       }
     })
   }
+}
+
+function normalizeRustFrame(frame: AutomergeSyncFrame): AutomergeSyncFrame {
+  return { ...frame, message: new Uint8Array(frame.message) }
 }
 
 export class AutomergeSyncScheduler {

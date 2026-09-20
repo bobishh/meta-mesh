@@ -6,6 +6,7 @@ import {
   type LocalProfile,
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
+import { meshRustRuntime, type RustDeviceRouteCatalog } from "./runtime"
 
 export type ReplicaId = string
 
@@ -314,12 +315,10 @@ export async function connectToDevice<T>(options: {
   trace?: MeshReplicationTrace
   signal?: AbortSignal
 }): Promise<DeviceRouteConnection<T>> {
-  const routes = options.routes
-    .map((route, index) => ({ route, index, health: options.routeHealth?.(route) ?? 0 }))
-    .filter(item => item.route.deviceId === options.targetDeviceId)
-    .sort((left, right) => right.health - left.health || left.index - right.index)
-    .map(item => item.route)
-  if (routes.length === 0) throw new Error(`No routes for device ${options.targetDeviceId}`)
+  const routes = meshRustRuntime().state.orderDeliveryRoutes(
+    options.targetDeviceId,
+    options.routes.map(route => ({ route, health: options.routeHealth?.(route) ?? 0 })),
+  ) as DeviceRoute[]
   const fallbackDelayMs = options.fallbackDelayMs ?? 250
   if (!Number.isFinite(fallbackDelayMs) || fallbackDelayMs < 0) throw new Error("Invalid fallback delay")
   if (options.signal?.aborted) throw options.signal.reason ?? new Error("Connection aborted")
@@ -378,38 +377,24 @@ function required(value: string, label: string): void {
   if (value.length === 0) throw new Error(`Invalid ${label}`)
 }
 
-function canonicalRouteTieBreak(route: DeviceRoute): string {
-  return [route.endpoint, route.issuedAt, route.expiresAt, route.signature].join("\u0000")
-}
-
-function preferRoute(current: DeviceRoute | undefined, candidate: DeviceRoute): DeviceRoute {
-  if (!current || candidate.sequence > current.sequence) return candidate
-  if (candidate.sequence < current.sequence) return current
-  return canonicalRouteTieBreak(candidate) > canonicalRouteTieBreak(current) ? candidate : current
-}
-
 export class DeviceRouteCatalog {
-  private readonly routes = new Map<string, DeviceRoute>()
+  private readonly catalog: RustDeviceRouteCatalog
+
+  constructor() {
+    this.catalog = meshRustRuntime().createDeviceRouteCatalog()
+  }
 
   admit(route: DeviceRoute): DeviceRoute {
-    validateDeviceRoute(route)
-    const key = `${route.scopeId}\u0000${route.deviceId}\u0000${route.instanceId}`
-    const selected = preferRoute(this.routes.get(key), route)
-    this.routes.set(key, selected)
-    return selected
+    return this.catalog.admit(route) as DeviceRoute
   }
 
   routesFor(scopeId: string, deviceId: ReplicaId): DeviceRoute[] {
-    return [...this.routes.values()]
-      .filter(route => route.scopeId === scopeId && route.deviceId === deviceId)
-      .sort((left, right) => left.instanceId.localeCompare(right.instanceId))
+    return this.catalog.routesFor(scopeId, deviceId) as DeviceRoute[]
   }
 }
 
 export function validateDeviceRoute(route: DeviceRoute): void {
-  validateDeviceRoutePayload(route)
-  if (route.signerKeyId !== route.deviceId) throw new Error("Device route signer does not match device")
-  required(route.signature, "route signature")
+  meshRustRuntime().state.validateDeviceRoute(route)
 }
 
 export function validateDeviceRoutePayload(route: DeviceRoutePayload): void {
@@ -433,11 +418,7 @@ export function validateDeviceRoutePayload(route: DeviceRoutePayload): void {
 }
 
 function ackMatches(ack: DurableBatchAck, batch: DeviceBatch, targetDeviceId: ReplicaId): boolean {
-  if (ack.kind !== "mesh-durable-batch-ack" || ack.version !== 1) return false
-  if (ack.scopeId !== batch.scopeId || ack.documentId !== batch.documentId || ack.batchId !== batch.batchId) return false
-  if (ack.receiverDeviceId !== targetDeviceId || ack.signature.length === 0) return false
-  const expected = new Set(batch.changes.map(change => change.hash))
-  return ack.acceptedHashes.length <= expected.size && ack.acceptedHashes.every(hash => expected.has(hash))
+  return meshRustRuntime().state.durableAckMatches(ack, batch, targetDeviceId)
 }
 
 async function deliverBatchRound(options: DeliveryOptions): Promise<DeviceDeliveryResult> {
@@ -527,12 +508,10 @@ function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise<void>
 }
 
 export async function deliverBatchToDevice(options: DeliveryOptions): Promise<DeviceDeliveryResult> {
-  const indexed = options.routes
-    .map((route, index) => ({ route, index, health: options.routeHealth?.(route) ?? 0 }))
-    .filter(value => value.route.deviceId === options.targetDeviceId)
-  if (indexed.length === 0) throw new Error(`No routes for device ${options.targetDeviceId}`)
-  indexed.sort((left, right) => right.health - left.health || left.index - right.index)
-  const routes = indexed.map(value => value.route)
+  const routes = meshRustRuntime().state.orderDeliveryRoutes(
+    options.targetDeviceId,
+    options.routes.map(route => ({ route, health: options.routeHealth?.(route) ?? 0 })),
+  ) as DeviceRoute[]
   const retryDelays = options.retryDelaysMs ?? []
   const attemptedRouteIds: string[] = []
   const failures: unknown[] = []

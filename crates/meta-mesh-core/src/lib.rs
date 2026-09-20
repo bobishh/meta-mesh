@@ -1,12 +1,18 @@
 pub mod authorization;
+pub mod automerge;
 pub mod identity;
 pub mod invitation;
 pub mod pairing;
 pub mod recovery;
+pub mod replication;
+pub mod state;
 
 pub use authorization::{
     WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
     verify_workspace_grant,
+};
+pub use automerge::{
+    AutomergeSyncEngine, AutomergeSyncFrame, AutomergeSyncResult, DEFAULT_MAX_AUTOMERGE_FRAME_BYTES,
 };
 pub use identity::{
     DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
@@ -26,4 +32,16 @@ pub use recovery::{
     identity_security_for_recovery, legacy_recovery_from_samples, normalize_secret,
     open_identity_seed, open_identity_seed_with_passphrase, recovery_phrase_from_entropy,
     recovery_phrase_to_entropy, seal_identity_seed, seal_identity_seed_with_passphrase,
+};
+pub use replication::{
+    DeviceBatch, DeviceChange, DeviceRoute, DeviceRouteCatalog, DeviceRoutePayload,
+    DurableBatchAck, DurableBatchAckPayload, RouteHealth, SignedDeviceRoute, SignedDurableBatchAck,
+    durable_ack_matches, order_delivery_routes, sign_device_route, sign_durable_batch_ack,
+    validate_device_route, validate_device_route_payload, validate_durable_ack_payload,
+    verify_device_route, verify_durable_batch_ack,
+};
+pub use state::{
+    GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
+    ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,
+    select_scoped_neighbors, validate_peer_record,
 };

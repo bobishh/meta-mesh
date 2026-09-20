@@ -8,12 +8,17 @@ use std::{
 use iroh::{EndpointAddr, EndpointId};
 use iroh_blobs::{Hash, ticket::BlobTicket};
 use meta_mesh_core::{
-    DEFAULT_SIGNATURE_DOMAIN, IdentityPassphraseEnvelope, IdentityRecoveryEnvelope,
-    IdentitySecurity, SignedEnvelope, derive_device_seed, identity_security_for_recovery,
-    legacy_recovery_from_samples, open_identity_seed, open_identity_seed_with_passphrase,
-    parse_invitation, public_key_from_seed, public_key_id, recovery_phrase_from_entropy,
+    AutomergeSyncEngine, AutomergeSyncFrame, DEFAULT_SIGNATURE_DOMAIN, DeviceBatch, DeviceRoute,
+    DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
+    IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, ReplicaSet,
+    RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, SignedEnvelope, WorkspacePeerRecord,
+    derive_device_seed, durable_ack_matches, identity_security_for_recovery,
+    legacy_recovery_from_samples, merge_peer_records, open_identity_seed,
+    open_identity_seed_with_passphrase, order_delivery_routes, parse_invitation,
+    public_key_from_seed, public_key_id, reconcile_replica_sets, recovery_phrase_from_entropy,
     recovery_phrase_to_entropy, seal_identity_seed, seal_identity_seed_with_passphrase,
-    sign_json_envelope, verify_signed_envelope,
+    select_scoped_neighbors, sign_device_route, sign_durable_batch_ack, sign_json_envelope,
+    validate_device_route, verify_device_route, verify_durable_batch_ack, verify_signed_envelope,
 };
 use meta_mesh_native::{GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions};
 use serde_json::Value;
@@ -222,6 +227,221 @@ pub fn mesh_parse_invitation_json(
     serde_json::to_string(&invitation).map_err(MobileMeshError::from_display)
 }
 
+#[uniffi::export]
+pub fn mesh_merge_peer_records_json(
+    existing_json: String,
+    incoming_json: String,
+) -> Result<String, MobileMeshError> {
+    let existing: WorkspacePeerRecord = from_json(&existing_json)?;
+    let incoming: WorkspacePeerRecord = from_json(&incoming_json)?;
+    to_json(&merge_peer_records(&existing, &incoming).map_err(MobileMeshError::from_display)?)
+}
+
+#[uniffi::export]
+pub fn mesh_reconcile_replica_sets_json(
+    left_json: String,
+    right_json: String,
+) -> Result<String, MobileMeshError> {
+    let left: ReplicaSet = from_json(&left_json)?;
+    let right: ReplicaSet = from_json(&right_json)?;
+    to_json(&reconcile_replica_sets(&left, &right).map_err(MobileMeshError::from_display)?)
+}
+
+#[uniffi::export]
+pub fn mesh_select_scoped_neighbors_json(
+    local_device_id: String,
+    candidates_json: String,
+    bounds_json: String,
+    now_ms: i64,
+    rotation: u32,
+) -> Result<String, MobileMeshError> {
+    let candidates: Vec<GossipCandidate> = from_json(&candidates_json)?;
+    let bounds: GossipBounds = from_json(&bounds_json)?;
+    to_json(
+        &select_scoped_neighbors(&local_device_id, &candidates, &bounds, now_ms, rotation)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_sign_device_route_json(
+    seed: Vec<u8>,
+    signer_key_id: String,
+    payload_json: String,
+) -> Result<String, MobileMeshError> {
+    let seed = exact_bytes::<32>(&seed, "Private key seed must contain 32 bytes")?;
+    let payload: DeviceRoutePayload = from_json(&payload_json)?;
+    to_json(
+        &sign_device_route(&seed, &signer_key_id, payload)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_verify_device_route_json(
+    envelope_json: String,
+    public_key: String,
+    now_ms: i64,
+    allow_expired: bool,
+) -> Result<String, MobileMeshError> {
+    let envelope: SignedDeviceRoute = from_json(&envelope_json)?;
+    to_json(
+        &verify_device_route(&envelope, &public_key, i128::from(now_ms), allow_expired)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_validate_device_route_json(route_json: String) -> Result<(), MobileMeshError> {
+    let route: DeviceRoute = from_json(&route_json)?;
+    validate_device_route(&route).map_err(MobileMeshError::from_display)
+}
+
+#[uniffi::export]
+pub fn mesh_sign_durable_ack_json(
+    seed: Vec<u8>,
+    signer_key_id: String,
+    payload_json: String,
+) -> Result<String, MobileMeshError> {
+    let seed = exact_bytes::<32>(&seed, "Private key seed must contain 32 bytes")?;
+    let payload: DurableBatchAckPayload = from_json(&payload_json)?;
+    to_json(
+        &sign_durable_batch_ack(&seed, &signer_key_id, payload)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_verify_durable_ack_json(
+    envelope_json: String,
+    public_key: String,
+) -> Result<String, MobileMeshError> {
+    let envelope: SignedDurableBatchAck = from_json(&envelope_json)?;
+    to_json(
+        &verify_durable_batch_ack(&envelope, &public_key).map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_durable_ack_matches_json(
+    ack_json: String,
+    batch_json: String,
+    target_device_id: String,
+) -> Result<bool, MobileMeshError> {
+    let ack: DurableBatchAck = from_json(&ack_json)?;
+    let batch: DeviceBatch = from_json(&batch_json)?;
+    Ok(durable_ack_matches(&ack, &batch, &target_device_id))
+}
+
+#[uniffi::export]
+pub fn mesh_order_delivery_routes_json(
+    target_device_id: String,
+    routes_json: String,
+) -> Result<String, MobileMeshError> {
+    let routes: Vec<RouteHealth> = from_json(&routes_json)?;
+    to_json(
+        &order_delivery_routes(&target_device_id, &routes)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileAutomergeSyncEngine {
+    engine: Mutex<AutomergeSyncEngine>,
+}
+
+#[uniffi::export]
+impl MobileAutomergeSyncEngine {
+    #[uniffi::constructor]
+    pub fn new(
+        local_device_id: String,
+        maximum_frame_bytes: Option<u64>,
+    ) -> Result<Arc<Self>, MobileMeshError> {
+        let maximum_frame_bytes = maximum_frame_bytes
+            .map(usize::try_from)
+            .transpose()
+            .map_err(MobileMeshError::from_display)?;
+        let engine = AutomergeSyncEngine::new(local_device_id, maximum_frame_bytes)
+            .map_err(MobileMeshError::from_display)?;
+        Ok(Arc::new(Self {
+            engine: Mutex::new(engine),
+        }))
+    }
+
+    pub fn load_document(
+        &self,
+        scope_id: String,
+        document_id: String,
+        bytes: Vec<u8>,
+    ) -> Result<(), MobileMeshError> {
+        self.with_engine(|engine| engine.load_document(scope_id, document_id, &bytes))
+    }
+
+    pub fn save_document(&self, document_id: String) -> Result<Vec<u8>, MobileMeshError> {
+        self.with_engine(|engine| engine.save_document(&document_id))
+    }
+
+    pub fn heads(&self, document_id: String) -> Result<Vec<String>, MobileMeshError> {
+        self.with_engine(|engine| engine.heads(&document_id))
+    }
+
+    pub fn reset(
+        &self,
+        document_id: String,
+        remote_device_id: String,
+    ) -> Result<(), MobileMeshError> {
+        self.with_engine(|engine| {
+            engine.reset(&document_id, &remote_device_id);
+            Ok(())
+        })
+    }
+
+    pub fn generate_json(
+        &self,
+        document_id: String,
+        remote_device_id: String,
+        authorized: bool,
+        proof_json: Option<String>,
+    ) -> Result<Option<String>, MobileMeshError> {
+        let proof = proof_json.map(|value| from_json(&value)).transpose()?;
+        self.with_engine(|engine| {
+            engine.generate(&document_id, &remote_device_id, authorized, proof)
+        })?
+        .map(|frame| to_json(&frame))
+        .transpose()
+    }
+
+    pub fn receive_json(
+        &self,
+        remote_device_id: String,
+        frame_json: String,
+        authorized: bool,
+        response_proof_json: Option<String>,
+    ) -> Result<String, MobileMeshError> {
+        let frame: AutomergeSyncFrame = from_json(&frame_json)?;
+        let response_proof = response_proof_json
+            .map(|value| from_json(&value))
+            .transpose()?;
+        let result = self.with_engine(|engine| {
+            engine.receive(&remote_device_id, frame, authorized, response_proof)
+        })?;
+        to_json(&result)
+    }
+}
+
+impl MobileAutomergeSyncEngine {
+    fn with_engine<T>(
+        &self,
+        action: impl FnOnce(&mut AutomergeSyncEngine) -> Result<T, String>,
+    ) -> Result<T, MobileMeshError> {
+        let mut engine = self
+            .engine
+            .lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile Automerge lock poisoned"))?;
+        action(&mut engine).map_err(MobileMeshError::from_display)
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct MobileMeshNode {
     runtime: Arc<Runtime>,
@@ -416,8 +636,18 @@ fn exact_bytes<const N: usize>(value: &[u8], error: &str) -> Result<[u8; N], Mob
         .map_err(|_| MobileMeshError::from_display(error))
 }
 
+fn from_json<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, MobileMeshError> {
+    serde_json::from_str(value).map_err(MobileMeshError::from_display)
+}
+
+fn to_json(value: &impl serde::Serialize) -> Result<String, MobileMeshError> {
+    serde_json::to_string(value).map_err(MobileMeshError::from_display)
+}
+
 #[cfg(test)]
 mod tests {
+    use automerge::{AutoCommit, ROOT, transaction::Transactable};
+
     use super::*;
 
     #[test]
@@ -470,5 +700,53 @@ mod tests {
 
         node_1.close().unwrap();
         node_2.close().unwrap();
+    }
+
+    #[test]
+    fn mobile_automerge_binding_converges() {
+        let mut source = AutoCommit::new();
+        source.put(ROOT, "title", "mobile-rust").unwrap();
+        let source = source.save();
+        let mut empty = AutoCommit::new();
+        let empty = empty.save();
+        let left = MobileAutomergeSyncEngine::new("left".into(), None).unwrap();
+        let right = MobileAutomergeSyncEngine::new("right".into(), None).unwrap();
+        left.load_document("scope".into(), "doc".into(), source)
+            .unwrap();
+        right
+            .load_document("scope".into(), "doc".into(), empty)
+            .unwrap();
+        let mut frame: AutomergeSyncFrame = from_json(
+            &left
+                .generate_json("doc".into(), "right".into(), true, None)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        for _ in 0..20 {
+            let result: meta_mesh_core::AutomergeSyncResult = from_json(
+                &right
+                    .receive_json("left".into(), to_json(&frame).unwrap(), true, None)
+                    .unwrap(),
+            )
+            .unwrap();
+            let Some(response) = result.response else {
+                break;
+            };
+            let result: meta_mesh_core::AutomergeSyncResult = from_json(
+                &left
+                    .receive_json("right".into(), to_json(&response).unwrap(), true, None)
+                    .unwrap(),
+            )
+            .unwrap();
+            let Some(response) = result.response else {
+                break;
+            };
+            frame = response;
+        }
+        assert_eq!(
+            left.heads("doc".into()).unwrap(),
+            right.heads("doc".into()).unwrap()
+        );
     }
 }
