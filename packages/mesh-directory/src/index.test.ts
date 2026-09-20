@@ -9,6 +9,7 @@ import {
   createDirectory,
   createContactCard,
   createContactLocator,
+  createWakeTargetCard,
   contactRendezvousSeedFromProfile,
   decodeContactCard,
   decodeContactLink,
@@ -17,6 +18,7 @@ import {
   putContact,
   putRoom,
   saveDirectory,
+  verifyWakeTargetCard,
 } from "./index"
 
 describe("mesh directory", () => {
@@ -39,6 +41,45 @@ describe("mesh directory", () => {
     })
 
     expect(contacts(directory).map(contact => contact.alias)).toEqual(["Bob"])
+  })
+
+  it("Given an accepted contact, when it shares a targeted wake capability, then only its intended peer can store it", async () => {
+    const wake = await createWakeTargetCard(bob, alice.identity.personId, {
+      serviceUrl: "https://push.tw.example",
+      capabilityId: "capability-123456789012",
+      secret: "wake-secret-123456789",
+    }, 1_800_000_000_000)
+
+    await expect(verifyWakeTargetCard(wake, alice.identity.personId, 1_800_000_000_001))
+      .resolves.toMatchObject({ signed: { payload: { personId: bob.identity.personId } } })
+    await expect(verifyWakeTargetCard(wake, "some-other-person", 1_800_000_000_001))
+      .rejects.toThrow("target")
+
+    const directory = await putContact(createDirectory(alice), {
+      identity: bob.identity,
+      certificates: [bob.certificate],
+      endpoint: "bob-endpoint",
+      wake,
+      state: "accepted",
+      now: 1_800_000_000_001,
+    })
+    expect(directory.contacts[bob.identity.personId].wake).toEqual(wake)
+  })
+
+  it("Given a stored wake capability, when another route arrives without one, then the capability survives", async () => {
+    const wake = await createWakeTargetCard(bob, alice.identity.personId, {
+      serviceUrl: "https://push.tw.example",
+      capabilityId: "capability-123456789012",
+      secret: "wake-secret-123456789",
+    })
+    let directory = await putContact(createDirectory(alice), {
+      identity: bob.identity, certificates: [bob.certificate], endpoint: "bob-a", wake, state: "accepted",
+    })
+    directory = await putContact(directory, {
+      identity: bob.identity, certificates: [bob.certificate], endpoint: "bob-b", state: "accepted",
+    })
+
+    expect(directory.contacts[bob.identity.personId].wake).toEqual(wake)
   })
 
   it("Given one contact on two devices, when its second route arrives, then both endpoints remain usable", async () => {
@@ -174,4 +215,3 @@ describe("mesh directory", () => {
     await expect(decodeContactCard(encoded, { now })).rejects.toThrow("Invalid contact locator card")
   })
 })
-

@@ -19,6 +19,7 @@ import {
 
 export const CONTACT_CARD_SIGNATURE_DOMAIN = "TWANG-CONTACT-CARD/1"
 export const CONTACT_LOCATOR_SIGNATURE_DOMAIN = "TWANG-CONTACT-LOCATOR/1"
+export const WAKE_TARGET_SIGNATURE_DOMAIN = "TWANG-WAKE-TARGET/1"
 
 export type ContactState = "incoming" | "outgoing" | "accepted" | "blocked"
 export type RoomKind = "direct" | "group"
@@ -29,9 +30,28 @@ export type Contact = {
   certificates: DeviceCertificate[]
   alias: string
   endpoints: Array<{ deviceId: string; endpoint: string }>
+  wake?: WakeTargetCard
   state: ContactState
   createdAt: string
   updatedAt: string
+}
+
+export type WakeTargetPayload = {
+  kind: "wake-target"
+  version: 1
+  personId: string
+  deviceId: string
+  targetPersonId: string
+  serviceUrl: string
+  capabilityId: string
+  secret: string
+  issuedAt: string
+}
+
+export type WakeTargetCard = {
+  signed: SignedEnvelope<WakeTargetPayload>
+  identity: PublicIdentity
+  certificates: DeviceCertificate[]
 }
 
 export type LegacyContactCard = {
@@ -121,6 +141,76 @@ function iso(now: number): string {
   return value
 }
 
+function validateWakeValue(value: string, label: string): string {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(value)) throw new Error(`Invalid wake ${label}`)
+  return value
+}
+
+function validateWakeServiceUrl(value: string): string {
+  if (value.length > 2_048) throw new Error("Invalid wake service URL")
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error("Invalid wake service URL") }
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("Invalid wake service URL")
+  }
+  return url.origin
+}
+
+export async function createWakeTargetCard(
+  profile: LocalProfile,
+  targetPersonId: string,
+  target: { serviceUrl: string; capabilityId: string; secret: string },
+  now = Date.now(),
+): Promise<WakeTargetCard> {
+  if (!targetPersonId || targetPersonId === profile.identity.personId) throw new Error("Invalid wake target person")
+  const payload: WakeTargetPayload = {
+    kind: "wake-target",
+    version: 1,
+    personId: profile.identity.personId,
+    deviceId: profile.device.deviceId,
+    targetPersonId,
+    serviceUrl: validateWakeServiceUrl(target.serviceUrl),
+    capabilityId: validateWakeValue(target.capabilityId, "capability"),
+    secret: validateWakeValue(target.secret, "secret"),
+    issuedAt: iso(now),
+  }
+  return {
+    signed: await signEnvelope(
+      profile.privateKeys.devicePrivateKey,
+      payload,
+      profile.device.deviceId,
+      WAKE_TARGET_SIGNATURE_DOMAIN,
+    ),
+    identity: clone(profile.identity),
+    certificates: [clone(profile.certificate)],
+  }
+}
+
+export async function verifyWakeTargetCard(
+  value: unknown,
+  targetPersonId: string,
+  now = Date.now(),
+): Promise<WakeTargetCard> {
+  const card = value as WakeTargetCard
+  const payload = card?.signed?.payload
+  if (!payload || payload.kind !== "wake-target" || payload.version !== 1 ||
+    !payload.personId || !payload.deviceId || payload.targetPersonId !== targetPersonId ||
+    card.identity?.personId !== payload.personId || card.signed.signerKeyId !== payload.deviceId ||
+    !Array.isArray(card.certificates)) throw new Error("Invalid wake target")
+  validateWakeServiceUrl(payload.serviceUrl)
+  validateWakeValue(payload.capabilityId, "capability")
+  validateWakeValue(payload.secret, "secret")
+  const issuedAt = Date.parse(payload.issuedAt)
+  if (!Number.isFinite(issuedAt) || new Date(issuedAt).toISOString() !== payload.issuedAt || issuedAt > now + 5 * 60_000) {
+    throw new Error("Invalid wake target timestamp")
+  }
+  const deviceKey = await verifyDeviceCertificateChain(card.identity, payload.deviceId, card.certificates)
+  if (!await verifyEnvelope(card.signed, deviceKey, WAKE_TARGET_SIGNATURE_DOMAIN)) {
+    throw new Error("Invalid wake target signature")
+  }
+  return card
+}
+
 export function createDirectory(profile: LocalProfile): Directory {
   let doc = Automerge.init<DirectoryDocument>()
   doc = Automerge.change(doc, { message: "Create directory" }, draft => {
@@ -139,6 +229,7 @@ export async function putContact(
     identity: PublicIdentity
     certificates: DeviceCertificate[]
     endpoint: string
+    wake?: WakeTargetCard
     alias?: string
     state: ContactState
     now?: number
@@ -163,12 +254,17 @@ export async function putContact(
     ...clone(previous?.certificates ?? []).filter(value => value.payload.deviceId !== deviceId),
     ...clone(input.certificates),
   ]
+  const wake = input.wake
+    ? await verifyWakeTargetCard(input.wake, doc.ownerPersonId, input.now ?? Date.now())
+    : previous?.wake
+  if (wake && wake.identity.personId !== input.identity.personId) throw new Error("Invalid wake owner")
   const contact: Contact = {
     personId: input.identity.personId,
     identity: clone(input.identity),
     certificates,
     alias: cleanLabel(input.alias ?? "", input.identity.displayName),
     endpoints,
+    ...(wake ? { wake: clone(wake) } : {}),
     state: input.state,
     createdAt: previous?.createdAt ?? updatedAt,
     updatedAt,
@@ -223,6 +319,10 @@ export async function verifyDirectory(doc: Directory): Promise<Directory> {
       if (!endpoint.endpoint || !contact.certificates.some(value => value.payload.deviceId === endpoint.deviceId)) {
         throw new Error("Invalid contact endpoint")
       }
+    }
+    if (contact.wake) {
+      const wake = await verifyWakeTargetCard(contact.wake, doc.ownerPersonId)
+      if (wake.identity.personId !== contact.personId) throw new Error("Invalid wake owner")
     }
   }
   for (const [roomId, room] of Object.entries(doc.rooms)) {
