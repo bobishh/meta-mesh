@@ -64,7 +64,7 @@ export type PairingCodec = {
 
 let pairingCodec: PairingCodec | undefined
 
-export function installPairingCodec(codec: PairingCodec): () => void {
+export function installPairingCodec(codec: PairingCodec | undefined): () => void {
   const previous = pairingCodec
   pairingCodec = codec
   return () => { pairingCodec = previous }

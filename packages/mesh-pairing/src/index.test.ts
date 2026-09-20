@@ -46,9 +46,12 @@ afterEach(() => restoreCodec?.())
 
 describe("pairing protocol", () => {
   it("Given Rust runtime is not installed, when framing starts, then it fails closed", () => {
-    restoreCodec?.()
-    restoreCodec = undefined
-    expect(() => encodePairingFrame("sync-request", "secret-a", new Uint8Array())).toThrow("Rust pairing codec is not installed")
+    const restoreMissingCodec = installPairingCodec(undefined)
+    try {
+      expect(() => encodePairingFrame("sync-request", "secret-a", new Uint8Array())).toThrow("Rust pairing codec is not installed")
+    } finally {
+      restoreMissingCodec()
+    }
   })
 
   it("Given a pairing link, when parsed, then it preserves the endpoint and secret", () => {
