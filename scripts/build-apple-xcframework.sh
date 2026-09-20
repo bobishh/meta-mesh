@@ -13,6 +13,7 @@ generated_dir="$root_dir/crates/meta-mesh-mobile/generated"
 output_dir="$generated_dir/apple"
 output="$output_dir/meta_mesh_mobileFFI.xcframework"
 toolchain=${RUSTUP_TOOLCHAIN:-$(rustup show active-toolchain | awk '{print $1}')}
+export IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-17.0}
 
 if [ -z "${RUSTC:-}" ] && command -v rustup >/dev/null 2>&1; then
   RUSTC=$(rustup which rustc --toolchain "$toolchain")
