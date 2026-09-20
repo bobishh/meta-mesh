@@ -3,4 +3,4 @@ dist/
 coverage/
 target/
 *.log
-
+crates/meta-mesh-mobile/generated/apple/*.xcframework/

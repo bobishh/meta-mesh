@@ -40,3 +40,15 @@ jobs:
           ./scripts/check-wasm-api.sh
       - run: npm run check
       - run: npm test
+
+  apple-package:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Apple Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build and verify Apple package
+        run: |
+          ./scripts/build-apple-xcframework.sh
+          ./scripts/verify-apple-xcframework.sh
