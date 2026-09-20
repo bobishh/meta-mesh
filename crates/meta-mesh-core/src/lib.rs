@@ -1,12 +1,23 @@
+pub mod authority;
 pub mod authorization;
 pub mod automerge;
 pub mod identity;
 pub mod invitation;
 pub mod pairing;
+pub mod persistence;
 pub mod recovery;
 pub mod replication;
 pub mod state;
 
+pub use authority::{
+    WorkspaceAuthority, WorkspaceOwnershipTransfer, WorkspaceOwnershipTransferPayload,
+    WorkspaceRevocation, WorkspaceRevocationPayload, WorkspaceSuccessionClaim,
+    WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy, WorkspaceSuccessionPolicyPayload,
+    WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload, has_conflicting_ownership_transfers,
+    verify_workspace_ownership_transfer, verify_workspace_revocation,
+    verify_workspace_succession_claim, verify_workspace_succession_policy,
+    verify_workspace_succession_vote,
+};
 pub use authorization::{
     WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
     verify_workspace_grant,
@@ -27,6 +38,10 @@ pub use invitation::{
     invitation_url, pairing_invite_url, parse_invitation, parse_pairing_invite,
 };
 pub use pairing::{PAIRING_VERSION, PairingCodec, PairingFrameHeader};
+pub use persistence::{
+    ChangeAdmissionPlan, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
+    OutboxClaimTransition, StoredDocumentChange, plan_change_admission, transition_outbox_claim,
+};
 pub use recovery::{
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity,
     identity_security_for_recovery, legacy_recovery_from_samples, normalize_secret,

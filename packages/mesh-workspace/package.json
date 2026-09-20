@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@meta-uber/mesh-identity": "*"
+    "@meta-uber/mesh-identity": "*",
+    "@meta-uber/mesh-replication": "*"
   }
 }

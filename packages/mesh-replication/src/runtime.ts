@@ -1,4 +1,13 @@
 export type RustStateCore = {
+  verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
+  hasConflictingOwnershipTransfers(records: unknown): boolean
+  verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
+  verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
+  verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
+  verifyWorkspaceSuccessionVote(vote: unknown, policy: unknown, candidatePersonId: string, authority: unknown, revoked: string[], nowMs: number): unknown
+  verifyWorkspaceSuccessionClaim(claim: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, revoked: string[], nowMs: number): unknown
+  planChangeAdmission(documentId: string, changes: unknown, verifiedAt: string): unknown
+  transitionOutboxClaim(current: unknown, input: unknown): unknown
   mergePeerRecords(existing: unknown, incoming: unknown): unknown
   reconcileReplicaSets(left: unknown, right: unknown): unknown
   selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]

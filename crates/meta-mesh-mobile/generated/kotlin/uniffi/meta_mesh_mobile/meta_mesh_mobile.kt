@@ -679,6 +679,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_durable_ack_matches_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_has_conflicting_ownership_transfers_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_identity_security_for_recovery(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_legacy_recovery_from_samples(
@@ -692,6 +694,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_order_delivery_routes_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_parse_invitation_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_plan_change_admission_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_public_key_from_seed(
     ): Int
@@ -715,6 +719,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_sign_envelope_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_transition_outbox_claim_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_validate_device_route_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_device_route_json(
@@ -722,6 +728,18 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_durable_ack_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_envelope_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_grant_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_ownership_transfer_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_revocation_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_claim_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_policy_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json(
     ): Int
@@ -835,6 +853,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_durable_ack_matches_json(`ackJson`: RustBuffer.ByValue,`batchJson`: RustBuffer.ByValue,`targetDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_has_conflicting_ownership_transfers_json(`recordsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_identity_security_for_recovery(`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_legacy_recovery_from_samples(`samples`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -848,6 +868,8 @@ internal object UniffiLib {
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_order_delivery_routes_json(`targetDeviceId`: RustBuffer.ByValue,`routesJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_parse_invitation_json(`invitationUrl`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_plan_change_admission_json(`documentId`: RustBuffer.ByValue,`changesJson`: RustBuffer.ByValue,`verifiedAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_public_key_from_seed(`seed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
@@ -871,6 +893,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_sign_envelope_json(`seed`: RustBuffer.ByValue,`payloadJson`: RustBuffer.ByValue,`signerKeyId`: RustBuffer.ByValue,`domain`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_transition_outbox_claim_json(`currentJson`: RustBuffer.ByValue,`inputJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_validate_device_route_json(`routeJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_device_route_json(`envelopeJson`: RustBuffer.ByValue,`publicKey`: RustBuffer.ByValue,`nowMs`: Long,`allowExpired`: Byte,uniffi_out_err: UniffiRustCallStatus,
@@ -879,6 +903,18 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_envelope_json(`envelopeJson`: RustBuffer.ByValue,`publicKey`: RustBuffer.ByValue,`domain`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_grant_json(`grantJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`memberPersonId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_ownership_transfer_json(`recordJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,`minimumEpoch`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_revocation_json(`recordJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_claim_json(`claimJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,`minimumEpoch`: Long,`revokedPersonIds`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_policy_json(`policyJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_vote_json(`voteJson`: RustBuffer.ByValue,`policyJson`: RustBuffer.ByValue,`candidatePersonId`: RustBuffer.ByValue,`authorityJson`: RustBuffer.ByValue,`revokedPersonIds`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun ffi_meta_mesh_mobile_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun ffi_meta_mesh_mobile_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1007,6 +1043,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_durable_ack_matches_json() and 0xFFFF) != 65242) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_has_conflicting_ownership_transfers_json() and 0xFFFF) != 33649) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_identity_security_for_recovery() and 0xFFFF) != 28347) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1026,6 +1065,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_parse_invitation_json() and 0xFFFF) != 40510) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_plan_change_admission_json() and 0xFFFF) != 63604) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_public_key_from_seed() and 0xFFFF) != 62475) {
@@ -1061,6 +1103,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_sign_envelope_json() and 0xFFFF) != 3383) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_transition_outbox_claim_json() and 0xFFFF) != 51840) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_validate_device_route_json() and 0xFFFF) != 21434) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1071,6 +1116,24 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_envelope_json() and 0xFFFF) != 51558) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_grant_json() and 0xFFFF) != 63504) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_ownership_transfer_json() and 0xFFFF) != 18194) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_revocation_json() and 0xFFFF) != 3007) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_claim_json() and 0xFFFF) != 28811) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_policy_json() and 0xFFFF) != 20636) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json() and 0xFFFF) != 14625) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() and 0xFFFF) != 63608) {
@@ -2900,6 +2963,18 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
     )
     }
 
+
+    @Throws(MobileMeshException::class) fun `meshHasConflictingOwnershipTransfersJson`(`recordsJson`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_has_conflicting_ownership_transfers_json(
+
+
+        FfiConverterString.lower(`recordsJson`),_status)
+}
+    )
+    }
+
  fun `meshIdentitySecurityForRecovery`(`recoveryKey`: kotlin.String): MobileIdentitySecurity? {
             return FfiConverterOptionalTypeMobileIdentitySecurity.lift(
     uniffiRustCall() { _status ->
@@ -2984,6 +3059,20 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 
         FfiConverterString.lower(`invitationUrl`),
         FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshPlanChangeAdmissionJson`(`documentId`: kotlin.String, `changesJson`: kotlin.String, `verifiedAt`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_plan_change_admission_json(
+
+
+        FfiConverterString.lower(`documentId`),
+        FfiConverterString.lower(`changesJson`),
+        FfiConverterString.lower(`verifiedAt`),_status)
 }
     )
     }
@@ -3142,6 +3231,19 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
     }
 
 
+    @Throws(MobileMeshException::class) fun `meshTransitionOutboxClaimJson`(`currentJson`: kotlin.String?, `inputJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_transition_outbox_claim_json(
+
+
+        FfiConverterOptionalString.lower(`currentJson`),
+        FfiConverterString.lower(`inputJson`),_status)
+}
+    )
+    }
+
+
     @Throws(MobileMeshException::class) fun `meshValidateDeviceRouteJson`(`routeJson`: kotlin.String)
         =
     uniffiRustCallWithError(MobileMeshException) { _status ->
@@ -3190,6 +3292,101 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         FfiConverterString.lower(`envelopeJson`),
         FfiConverterString.lower(`publicKey`),
         FfiConverterOptionalString.lower(`domain`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceGrantJson`(`grantJson`: kotlin.String, `workspaceId`: kotlin.String, `memberPersonId`: kotlin.String, `authorityJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_grant_json(
+
+
+        FfiConverterString.lower(`grantJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`memberPersonId`),
+        FfiConverterString.lower(`authorityJson`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceOwnershipTransferJson`(`recordJson`: kotlin.String, `workspaceId`: kotlin.String, `authorityJson`: kotlin.String, `minimumEpoch`: kotlin.ULong, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_ownership_transfer_json(
+
+
+        FfiConverterString.lower(`recordJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`authorityJson`),
+        FfiConverterULong.lower(`minimumEpoch`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceRevocationJson`(`recordJson`: kotlin.String, `workspaceId`: kotlin.String, `authorityJson`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_revocation_json(
+
+
+        FfiConverterString.lower(`recordJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`authorityJson`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceSuccessionClaimJson`(`claimJson`: kotlin.String, `workspaceId`: kotlin.String, `authorityJson`: kotlin.String, `minimumEpoch`: kotlin.ULong, `revokedPersonIds`: List<kotlin.String>, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_claim_json(
+
+
+        FfiConverterString.lower(`claimJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`authorityJson`),
+        FfiConverterULong.lower(`minimumEpoch`),
+        FfiConverterSequenceString.lower(`revokedPersonIds`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceSuccessionPolicyJson`(`policyJson`: kotlin.String, `workspaceId`: kotlin.String, `authorityJson`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_policy_json(
+
+
+        FfiConverterString.lower(`policyJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`authorityJson`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshVerifyWorkspaceSuccessionVoteJson`(`voteJson`: kotlin.String, `policyJson`: kotlin.String, `candidatePersonId`: kotlin.String, `authorityJson`: kotlin.String, `revokedPersonIds`: List<kotlin.String>, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_vote_json(
+
+
+        FfiConverterString.lower(`voteJson`),
+        FfiConverterString.lower(`policyJson`),
+        FfiConverterString.lower(`candidatePersonId`),
+        FfiConverterString.lower(`authorityJson`),
+        FfiConverterSequenceString.lower(`revokedPersonIds`),
+        FfiConverterLong.lower(`nowMs`),_status)
 }
     )
     }

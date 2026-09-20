@@ -1,3 +1,5 @@
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
+
 export type MeshStore = {
   get<T>(store: string, key: string): Promise<T | undefined>
   put<T>(store: string, key: string, value: T): Promise<void>
@@ -253,36 +255,33 @@ export class DurableReplicaStore {
     verifiedAt?: string
     verify: (change: { hash: string; bytes: Uint8Array; proof: unknown }) => boolean | Promise<boolean>
   }): Promise<{ acceptedHashes: string[]; duplicateHashes: string[] }> {
-    if (!input.documentId || input.changes.length === 0) throw new Error("Invalid document change batch")
     const verifiedAt = input.verifiedAt ?? new Date().toISOString()
-    const acceptedHashes: string[] = []
-    const duplicateHashes: string[] = []
-    const operations: MeshStoreOperation[] = []
-    const seen = new Set<string>()
+    const changes: Array<{
+      hash: string; bytes: Uint8Array; proof: unknown; verified: boolean; existingBytes?: Uint8Array
+    }> = []
     for (const change of input.changes) {
-      if (!change.hash || !(change.bytes instanceof Uint8Array) || seen.has(change.hash) || !await input.verify(change)) {
-        throw new Error("Document change verification failed")
-      }
-      seen.add(change.hash)
       const key = this.changeKey(input.documentId, change.hash)
       const existing = await this.store.get<StoredDocumentChange>(this.names.changes, key)
-      if (existing) {
-        if (!equalBytes(existing.bytes, change.bytes)) throw new Error("Change hash collision")
-        duplicateHashes.push(change.hash)
-        continue
-      }
-      acceptedHashes.push(change.hash)
-      operations.push({ type: "put", store: this.names.changes, key, value: {
-        version: 1,
-        documentId: input.documentId,
+      changes.push({
         hash: change.hash,
-        bytes: change.bytes.slice(),
-        proof: structuredClone(change.proof),
-        verifiedAt,
-      } satisfies StoredDocumentChange })
+        bytes: change.bytes,
+        proof: change.proof,
+        verified: await input.verify(change),
+        existingBytes: existing?.bytes,
+      })
     }
+    const plan = meshRustRuntime().state.planChangeAdmission(input.documentId, changes, verifiedAt) as {
+      acceptedHashes: string[]
+      duplicateHashes: string[]
+      accepted: StoredDocumentChange[]
+    }
+    const operations: MeshStoreOperation[] = plan.accepted.map(change => ({
+      type: "put", store: this.names.changes, key: this.changeKey(input.documentId, change.hash), value: {
+        ...change, bytes: new Uint8Array(change.bytes),
+      },
+    }))
     await this.store.batch(operations)
-    return { acceptedHashes, duplicateHashes }
+    return { acceptedHashes: plan.acceptedHashes, duplicateHashes: plan.duplicateHashes }
   }
 
   async changes(documentId: string): Promise<StoredDocumentChange[]> {
@@ -304,25 +303,17 @@ export class DurableReplicaStore {
   }
 
   async claimOutbox(input: Omit<OutboxClaim, "version" | "claimedAt" | "expiresAt"> & { now: number; ttlMs: number }): Promise<OutboxClaim | undefined> {
-    if (!Number.isFinite(input.now) || !Number.isFinite(input.ttlMs) || input.ttlMs <= 0) throw new Error("Invalid outbox claim lifetime")
     const key = this.claimKey(input.documentId, input.targetDeviceId, input.batchId)
-    return this.store.update<OutboxClaim>(this.names.claims, key, current => {
-      if (current && current.expiresAt > input.now && current.ownerInstanceId !== input.ownerInstanceId) return current
-      return {
-        version: 1,
-        documentId: input.documentId,
-        targetDeviceId: input.targetDeviceId,
-        batchId: input.batchId,
-        ownerInstanceId: input.ownerInstanceId,
-        claimedAt: input.now,
-        expiresAt: input.now + input.ttlMs,
+    let acquired = false
+    const claim = await this.store.update<OutboxClaim>(this.names.claims, key, current => {
+      const transition = meshRustRuntime().state.transitionOutboxClaim(current, input) as {
+        claim: OutboxClaim; acquired: boolean
       }
-    }).then(claim => claim?.ownerInstanceId === input.ownerInstanceId ? claim : undefined)
+      acquired = transition.acquired
+      return transition.claim
+    })
+    return acquired ? claim : undefined
   }
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.byteLength === right.byteLength && left.every((value, index) => value === right[index])
 }
 
 export type ReplicaInvalidation = { version: 1; documentId: string; heads: string[] }

@@ -76,18 +76,18 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - [x] Port workspace grant roles, owner/root-or-certified-device verification, and reusable device-signed admission checks to `meta-mesh-core`; expose grant admission through WASM.
   - [x] Port HKDF device-key derivation, BIP39 and exact EFF-long recovery validation, PBKDF2-600k/AES-GCM recovery and passphrase envelopes; verify WebCrypto ciphertext parity and expose WASM bindings.
 - [x] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match production runtime, keep Twang on its Rust-backed transport framing, and remove the TypeScript production fallback after parity tests pass.
-- [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
+- [x] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
   - [x] Port deterministic peer catalog merge, generic replica reconciliation, scoped neighbor selection, device route catalog, route ordering, and durable ACK matching.
   - [x] Port Automerge document ownership and per-peer binary sync state to Rust; browser TypeScript now supplies authorization, persistence, and UI callbacks only.
-  - [ ] Port ownership transfer/succession/revocation verification plus durable change admission and outbox claim transitions.
+  - [x] Port ownership transfer/succession/revocation verification plus durable change admission and outbox claim transitions.
 - [x] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
   - [x] Resolve `meta-mesh-native` on `iroh 1.2.0`, `iroh-gossip 0.101.0`, and `iroh-blobs 0.103.0` without the browser dependency graph.
 - [x] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
   - [x] Export identity/recovery/signature/invitation APIs plus current-Iroh endpoint, allowlist, gossip, Bao blob transfer, and disk-store lifecycle through UniFFI.
   - [x] Generate checked-in Swift and Kotlin bindings and verify two mobile-adapter nodes exchange blobs and gossip over the real native runtime.
-- [ ] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
+- [x] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
   - [x] Delete TypeScript peer merge, replica reconcile, route catalog, route ordering, ACK matching, neighbor selection, and Automerge sync implementations; unit tests load the actual Rust WASM runtime.
-  - [ ] Install the Rust state runtime in Match and Twang production bootstrap and remove remaining authority/delivery implementations.
+  - [x] Install the Rust state runtime in Match and Twang production bootstrap and remove remaining authority/delivery implementations.
 - [ ] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.
 - [ ] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.
 

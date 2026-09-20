@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -10,15 +11,22 @@ use iroh_blobs::{Hash, ticket::BlobTicket};
 use meta_mesh_core::{
     AutomergeSyncEngine, AutomergeSyncFrame, DEFAULT_SIGNATURE_DOMAIN, DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
-    IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, ReplicaSet,
-    RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, SignedEnvelope, WorkspacePeerRecord,
-    derive_device_seed, durable_ack_matches, identity_security_for_recovery,
-    legacy_recovery_from_samples, merge_peer_records, open_identity_seed,
-    open_identity_seed_with_passphrase, order_delivery_routes, parse_invitation,
-    public_key_from_seed, public_key_id, reconcile_replica_sets, recovery_phrase_from_entropy,
-    recovery_phrase_to_entropy, seal_identity_seed, seal_identity_seed_with_passphrase,
-    select_scoped_neighbors, sign_device_route, sign_durable_batch_ack, sign_json_envelope,
+    IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity,
+    IncomingDocumentChange, OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth,
+    SignedDeviceRoute, SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
+    WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
+    WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
+    derive_device_seed, durable_ack_matches, has_conflicting_ownership_transfers,
+    identity_security_for_recovery, legacy_recovery_from_samples, merge_peer_records,
+    open_identity_seed, open_identity_seed_with_passphrase, order_delivery_routes,
+    parse_invitation, plan_change_admission, public_key_from_seed, public_key_id,
+    reconcile_replica_sets, recovery_phrase_from_entropy, recovery_phrase_to_entropy,
+    seal_identity_seed, seal_identity_seed_with_passphrase, select_scoped_neighbors,
+    sign_device_route, sign_durable_batch_ack, sign_json_envelope, transition_outbox_claim,
     validate_device_route, verify_device_route, verify_durable_batch_ack, verify_signed_envelope,
+    verify_workspace_grant, verify_workspace_ownership_transfer, verify_workspace_revocation,
+    verify_workspace_succession_claim, verify_workspace_succession_policy,
+    verify_workspace_succession_vote,
 };
 use meta_mesh_native::{GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions};
 use serde_json::Value;
@@ -343,6 +351,161 @@ pub fn mesh_order_delivery_routes_json(
         &order_delivery_routes(&target_device_id, &routes)
             .map_err(MobileMeshError::from_display)?,
     )
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_grant_json(
+    grant_json: String,
+    workspace_id: String,
+    member_person_id: String,
+    authority_json: String,
+) -> Result<String, MobileMeshError> {
+    let grant: WorkspaceGrant = from_json(&grant_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    let role = verify_workspace_grant(
+        &grant,
+        &workspace_id,
+        &member_person_id,
+        &PublicIdentity {
+            person_id: authority.person_id,
+            public_key: authority.public_key,
+            display_name: String::new(),
+        },
+        &authority.certificates,
+    )
+    .map_err(MobileMeshError::from_display)?;
+    to_json(&role)
+}
+
+#[uniffi::export]
+pub fn mesh_has_conflicting_ownership_transfers_json(
+    records_json: String,
+) -> Result<bool, MobileMeshError> {
+    let records: Vec<WorkspaceOwnershipTransfer> = from_json(&records_json)?;
+    Ok(has_conflicting_ownership_transfers(&records))
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_revocation_json(
+    record_json: String,
+    workspace_id: String,
+    authority_json: String,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let record: WorkspaceRevocation = from_json(&record_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    verify_workspace_revocation(&record, &workspace_id, &authority, i128::from(now_ms))
+        .map_err(MobileMeshError::from_display)?;
+    to_json(&record)
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_ownership_transfer_json(
+    record_json: String,
+    workspace_id: String,
+    authority_json: String,
+    minimum_epoch: u64,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let record: WorkspaceOwnershipTransfer = from_json(&record_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    verify_workspace_ownership_transfer(
+        &record,
+        &workspace_id,
+        &authority,
+        minimum_epoch,
+        i128::from(now_ms),
+    )
+    .map_err(MobileMeshError::from_display)?;
+    to_json(&record)
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_succession_policy_json(
+    policy_json: String,
+    workspace_id: String,
+    authority_json: String,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let policy: WorkspaceSuccessionPolicy = from_json(&policy_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    verify_workspace_succession_policy(&policy, &workspace_id, &authority, i128::from(now_ms))
+        .map_err(MobileMeshError::from_display)?;
+    to_json(&policy)
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_succession_vote_json(
+    vote_json: String,
+    policy_json: String,
+    candidate_person_id: String,
+    authority_json: String,
+    revoked_person_ids: Vec<String>,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let vote: WorkspaceSuccessionVote = from_json(&vote_json)?;
+    let policy: WorkspaceSuccessionPolicy = from_json(&policy_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    let revoked = revoked_person_ids.into_iter().collect::<HashSet<_>>();
+    verify_workspace_succession_vote(
+        &vote,
+        &policy,
+        &candidate_person_id,
+        &authority,
+        &revoked,
+        i128::from(now_ms),
+    )
+    .map_err(MobileMeshError::from_display)?;
+    to_json(&vote)
+}
+
+#[uniffi::export]
+pub fn mesh_verify_workspace_succession_claim_json(
+    claim_json: String,
+    workspace_id: String,
+    authority_json: String,
+    minimum_epoch: u64,
+    revoked_person_ids: Vec<String>,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let claim: WorkspaceSuccessionClaim = from_json(&claim_json)?;
+    let authority: WorkspaceAuthority = from_json(&authority_json)?;
+    let revoked = revoked_person_ids.into_iter().collect::<HashSet<_>>();
+    verify_workspace_succession_claim(
+        &claim,
+        &workspace_id,
+        &authority,
+        minimum_epoch,
+        &revoked,
+        i128::from(now_ms),
+    )
+    .map_err(MobileMeshError::from_display)?;
+    to_json(&claim)
+}
+
+#[uniffi::export]
+pub fn mesh_plan_change_admission_json(
+    document_id: String,
+    changes_json: String,
+    verified_at: String,
+) -> Result<String, MobileMeshError> {
+    let changes: Vec<IncomingDocumentChange> = from_json(&changes_json)?;
+    to_json(
+        &plan_change_admission(&document_id, changes, &verified_at)
+            .map_err(MobileMeshError::from_display)?,
+    )
+}
+
+#[uniffi::export]
+pub fn mesh_transition_outbox_claim_json(
+    current_json: Option<String>,
+    input_json: String,
+) -> Result<String, MobileMeshError> {
+    let current: Option<OutboxClaim> = current_json
+        .map(|value| from_json(&value))
+        .transpose()?;
+    let input: OutboxClaimInput = from_json(&input_json)?;
+    to_json(&transition_outbox_claim(current, input).map_err(MobileMeshError::from_display)?)
 }
 
 #[derive(uniffi::Object)]

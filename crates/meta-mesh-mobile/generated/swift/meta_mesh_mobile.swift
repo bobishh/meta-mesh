@@ -1554,6 +1554,14 @@ public func meshDurableAckMatchesJson(ackJson: String, batchJson: String, target
     )
 })
 }
+public func meshHasConflictingOwnershipTransfersJson(recordsJson: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_has_conflicting_ownership_transfers_json(
+        FfiConverterString.lower(recordsJson),uniffiCallStatus
+    )
+})
+}
 public func meshIdentitySecurityForRecovery(recoveryKey: String) -> MobileIdentitySecurity?  {
     return try!  FfiConverterOptionTypeMobileIdentitySecurity.lift(try! rustCall() {
         uniffiCallStatus in
@@ -1612,6 +1620,16 @@ public func meshParseInvitationJson(invitationUrl: String, nowMs: Int64)throws  
     uniffi_meta_mesh_mobile_fn_func_mesh_parse_invitation_json(
         FfiConverterString.lower(invitationUrl),
         FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+public func meshPlanChangeAdmissionJson(documentId: String, changesJson: String, verifiedAt: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_plan_change_admission_json(
+        FfiConverterString.lower(documentId),
+        FfiConverterString.lower(changesJson),
+        FfiConverterString.lower(verifiedAt),uniffiCallStatus
     )
 })
 }
@@ -1724,6 +1742,15 @@ public func meshSignEnvelopeJson(seed: Data, payloadJson: String, signerKeyId: S
     )
 })
 }
+public func meshTransitionOutboxClaimJson(currentJson: String?, inputJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_transition_outbox_claim_json(
+        FfiConverterOptionString.lower(currentJson),
+        FfiConverterString.lower(inputJson),uniffiCallStatus
+    )
+})
+}
 public func meshValidateDeviceRouteJson(routeJson: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_func_mesh_validate_device_route_json(
@@ -1761,6 +1788,77 @@ public func meshVerifyEnvelopeJson(envelopeJson: String, publicKey: String, doma
     )
 })
 }
+public func meshVerifyWorkspaceGrantJson(grantJson: String, workspaceId: String, memberPersonId: String, authorityJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_grant_json(
+        FfiConverterString.lower(grantJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(memberPersonId),
+        FfiConverterString.lower(authorityJson),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyWorkspaceOwnershipTransferJson(recordJson: String, workspaceId: String, authorityJson: String, minimumEpoch: UInt64, nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_ownership_transfer_json(
+        FfiConverterString.lower(recordJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(authorityJson),
+        FfiConverterUInt64.lower(minimumEpoch),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyWorkspaceRevocationJson(recordJson: String, workspaceId: String, authorityJson: String, nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_revocation_json(
+        FfiConverterString.lower(recordJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(authorityJson),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyWorkspaceSuccessionClaimJson(claimJson: String, workspaceId: String, authorityJson: String, minimumEpoch: UInt64, revokedPersonIds: [String], nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_claim_json(
+        FfiConverterString.lower(claimJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(authorityJson),
+        FfiConverterUInt64.lower(minimumEpoch),
+        FfiConverterSequenceString.lower(revokedPersonIds),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyWorkspaceSuccessionPolicyJson(policyJson: String, workspaceId: String, authorityJson: String, nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_policy_json(
+        FfiConverterString.lower(policyJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(authorityJson),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+public func meshVerifyWorkspaceSuccessionVoteJson(voteJson: String, policyJson: String, candidatePersonId: String, authorityJson: String, revokedPersonIds: [String], nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_verify_workspace_succession_vote_json(
+        FfiConverterString.lower(voteJson),
+        FfiConverterString.lower(policyJson),
+        FfiConverterString.lower(candidatePersonId),
+        FfiConverterString.lower(authorityJson),
+        FfiConverterSequenceString.lower(revokedPersonIds),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -1786,6 +1884,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_durable_ack_matches_json() != 65242) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_has_conflicting_ownership_transfers_json() != 33649) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_identity_security_for_recovery() != 28347) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1805,6 +1906,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_parse_invitation_json() != 40510) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_plan_change_admission_json() != 63604) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_public_key_from_seed() != 62475) {
@@ -1840,6 +1944,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_sign_envelope_json() != 3383) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_transition_outbox_claim_json() != 51840) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_validate_device_route_json() != 21434) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1850,6 +1957,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_envelope_json() != 51558) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_grant_json() != 63504) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_ownership_transfer_json() != 18194) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_revocation_json() != 3007) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_claim_json() != 28811) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_policy_json() != 20636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json() != 14625) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() != 63608) {

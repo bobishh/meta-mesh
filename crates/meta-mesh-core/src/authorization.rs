@@ -67,9 +67,9 @@ pub fn verify_workspace_grant(
     if owner.person_id != public_key_id(&owner.public_key)? {
         return Err("Invalid workspace owner".to_string());
     }
-    if grant.signer_key_id == owner.person_id
-        && verify_signed_envelope(grant, &owner.public_key, DEFAULT_SIGNATURE_DOMAIN)?
-    {
+    // Legacy invitations used the identity root key while labeling the envelope
+    // with the active device id. Root verification stays first for wire parity.
+    if verify_signed_envelope(grant, &owner.public_key, DEFAULT_SIGNATURE_DOMAIN)? {
         return Ok(payload.role);
     }
     let signer_key = verify_device_certificate_chain(

@@ -1,7 +1,9 @@
 use meta_mesh_core::{
     DeviceRoute, DeviceRouteCatalog, DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload,
-    GossipBounds, GossipCandidate, ReplicaSet, RouteHealth, SignedDeviceRoute,
-    SignedDurableBatchAck, WorkspacePeerRecord,
+    GossipBounds, GossipCandidate, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
+    ReplicaSet, RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, WorkspaceAuthority,
+    WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
+    WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
 };
 use wasm_bindgen::prelude::*;
 
@@ -10,6 +12,171 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = verifyWorkspaceGrant)]
+    pub fn verify_workspace_grant(
+        grant: JsValue,
+        workspace_id: &str,
+        member_person_id: &str,
+        authority: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let grant: WorkspaceGrant = from_value(grant)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        let role = meta_mesh_core::verify_workspace_grant(
+            &grant,
+            workspace_id,
+            member_person_id,
+            &meta_mesh_core::PublicIdentity {
+                person_id: authority.person_id,
+                public_key: authority.public_key,
+                display_name: String::new(),
+            },
+            &authority.certificates,
+        )
+        .map_err(js_error)?;
+        to_value(&role)
+    }
+
+    #[wasm_bindgen(js_name = hasConflictingOwnershipTransfers)]
+    pub fn has_conflicting_ownership_transfers(records: JsValue) -> Result<bool, JsValue> {
+        let records: Vec<WorkspaceOwnershipTransfer> = from_value(records)?;
+        Ok(meta_mesh_core::has_conflicting_ownership_transfers(
+            &records,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
+    pub fn verify_workspace_revocation(
+        record: JsValue,
+        workspace_id: &str,
+        authority: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let record: WorkspaceRevocation = from_value(record)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        meta_mesh_core::verify_workspace_revocation(
+            &record,
+            workspace_id,
+            &authority,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&record)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceOwnershipTransfer)]
+    pub fn verify_workspace_ownership_transfer(
+        record: JsValue,
+        workspace_id: &str,
+        authority: JsValue,
+        minimum_epoch: f64,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let record: WorkspaceOwnershipTransfer = from_value(record)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        meta_mesh_core::verify_workspace_ownership_transfer(
+            &record,
+            workspace_id,
+            &authority,
+            unsigned_integer(minimum_epoch, "Invalid ownership epoch")?,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&record)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceSuccessionPolicy)]
+    pub fn verify_workspace_succession_policy(
+        policy: JsValue,
+        workspace_id: &str,
+        authority: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let policy: WorkspaceSuccessionPolicy = from_value(policy)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        meta_mesh_core::verify_workspace_succession_policy(
+            &policy,
+            workspace_id,
+            &authority,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&policy)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceSuccessionVote)]
+    pub fn verify_workspace_succession_vote(
+        vote: JsValue,
+        policy: JsValue,
+        candidate_person_id: &str,
+        authority: JsValue,
+        revoked: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let vote: WorkspaceSuccessionVote = from_value(vote)?;
+        let policy: WorkspaceSuccessionPolicy = from_value(policy)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        let revoked: std::collections::HashSet<String> = from_value(revoked)?;
+        meta_mesh_core::verify_workspace_succession_vote(
+            &vote,
+            &policy,
+            candidate_person_id,
+            &authority,
+            &revoked,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&vote)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceSuccessionClaim)]
+    pub fn verify_workspace_succession_claim(
+        claim: JsValue,
+        workspace_id: &str,
+        authority: JsValue,
+        minimum_epoch: f64,
+        revoked: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let claim: WorkspaceSuccessionClaim = from_value(claim)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        let revoked: std::collections::HashSet<String> = from_value(revoked)?;
+        meta_mesh_core::verify_workspace_succession_claim(
+            &claim,
+            workspace_id,
+            &authority,
+            unsigned_integer(minimum_epoch, "Invalid succession epoch")?,
+            &revoked,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&claim)
+    }
+
+    #[wasm_bindgen(js_name = planChangeAdmission)]
+    pub fn plan_change_admission(
+        document_id: &str,
+        changes: JsValue,
+        verified_at: &str,
+    ) -> Result<JsValue, JsValue> {
+        let changes: Vec<IncomingDocumentChange> = from_value(changes)?;
+        let plan = meta_mesh_core::plan_change_admission(document_id, changes, verified_at)
+            .map_err(js_error)?;
+        to_value(&plan)
+    }
+
+    #[wasm_bindgen(js_name = transitionOutboxClaim)]
+    pub fn transition_outbox_claim(current: JsValue, input: JsValue) -> Result<JsValue, JsValue> {
+        let current: Option<OutboxClaim> = if current.is_null() || current.is_undefined() {
+            None
+        } else {
+            Some(from_value(current)?)
+        };
+        let input: OutboxClaimInput = from_value(input)?;
+        let transition =
+            meta_mesh_core::transition_outbox_claim(current, input).map_err(js_error)?;
+        to_value(&transition)
+    }
+
     #[wasm_bindgen(js_name = mergePeerRecords)]
     pub fn merge_peer_records(existing: JsValue, incoming: JsValue) -> Result<JsValue, JsValue> {
         let existing: WorkspacePeerRecord = from_value(existing)?;
@@ -188,6 +355,14 @@ fn integer(value: f64, message: &str) -> Result<i64, JsValue> {
         && value <= i64::MAX as f64
     {
         Ok(value as i64)
+    } else {
+        Err(js_error(message))
+    }
+}
+
+fn unsigned_integer(value: f64, message: &str) -> Result<u64, JsValue> {
+    if value.is_finite() && value.fract() == 0.0 && value >= 0.0 && value <= u64::MAX as f64 {
+        Ok(value as u64)
     } else {
         Err(js_error(message))
     }
