@@ -75,7 +75,7 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - [x] Port legacy pairing links and scoped device/workspace invitations to deterministic Rust models with expiry and wrong-kind validation; verify exact TypeScript URL parity and expose WASM bindings.
   - [x] Port workspace grant roles, owner/root-or-certified-device verification, and reusable device-signed admission checks to `meta-mesh-core`; expose grant admission through WASM.
   - [x] Port HKDF device-key derivation, BIP39 and exact EFF-long recovery validation, PBKDF2-600k/AES-GCM recovery and passphrase envelopes; verify WebCrypto ciphertext parity and expose WASM bindings.
-- [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
+- [x] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match production runtime, keep Twang on its Rust-backed transport framing, and remove the TypeScript production fallback after parity tests pass.
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
 - [x] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
   - [x] Resolve `meta-mesh-native` on `iroh 1.2.0`, `iroh-gossip 0.101.0`, and `iroh-blobs 0.103.0` without the browser dependency graph.

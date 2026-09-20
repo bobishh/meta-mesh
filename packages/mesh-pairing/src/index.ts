@@ -75,6 +75,11 @@ function pairingCodecError(error: unknown): PairingError {
   return new PairingError(message)
 }
 
+function requiredPairingCodec(): PairingCodec {
+  if (!pairingCodec) throw new PairingError("Rust pairing codec is not installed")
+  return pairingCodec
+}
+
 export function encodeBase64Url(bytes: Uint8Array) {
   let binary = ""
   for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -322,57 +327,21 @@ export function parseInvitation(raw: string, now = Date.now()): ScopedInvitation
 }
 
 export function encodePairingFrame(type: PairingFrameType, secret: string, bytes: Uint8Array) {
-  if (pairingCodec) {
-    try { return pairingCodec.encode(type, secret, bytes) }
-    catch (error) { throw pairingCodecError(error) }
-  }
-  const header = new TextEncoder().encode(`${JSON.stringify({ type, version: pairingVersion, secret })}\n`)
-  const frame = new Uint8Array(header.length + bytes.length)
-  frame.set(header)
-  frame.set(bytes, header.length)
-  return frame
+  try { return requiredPairingCodec().encode(type, secret, bytes) }
+  catch (error) { throw pairingCodecError(error) }
 }
 
 export function inspectPairingFrame(frame: Uint8Array): { type: PairingFrameType; secret: string } {
-  if (pairingCodec) {
-    try {
-      const header = pairingCodec.inspect(frame) as { type?: string; secret?: string }
-      if (!header || !pairingFrameTypes.includes((header.type ?? "") as PairingFrameType) || !header.secret) {
-        throw new PairingError("Pairing frame invalid")
-      }
-      return { type: header.type as PairingFrameType, secret: header.secret }
-    } catch (error) { throw pairingCodecError(error) }
-  }
-  const separator = frame.indexOf(10)
-  if (separator < 0) throw new PairingError("Pairing frame missing")
-  let header: { type?: string; version?: string; secret?: string }
   try {
-    header = JSON.parse(new TextDecoder().decode(frame.slice(0, separator)))
-  } catch {
-    throw new PairingError("Pairing frame invalid")
-  }
-  if (header.version !== pairingVersion || !header.secret ||
-    !pairingFrameTypes.includes((header.type ?? "") as PairingFrameType)) throw new PairingError("Pairing frame invalid")
-  return { type: header.type as PairingFrameType, secret: header.secret }
+    const header = requiredPairingCodec().inspect(frame) as { type?: string; secret?: string }
+    if (!header || !pairingFrameTypes.includes((header.type ?? "") as PairingFrameType) || !header.secret) {
+      throw new PairingError("Pairing frame invalid")
+    }
+    return { type: header.type as PairingFrameType, secret: header.secret }
+  } catch (error) { throw pairingCodecError(error) }
 }
 
 export function decodePairingFrame(frame: Uint8Array, expectedType: PairingFrameType, expectedSecret: string) {
-  if (pairingCodec) {
-    try { return pairingCodec.decode(frame, expectedType, expectedSecret) }
-    catch (error) { throw pairingCodecError(error) }
-  }
-  const separator = frame.indexOf(10)
-  if (separator < 0) throw new PairingError("Pairing frame missing")
-
-  let header: { type?: string; version?: string; secret?: string }
-  try {
-    header = JSON.parse(new TextDecoder().decode(frame.slice(0, separator)))
-  } catch {
-    throw new PairingError("Pairing frame invalid")
-  }
-
-  if (header.type !== expectedType || header.version !== pairingVersion || header.secret !== expectedSecret) {
-    throw new PairingError("Pairing authorization failed")
-  }
-  return frame.slice(separator + 1)
+  try { return requiredPairingCodec().decode(frame, expectedType, expectedSecret) }
+  catch (error) { throw pairingCodecError(error) }
 }
