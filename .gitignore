@@ -2,5 +2,6 @@ node_modules/
 dist/
 coverage/
 target/
+.swiftpm/
 *.log
 crates/meta-mesh-mobile/generated/apple/*.xcframework/
