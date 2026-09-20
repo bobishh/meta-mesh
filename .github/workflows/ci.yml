@@ -20,5 +20,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: cargo test --workspace
+      - run: cargo test --manifest-path crates/meta-mesh-native/Cargo.toml
       - run: npm run check
       - run: npm test

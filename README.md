@@ -5,7 +5,8 @@ Reusable browser P2P primitives for identity, signed routes, durable delivery, s
 Rust layout:
 
 - `crates/meta-mesh-core`: platform-neutral protocol code. No browser, WASM, or Iroh dependency; intended shared core for web, iOS, Android, and native clients.
-- `crates/meta-mesh`: current browser WASM adapter and native Iroh runtime. These adapters will split as the native runtime advances beyond the browser WebRTC transport's pinned Iroh version.
+- `crates/meta-mesh-native`: native/mobile runtime dependency graph on current Iroh, iroh-gossip, and iroh-blobs releases.
+- `crates/meta-mesh`: browser WASM adapter on the WebRTC transport's pinned Iroh version; its temporary legacy native implementation remains until feature parity lands in `meta-mesh-native`.
 
 The npm workspace is marked `private` so root-package publishing cannot happen accidentally. Packages are consumed from a pinned Git submodule until their API stabilizes. Repository visibility is a separate GitHub setting.
 

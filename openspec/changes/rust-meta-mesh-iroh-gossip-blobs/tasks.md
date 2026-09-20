@@ -67,11 +67,13 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 
 - [ ] 6.1 Split platform-neutral protocol/core code from browser transport and native Iroh runtime dependencies.
   - [x] Extract `meta-mesh-core` with no browser, WASM, or Iroh dependency; pairing framing now compiles and tests there.
-  - [ ] Split browser and native runtime adapters into separate dependency graphs.
+  - [x] Create independent browser and current-Iroh native runtime dependency graphs.
+  - [ ] Port native node, gossip, blob, storage, and access-control behavior from the legacy mixed adapter into `meta-mesh-native`.
 - [ ] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
 - [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
 - [ ] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
+  - [x] Resolve `meta-mesh-native` on `iroh 1.2.0`, `iroh-gossip 0.101.0`, and `iroh-blobs 0.103.0` without the browser dependency graph.
 - [ ] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
 - [ ] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
 - [ ] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.

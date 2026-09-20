@@ -3,4 +3,5 @@ members = [
   "crates/meta-mesh-core",
   "crates/meta-mesh",
 ]
+exclude = ["crates/meta-mesh-native"]
 resolver = "3"
