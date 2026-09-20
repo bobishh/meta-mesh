@@ -62,3 +62,21 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - `mesh`: 220 TypeScript tests pass; `tsc --noEmit` passes.
   - `match`: 494 unit tests pass; Vite production build passes with `meta_mesh_bg-*.wasm`.
   - `twang`: 238 unit tests pass; `svelte-check` & `tsc --noEmit` pass with 0 errors; Vite production build passes.
+
+## 6. Complete Rust Core and Mobile Reuse
+
+- [ ] 6.1 Split platform-neutral protocol/core code from browser transport and native Iroh runtime dependencies.
+- [ ] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
+- [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
+- [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
+- [ ] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
+- [ ] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
+- [ ] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
+- [ ] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.
+- [ ] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.
+
+### Dependency status (2026-09-20)
+
+- Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
+- Browser target: `iroh-webrtc-transport 0.1.0-alpha.2` still pins `iroh 0.98.2` and `wasm-bindgen 0.2.118`.
+- A single dependency graph cannot currently combine Iroh 1.2's `ed25519-dalek >=3.0.0-rc.0` with the browser adapter's exact Iroh 0.98 dependency. Crate separation is required, not optional cleanup.

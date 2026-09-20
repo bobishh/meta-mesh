@@ -22,6 +22,11 @@ export type IrohModule = {
   BrowserNode: { start(seed?: Uint8Array): Promise<IrohNode> }
   WasmGossipEngine?: { new(localPeerId: string): any }
   WasmBlobEngine?: { new(): any }
+  WasmPairingCodec?: { new(): {
+    encode(type: string, secret: string, bytes: Uint8Array): Uint8Array
+    inspect(frame: Uint8Array): unknown
+    decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
+  } }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>

@@ -11,6 +11,7 @@ import {
   invitationUrl,
   parseInvitation,
   inspectPairingFrame,
+  installPairingCodec,
 } from "./index"
 
 describe("pairing protocol", () => {
@@ -45,6 +46,23 @@ describe("pairing protocol", () => {
     const frame = encodePairingFrame(type, "workspace-secret", new Uint8Array([7]))
 
     expect(inspectPairingFrame(frame)).toEqual({ type, secret: "workspace-secret" })
+  })
+
+  it("Given the Rust codec adapter, when framing data, then the public API delegates all framing operations", () => {
+    const calls: string[] = []
+    const restore = installPairingCodec({
+      encode: (_type, _secret, bytes) => { calls.push("encode"); return new Uint8Array([10, ...bytes]) },
+      inspect: () => { calls.push("inspect"); return { type: "sync-request", secret: "secret-a" } },
+      decode: (frame) => { calls.push("decode"); return frame.slice(1) },
+    })
+    try {
+      const frame = encodePairingFrame("sync-request", "secret-a", new Uint8Array([7]))
+      expect(inspectPairingFrame(frame)).toEqual({ type: "sync-request", secret: "secret-a" })
+      expect(decodePairingFrame(frame, "sync-request", "secret-a")).toEqual(new Uint8Array([7]))
+      expect(calls).toEqual(["encode", "inspect", "decode"])
+    } finally {
+      restore()
+    }
   })
 
   describe("Task 3.1: Discriminated v1 invitations", () => {

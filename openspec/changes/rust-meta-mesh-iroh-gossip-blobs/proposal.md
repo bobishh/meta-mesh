@@ -4,11 +4,12 @@ Meta-mesh currently implements an in-house sparse gossip overlay and custom chun
 
 ## What Changes
 
-- **BREAKING**: Replaced custom TypeScript `SparseGossip` overlay with Rust-backed `iroh-gossip` topic broadcast trees (HyParView/PlumTree).
-- **BREAKING**: Replaced custom TypeScript chunked `mesh-blob` transfer with native `iroh-blobs` content-addressed storage, Blake3 hashing, Bao verified streaming, and blob tickets.
-- Implement unified Rust `meta-mesh` crate compiled to WebAssembly (`wasm32-unknown-unknown`) providing native node transport, iroh-gossip, iroh-blobs, and cryptographic identity operations.
+- Migrate custom TypeScript `SparseGossip` overlay to Rust-backed `iroh-gossip` topic broadcast trees (HyParView/PlumTree).
+- Migrate custom TypeScript chunked `mesh-blob` transfer to native `iroh-blobs` content-addressed storage, Blake3 hashing, Bao verified streaming, and blob tickets.
+- Implement a platform-neutral Rust core plus WebAssembly, iOS, Android, and native runtime adapters. Browser applications retain TypeScript only for UI integration.
+- Migrate identity, pairing, admission, workspace authority, peer state, durable delivery, and protocol framing from TypeScript into the shared Rust core.
 - Establish an Automerge-centric blob architecture: Automerge CRDT documents own attachment metadata (blob ticket, Blake3 hash, file name, mime type, byte size), while Iroh handles peer-to-peer storage, streaming, and caching.
-- Package Rust WASM bindings within `meta-mesh` packages (`@meta-uber/mesh-*`) so that consumers (`match` and `twang`) transparently consume the Rust-backed implementation.
+- Package Rust WASM bindings within `meta-mesh` packages (`@meta-uber/mesh-*`) and native bindings for future mobile clients so every client consumes one protocol implementation.
 - Update `match` and `twang` engines, types, and attachment pipelines to integrate with the new `iroh-gossip` and `iroh-blobs` model.
 
 ## Capabilities
@@ -16,7 +17,8 @@ Meta-mesh currently implements an in-house sparse gossip overlay and custom chun
 ### New Capabilities
 - `iroh-gossip-transport`: Distributed topic-based gossip broadcast overlay utilizing `iroh-gossip` with broadcast trees (HyParView + PlumTree), replacing custom gossip state machines and message forwarding.
 - `iroh-blobs-storage`: Content-addressed P2P blob storage and streaming utilizing `iroh-blobs` with Blake3 hashes, Bao streaming verification, and tickets, with Automerge owning blob metadata and references.
-- `rust-wasm-mesh-core`: Unified Rust core compiled to WebAssembly providing node lifecycle, transport connections, gossip coordination, blob storage, and cryptographic envelope signing/verification.
+- `rust-mesh-core`: Platform-neutral Rust core providing protocol framing, identity, authorization, workspace state, durable delivery, gossip coordination, and blob semantics.
+- `rust-mesh-platform-adapters`: WASM bindings for browsers and native Swift/Kotlin bindings for mobile clients.
 
 ### Modified Capabilities
 None. Meta-mesh has no checked-in baseline OpenSpec capabilities yet.

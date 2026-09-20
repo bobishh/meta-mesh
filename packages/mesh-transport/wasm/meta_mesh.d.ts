@@ -98,6 +98,15 @@ export class WasmGossipEngine {
     constructor(local_peer_id: string);
 }
 
+export class WasmPairingCodec {
+    free(): void;
+    [Symbol.dispose](): void;
+    decode(frame: Uint8Array, expected_type: string, expected_secret: string): Uint8Array;
+    encode(frame_type: string, secret: string, payload: Uint8Array): Uint8Array;
+    inspect(frame: Uint8Array): any;
+    constructor();
+}
+
 export function mesh_version(): string;
 
 export function start_browser_node(secret?: Uint8Array | null): Promise<BrowserNode>;
@@ -126,7 +135,11 @@ export interface InitOutput {
     readonly browserstream_read: (a: number) => any;
     readonly browserstream_send: (a: number, b: number, c: number) => any;
     readonly start_browser_node: (a: number, b: number) => any;
-    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly wasmpairingcodec_decode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmpairingcodec_new: () => number;
     readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
     readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
     readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
@@ -134,6 +147,7 @@ export interface InitOutput {
     readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
     readonly wasmgossipengine_new: (a: number, b: number) => number;
+    readonly mesh_version: () => [number, number];
     readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
     readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
