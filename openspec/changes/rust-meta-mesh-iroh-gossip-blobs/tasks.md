@@ -79,7 +79,9 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
 - [x] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
   - [x] Resolve `meta-mesh-native` on `iroh 1.2.0`, `iroh-gossip 0.101.0`, and `iroh-blobs 0.103.0` without the browser dependency graph.
-- [ ] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
+- [x] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
+  - [x] Export identity/recovery/signature/invitation APIs plus current-Iroh endpoint, allowlist, gossip, Bao blob transfer, and disk-store lifecycle through UniFFI.
+  - [x] Generate checked-in Swift and Kotlin bindings and verify two mobile-adapter nodes exchange blobs and gossip over the real native runtime.
 - [ ] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
 - [ ] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.
 - [ ] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.

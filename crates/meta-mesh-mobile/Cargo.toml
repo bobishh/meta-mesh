@@ -1,0 +1,26 @@
+[package]
+name = "meta-mesh-mobile"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+iroh = "1.2.0"
+iroh-blobs = "0.103.0"
+meta-mesh-core = { path = "../meta-mesh-core" }
+meta-mesh-native = { path = "../meta-mesh-native" }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+uniffi = { version = "0.32.1", default-features = false }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
