@@ -46,11 +46,7 @@ pub fn plan_change_admission(
         accepted: Vec::new(),
     };
     for change in changes {
-        if change.hash.is_empty()
-            || change.bytes.is_empty()
-            || !change.verified
-            || !seen.insert(change.hash.clone())
-        {
+        if change.hash.is_empty() || !change.verified || !seen.insert(change.hash.clone()) {
             return Err("Document change verification failed".to_string());
         }
         if let Some(existing) = change.existing_bytes {

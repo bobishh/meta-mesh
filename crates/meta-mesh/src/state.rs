@@ -219,6 +219,18 @@ impl WasmStateCore {
         meta_mesh_core::validate_device_route(&route).map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = validateDeviceRoutePayload)]
+    pub fn validate_device_route_payload(payload: JsValue) -> Result<(), JsValue> {
+        let payload: DeviceRoutePayload = from_value(payload)?;
+        meta_mesh_core::validate_device_route_payload(&payload).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = validateDurableAckPayload)]
+    pub fn validate_durable_ack_payload(payload: JsValue) -> Result<(), JsValue> {
+        let payload: DurableBatchAckPayload = from_value(payload)?;
+        meta_mesh_core::validate_durable_ack_payload(&payload).map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = signDeviceRoute)]
     pub fn sign_device_route(
         seed: &[u8],

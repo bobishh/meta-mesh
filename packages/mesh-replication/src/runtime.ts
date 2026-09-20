@@ -12,6 +12,10 @@ export type RustStateCore = {
   reconcileReplicaSets(left: unknown, right: unknown): unknown
   selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]
   validateDeviceRoute(route: unknown): void
+  validateDeviceRoutePayload(payload: unknown): void
+  validateDurableAckPayload(payload: unknown): void
+  verifyDeviceRoute(envelope: unknown, publicKey: string, nowMs: number, allowExpired: boolean): unknown
+  verifyDurableAck(envelope: unknown, publicKey: string): unknown
   durableAckMatches(ack: unknown, batch: unknown, targetDeviceId: string): boolean
   orderDeliveryRoutes(targetDeviceId: string, routes: unknown): unknown
 }

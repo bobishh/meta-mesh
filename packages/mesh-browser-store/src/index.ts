@@ -260,6 +260,7 @@ export class DurableReplicaStore {
       hash: string; bytes: Uint8Array; proof: unknown; verified: boolean; existingBytes?: Uint8Array
     }> = []
     for (const change of input.changes) {
+      if (!(change.bytes instanceof Uint8Array)) throw new Error("Document change verification failed")
       const key = this.changeKey(input.documentId, change.hash)
       const existing = await this.store.get<StoredDocumentChange>(this.names.changes, key)
       changes.push({

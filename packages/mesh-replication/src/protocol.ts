@@ -1,8 +1,7 @@
 import {
-  canonicalizeJson,
   signEnvelope,
-  verifyEnvelope,
   sha256Base64Url,
+  toBase64Url,
   type LocalProfile,
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
@@ -56,21 +55,12 @@ export async function verifySignedDeviceRoute(
   devicePublicKey: string | CryptoKey,
   options: { now?: number; allowExpired?: boolean } = {},
 ): Promise<DeviceRoute> {
-  if (!envelope || typeof envelope !== "object") throw new Error("Invalid signed device route")
-  validateDeviceRoutePayload(envelope.payload)
-  if (envelope.signerKeyId !== envelope.payload.deviceId) throw new Error("Device route signer does not match device")
-  if (typeof envelope.signature !== "string" || envelope.signature.length === 0 || envelope.signature.length > MAX_DEVICE_ROUTE_STRING) {
-    throw new Error("Invalid device route signature")
-  }
-  const bytes = new TextEncoder().encode(canonicalizeJson(envelope)).byteLength
-  if (bytes > MAX_DEVICE_ROUTE_BYTES) throw new Error("Device route exceeds size limit")
-  const now = options.now ?? Date.now()
-  const issuedAt = Date.parse(envelope.payload.issuedAt)
-  const expiresAt = Date.parse(envelope.payload.expiresAt)
-  if (issuedAt > now + MAX_DEVICE_ROUTE_FUTURE_MS) throw new Error("Device route issued too far in future")
-  if (!options.allowExpired && expiresAt <= now) throw new Error("Device route expired")
-  if (!await verifyEnvelope(envelope, devicePublicKey, MESH_ROUTE_SIGNATURE_DOMAIN)) throw new Error("Invalid device route signature")
-  return { ...envelope.payload, signerKeyId: envelope.signerKeyId, signature: envelope.signature }
+  return meshRustRuntime().state.verifyDeviceRoute(
+    envelope,
+    await rustPublicKey(devicePublicKey),
+    options.now ?? Date.now(),
+    options.allowExpired ?? false,
+  ) as DeviceRoute
 }
 
 type VerifiedWorkspaceAdvertisement = SignedEnvelope<{
@@ -241,32 +231,13 @@ export async function verifySignedDurableBatchAck(
   envelope: SignedDurableBatchAck,
   devicePublicKey: string | CryptoKey,
 ): Promise<DurableBatchAck> {
-  validateDurableAckPayload(envelope?.payload)
-  if (envelope.signerKeyId !== envelope.payload.receiverDeviceId) throw new Error("Durable acknowledgement signer mismatch")
-  if (!envelope.signature || new TextEncoder().encode(canonicalizeJson(envelope)).byteLength > MAX_DURABLE_ACK_BYTES) {
-    throw new Error("Invalid durable acknowledgement envelope")
-  }
-  if (!await verifyEnvelope(envelope, devicePublicKey, MESH_REPLICATION_SIGNATURE_DOMAIN)) {
-    throw new Error("Invalid durable acknowledgement signature")
-  }
-  return { ...envelope.payload, signerKeyId: envelope.signerKeyId, signature: envelope.signature }
+  return meshRustRuntime().state.verifyDurableAck(
+    envelope, await rustPublicKey(devicePublicKey),
+  ) as DurableBatchAck
 }
 
 export function validateDurableAckPayload(payload: DurableBatchAckPayload): void {
-  if (payload?.kind !== "mesh-durable-batch-ack" || payload.version !== 1) throw new Error("Unsupported durable acknowledgement")
-  for (const value of [payload.scopeId, payload.documentId, payload.batchId, payload.receiverDeviceId]) required(value, "durable acknowledgement field")
-  if (!Array.isArray(payload.acceptedHashes) || payload.acceptedHashes.length > MAX_ACK_HASHES ||
-    payload.acceptedHashes.some(hash => typeof hash !== "string" || !hash || hash.length > MAX_DEVICE_ROUTE_STRING)) {
-    throw new Error("Invalid durable acknowledgement hashes")
-  }
-  if (!Array.isArray(payload.acceptedHeads) || payload.acceptedHeads.length > MAX_ACK_HEADS ||
-    payload.acceptedHeads.some(head => typeof head !== "string" || !head || head.length > MAX_DEVICE_ROUTE_STRING)) {
-    throw new Error("Invalid durable acknowledgement heads")
-  }
-  const committedAt = Date.parse(payload.committedAt)
-  if (!Number.isFinite(committedAt) || new Date(committedAt).toISOString() !== payload.committedAt) {
-    throw new Error("Invalid durable acknowledgement commit time")
-  }
+  meshRustRuntime().state.validateDurableAckPayload(payload)
 }
 
 export type RouteBatchSender = (
@@ -373,10 +344,6 @@ export async function connectToDevice<T>(options: {
   })
 }
 
-function required(value: string, label: string): void {
-  if (value.length === 0) throw new Error(`Invalid ${label}`)
-}
-
 export class DeviceRouteCatalog {
   private readonly catalog: RustDeviceRouteCatalog
 
@@ -398,23 +365,12 @@ export function validateDeviceRoute(route: DeviceRoute): void {
 }
 
 export function validateDeviceRoutePayload(route: DeviceRoutePayload): void {
-  if (route.kind !== "mesh-device-route" || route.version !== 1) throw new Error("Unsupported device route version")
-  required(route.scopeId, "route scope")
-  required(route.personId, "route person")
-  required(route.deviceId, "route device")
-  required(route.instanceId, "route instance")
-  required(route.endpoint, "route endpoint")
-  for (const value of [route.scopeId, route.personId, route.deviceId, route.instanceId, route.endpoint]) {
-    if (value.length > MAX_DEVICE_ROUTE_STRING) throw new Error("Device route field exceeds size limit")
-  }
-  if (!Number.isSafeInteger(route.sequence) || route.sequence < 1) throw new Error("Invalid route sequence")
-  const issuedAt = Date.parse(route.issuedAt)
-  const expiresAt = Date.parse(route.expiresAt)
-  if (!Number.isFinite(issuedAt) || new Date(issuedAt).toISOString() !== route.issuedAt ||
-    !Number.isFinite(expiresAt) || new Date(expiresAt).toISOString() !== route.expiresAt ||
-    expiresAt <= issuedAt || expiresAt - issuedAt > MAX_DEVICE_ROUTE_LIFETIME_MS) {
-    throw new Error("Invalid route lifetime")
-  }
+  meshRustRuntime().state.validateDeviceRoutePayload(route)
+}
+
+async function rustPublicKey(key: string | CryptoKey): Promise<string> {
+  if (typeof key === "string") return key
+  return toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", key)))
 }
 
 function ackMatches(ack: DurableBatchAck, batch: DeviceBatch, targetDeviceId: ReplicaId): boolean {
