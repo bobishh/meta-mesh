@@ -70,10 +70,11 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - [x] Create independent browser and current-Iroh native runtime dependency graphs.
   - [x] Port native endpoint identity lifecycle and mutable deny-by-default allowlist to `meta-mesh-native`.
   - [x] Port gossip, blob, durable storage, router, and networked access-control parity into `meta-mesh-native`.
-- [ ] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
+- [x] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
   - [x] Port canonical JSON, SHA-256 key IDs, domain-separated Ed25519 envelopes, certificate hashes, and delegated device-chain verification to `meta-mesh-core`; verify byte-for-byte WebCrypto signature parity and expose WASM bindings.
   - [x] Port legacy pairing links and scoped device/workspace invitations to deterministic Rust models with expiry and wrong-kind validation; verify exact TypeScript URL parity and expose WASM bindings.
   - [x] Port workspace grant roles, owner/root-or-certified-device verification, and reusable device-signed admission checks to `meta-mesh-core`; expose grant admission through WASM.
+  - [x] Port HKDF device-key derivation, BIP39 and exact EFF-long recovery validation, PBKDF2-600k/AES-GCM recovery and passphrase envelopes; verify WebCrypto ciphertext parity and expose WASM bindings.
 - [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
 - [x] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_compact::{KeyPair, PublicKey, Seed, Signature};
+use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -80,6 +81,14 @@ pub fn public_key_from_seed(seed: &[u8; 32]) -> Result<String, String> {
     }
     let key_pair = KeyPair::from_seed(Seed::new(*seed));
     Ok(URL_SAFE_NO_PAD.encode(key_pair.pk.as_ref()))
+}
+
+pub fn derive_device_seed(device_entropy: &[u8; 32]) -> Result<[u8; 32], String> {
+    let mut seed = [0; 32];
+    Hkdf::<Sha256>::new(Some(b"meta-mesh/identity/v1"), device_entropy)
+        .expand(b"device", &mut seed)
+        .map_err(|_| "Device key derivation failed".to_string())?;
+    Ok(seed)
 }
 
 pub fn public_key_id(public_key: &str) -> Result<String, String> {
@@ -341,6 +350,15 @@ mod tests {
                 DEFAULT_SIGNATURE_DOMAIN,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn device_seed_matches_webcrypto_hkdf_vector() {
+        let entropy = std::array::from_fn(|index| 255 - index as u8);
+        assert_eq!(
+            URL_SAFE_NO_PAD.encode(derive_device_seed(&entropy).unwrap()),
+            "dRzdinYBvvWHE_zjjIaMIQw38_B_Drlz3d2pH7inmQ8"
         );
     }
 }
