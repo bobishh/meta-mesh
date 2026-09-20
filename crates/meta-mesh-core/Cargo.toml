@@ -7,6 +7,9 @@ publish = false
 [dependencies]
 base64 = "0.22"
 ed25519-compact = { version = "2.1.1", default-features = false, features = ["std"] }
+percent-encoding = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
+url = "2"

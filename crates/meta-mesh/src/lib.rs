@@ -2,6 +2,8 @@ pub mod blobs;
 pub mod gossip;
 #[cfg(target_family = "wasm")]
 pub mod identity;
+#[cfg(target_family = "wasm")]
+pub mod invitation;
 pub mod node;
 pub mod pairing;
 
@@ -12,6 +14,8 @@ pub use pairing::WasmPairingCodec;
 
 #[cfg(target_family = "wasm")]
 pub use identity::WasmIdentityCrypto;
+#[cfg(target_family = "wasm")]
+pub use invitation::WasmInvitations;
 #[cfg(target_family = "wasm")]
 pub use node::{
     BrowserAcceptor, BrowserConnection, BrowserNode, BrowserStream, start_browser_node,
