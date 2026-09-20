@@ -11,15 +11,31 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      - name: Install Rust WASM toolchain
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-bindgen-cli --version 0.2.118 --locked
       - run: npm ci
       - run: cargo test --workspace
       - run: cargo test --manifest-path crates/meta-mesh-native/Cargo.toml
+      - run: cargo test --manifest-path crates/meta-mesh-mobile/Cargo.toml
+      - name: Verify generated Swift and Kotlin bindings
+        run: |
+          ./scripts/generate-mobile-bindings.sh
+          git diff --exit-code -- crates/meta-mesh-mobile/generated
+      - name: Verify generated browser WASM bindings
+        env:
+          LLVM_PREFIX: /usr
+          LLD_PREFIX: /usr
+        run: |
+          ./scripts/build-wasm.sh
+          git diff --exit-code -- packages/mesh-transport/wasm
       - run: npm run check
       - run: npm test

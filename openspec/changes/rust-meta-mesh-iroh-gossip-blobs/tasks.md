@@ -89,7 +89,8 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - [x] Delete TypeScript peer merge, replica reconcile, route catalog, route ordering, ACK matching, neighbor selection, and Automerge sync implementations; unit tests load the actual Rust WASM runtime.
   - [x] Install the Rust state runtime in Match and Twang production bootstrap and remove remaining authority/delivery implementations.
 - [ ] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.
-- [ ] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.
+- [x] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.
+  - [x] Meta-mesh CI verifies core/browser/native/mobile tests, regenerated WASM exports, regenerated Swift/Kotlin bindings, TypeScript checks, and wrapper tests; pinned Match and Twang updates run their own complete test/build workflows.
 
 ### Dependency status (2026-09-20)
 
