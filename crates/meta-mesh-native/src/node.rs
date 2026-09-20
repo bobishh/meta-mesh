@@ -3,12 +3,14 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use futures_lite::StreamExt;
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey,
     endpoint::{AfterHandshakeOutcome, Connection, EndpointHooks, presets},
+    protocol::{AcceptError, ProtocolHandler},
 };
 use iroh_blobs::{
     ALPN as BLOBS_ALPN, BlobsProtocol,
@@ -21,8 +23,13 @@ use iroh_gossip::{
     api::{Event, GossipReceiver, GossipSender},
     net::{GOSSIP_ALPN, Gossip},
 };
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+pub const RPC_ALPN: &[u8] = b"meta-mesh/rpc/1";
+pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
+const RPC_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Debug, Clone)]
 pub struct NativeNodeOptions {
@@ -81,6 +88,85 @@ pub struct NativeNode {
     store: Store,
     allowed_peers: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
+    rpc_inbox: Arc<NativeRpcInbox>,
+}
+
+#[derive(Debug)]
+pub struct NativeRpcRequest {
+    remote_endpoint_id: EndpointId,
+    payload: Vec<u8>,
+    response: Option<oneshot::Sender<Vec<u8>>>,
+}
+
+impl NativeRpcRequest {
+    pub fn remote_endpoint_id(&self) -> EndpointId {
+        self.remote_endpoint_id
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub fn respond(mut self, response: Vec<u8>) -> Result<(), BoxError> {
+        if response.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC response exceeds size limit"));
+        }
+        self.response
+            .take()
+            .ok_or_else(|| io_error("RPC request already answered"))?
+            .send(response)
+            .map_err(|_| io_error("RPC requester disconnected"))
+    }
+}
+
+#[derive(Debug)]
+pub struct NativeRpcInbox {
+    receiver: Mutex<mpsc::Receiver<NativeRpcRequest>>,
+}
+
+impl NativeRpcInbox {
+    pub async fn receive(&self) -> Option<NativeRpcRequest> {
+        self.receiver.lock().await.recv().await
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RpcProtocol {
+    sender: mpsc::Sender<NativeRpcRequest>,
+}
+
+impl ProtocolHandler for RpcProtocol {
+    async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
+        let remote_endpoint_id = connection.remote_id();
+        while let Ok((mut send, mut receive)) = connection.accept_bi().await {
+            let sender = self.sender.clone();
+            tokio::spawn(async move {
+                let result = async {
+                    let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
+                    let (response, response_receiver) = oneshot::channel();
+                    sender
+                        .send(NativeRpcRequest {
+                            remote_endpoint_id,
+                            payload,
+                            response: Some(response),
+                        })
+                        .await
+                        .map_err(|_| io_error("RPC listener stopped"))?;
+                    let response = response_receiver
+                        .await
+                        .map_err(|_| io_error("RPC request dropped without response"))?;
+                    send.write_all(&response).await?;
+                    send.finish()?;
+                    Ok::<(), BoxError>(())
+                }
+                .await;
+                if result.is_err() {
+                    send.reset(1u32.into()).ok();
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 pub struct GossipTopicSender {
@@ -160,7 +246,7 @@ impl NativeNode {
             .map(|bytes| SecretKey::from_bytes(&bytes))
             .unwrap_or_else(SecretKey::generate);
         let allowed_peers = Arc::new(RwLock::new(options.allowed_peers.into_iter().collect()));
-        let endpoint = Endpoint::builder(presets::Minimal)
+        let endpoint = Endpoint::builder(presets::N0)
             .relay_mode(options.relay_mode)
             .bind_addr(options.bind_addr)?
             .secret_key(secret_key)
@@ -177,9 +263,14 @@ impl NativeNode {
             None => MemStore::new().into(),
         };
         let blobs = BlobsProtocol::new(&store, None);
+        let (rpc_sender, rpc_receiver) = mpsc::channel(RPC_QUEUE_CAPACITY);
+        let rpc_inbox = Arc::new(NativeRpcInbox {
+            receiver: Mutex::new(rpc_receiver),
+        });
         let router = iroh::protocol::Router::builder(endpoint.clone())
             .accept(GOSSIP_ALPN, gossip.clone())
             .accept(BLOBS_ALPN, blobs)
+            .accept(RPC_ALPN, RpcProtocol { sender: rpc_sender })
             .spawn();
 
         Ok(Self {
@@ -189,6 +280,7 @@ impl NativeNode {
             store,
             allowed_peers,
             allow_any: options.allow_any,
+            rpc_inbox,
         })
     }
 
@@ -221,6 +313,32 @@ impl NativeNode {
                 .read()
                 .expect("native peer allowlist poisoned")
                 .contains(peer)
+    }
+
+    pub fn rpc_inbox(&self) -> Arc<NativeRpcInbox> {
+        self.rpc_inbox.clone()
+    }
+
+    pub async fn request(
+        &self,
+        endpoint_addr: EndpointAddr,
+        payload: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, BoxError> {
+        if payload.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC request exceeds size limit"));
+        }
+        tokio::time::timeout(timeout, async {
+            let connection = self.endpoint.connect(endpoint_addr, RPC_ALPN).await?;
+            let (mut send, mut receive) = connection.open_bi().await?;
+            send.write_all(payload).await?;
+            send.finish()?;
+            let response = receive.read_to_end(MAX_RPC_BYTES).await?;
+            connection.close(0u32.into(), b"request complete");
+            Ok::<Vec<u8>, BoxError>(response)
+        })
+        .await
+        .map_err(|_| io_error("RPC request timed out"))?
     }
 
     pub async fn join_gossip(
@@ -292,6 +410,10 @@ impl NativeNode {
         self.router.shutdown().await?;
         Ok(())
     }
+}
+
+fn io_error(message: &'static str) -> BoxError {
+    Box::new(std::io::Error::other(message))
 }
 
 #[cfg(test)]

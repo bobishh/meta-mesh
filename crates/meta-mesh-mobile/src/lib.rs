@@ -28,7 +28,10 @@ use meta_mesh_core::{
     verify_workspace_succession_claim, verify_workspace_succession_policy,
     verify_workspace_succession_vote,
 };
-use meta_mesh_native::{GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions};
+use meta_mesh_native::{
+    GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions, NativeRpcInbox,
+    NativeRpcRequest,
+};
 use serde_json::Value;
 use tokio::runtime::Runtime;
 
@@ -609,6 +612,50 @@ impl MobileAutomergeSyncEngine {
 pub struct MobileMeshNode {
     runtime: Arc<Runtime>,
     node: Mutex<Option<NativeNode>>,
+    rpc_inbox: Arc<NativeRpcInbox>,
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileRpcRequest {
+    remote_endpoint_id: String,
+    payload_json: String,
+    request: Mutex<Option<NativeRpcRequest>>,
+}
+
+#[uniffi::export]
+impl MobileRpcRequest {
+    pub fn remote_endpoint_id(&self) -> String {
+        self.remote_endpoint_id.clone()
+    }
+
+    pub fn payload_json(&self) -> String {
+        self.payload_json.clone()
+    }
+
+    pub fn respond_json(&self, response_json: String) -> Result<(), MobileMeshError> {
+        validate_json(&response_json)?;
+        self.take_request()?
+            .respond(response_json.into_bytes())
+            .map_err(MobileMeshError::from_display)
+    }
+
+    pub fn fail(&self, message: String) -> Result<(), MobileMeshError> {
+        let response = serde_json::to_vec(&serde_json::json!({ "error": message }))
+            .map_err(MobileMeshError::from_display)?;
+        self.take_request()?
+            .respond(response)
+            .map_err(MobileMeshError::from_display)
+    }
+}
+
+impl MobileRpcRequest {
+    fn take_request(&self) -> Result<NativeRpcRequest, MobileMeshError> {
+        self.request
+            .lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile RPC request lock poisoned"))?
+            .take()
+            .ok_or_else(|| MobileMeshError::from_display("Mobile RPC request already answered"))
+    }
 }
 
 #[uniffi::export]
@@ -635,9 +682,11 @@ impl MobileMeshNode {
                 ..NativeNodeOptions::default()
             }))
             .map_err(MobileMeshError::from_display)?;
+        let rpc_inbox = node.rpc_inbox();
         Ok(Arc::new(Self {
             runtime,
             node: Mutex::new(Some(node)),
+            rpc_inbox,
         }))
     }
 
@@ -665,6 +714,58 @@ impl MobileMeshNode {
             node.revoke_peer(&peer);
             Ok(())
         })
+    }
+
+    pub fn request_json(
+        &self,
+        endpoint: String,
+        payload_json: String,
+        timeout_ms: u64,
+    ) -> Result<String, MobileMeshError> {
+        validate_json(&payload_json)?;
+        let endpoint = parse_endpoint_addr(&endpoint)?;
+        let response = self.with_node(|node| {
+            self.runtime
+                .block_on(node.request(
+                    endpoint,
+                    payload_json.as_bytes(),
+                    Duration::from_millis(timeout_ms),
+                ))
+                .map_err(MobileMeshError::from_display)
+        })?;
+        let response = String::from_utf8(response).map_err(MobileMeshError::from_display)?;
+        let value = validate_json(&response)?;
+        if let Some(message) = value.get("error").and_then(Value::as_str) {
+            return Err(MobileMeshError::from_display(message));
+        }
+        Ok(response)
+    }
+
+    pub fn receive_request(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Option<Arc<MobileRpcRequest>>, MobileMeshError> {
+        let request = self.runtime.block_on(async {
+            tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                self.rpc_inbox.receive(),
+            )
+            .await
+        });
+        let Some(request) = (match request {
+            Ok(request) => request,
+            Err(_) => return Ok(None),
+        }) else {
+            return Ok(None);
+        };
+        let payload_json = String::from_utf8(request.payload().to_vec())
+            .map_err(MobileMeshError::from_display)?;
+        validate_json(&payload_json)?;
+        Ok(Some(Arc::new(MobileRpcRequest {
+            remote_endpoint_id: request.remote_endpoint_id().to_string(),
+            payload_json,
+            request: Mutex::new(Some(request)),
+        })))
     }
 
     pub fn add_blob(&self, data: Vec<u8>) -> Result<String, MobileMeshError> {
@@ -803,6 +904,19 @@ fn from_json<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, MobileMes
     serde_json::from_str(value).map_err(MobileMeshError::from_display)
 }
 
+fn validate_json(value: &str) -> Result<Value, MobileMeshError> {
+    serde_json::from_str(value).map_err(MobileMeshError::from_display)
+}
+
+fn parse_endpoint_addr(value: &str) -> Result<EndpointAddr, MobileMeshError> {
+    if value.trim_start().starts_with('{') {
+        return serde_json::from_str(value).map_err(MobileMeshError::from_display);
+    }
+    EndpointId::from_str(value)
+        .map(EndpointAddr::from)
+        .map_err(MobileMeshError::from_display)
+}
+
 fn to_json(value: &impl serde::Serialize) -> Result<String, MobileMeshError> {
     serde_json::to_string(value).map_err(MobileMeshError::from_display)
 }
@@ -860,6 +974,81 @@ mod tests {
         topic_1.broadcast(b"hello-mobile".to_vec()).unwrap();
         let message = topic_2.receive(5_000).unwrap().unwrap();
         assert_eq!(message.content, b"hello-mobile");
+
+        node_1.close().unwrap();
+        node_2.close().unwrap();
+    }
+
+    #[test]
+    fn mobile_native_nodes_exchange_rpc_and_propagate_handler_errors() {
+        let node_1 = MobileMeshNode::start(Some(vec![3; 32]), vec![], None).unwrap();
+        let node_2 = MobileMeshNode::start(
+            Some(vec![4; 32]),
+            vec![node_1.endpoint_id().unwrap()],
+            None,
+        )
+        .unwrap();
+        let node_1_id = node_1.endpoint_id().unwrap();
+        let node_2_addr = node_2.endpoint_addr_json().unwrap();
+
+        let responder = node_2.clone();
+        let success = std::thread::spawn(move || {
+            let request = responder.receive_request(5_000).unwrap().unwrap();
+            assert_eq!(request.remote_endpoint_id(), node_1_id);
+            assert_eq!(request.payload_json(), r#"{"kind":"ping","version":1}"#);
+            request
+                .respond_json(r#"{"kind":"pong","version":1}"#.into())
+                .unwrap();
+        });
+        assert_eq!(
+            node_1
+                .request_json(
+                    node_2_addr.clone(),
+                    r#"{"kind":"ping","version":1}"#.into(),
+                    5_000,
+                )
+                .unwrap(),
+            r#"{"kind":"pong","version":1}"#,
+        );
+        success.join().unwrap();
+
+        let responder = node_2.clone();
+        let failure = std::thread::spawn(move || {
+            responder
+                .receive_request(5_000)
+                .unwrap()
+                .unwrap()
+                .fail("Request rejected".into())
+                .unwrap();
+        });
+        let error = node_1
+            .request_json(
+                node_2_addr,
+                r#"{"kind":"denied","version":1}"#.into(),
+                5_000,
+            )
+            .unwrap_err();
+        assert_eq!(error.to_string(), "Request rejected");
+        failure.join().unwrap();
+
+        node_1.close().unwrap();
+        node_2.close().unwrap();
+    }
+
+    #[test]
+    fn mobile_rpc_rejects_unauthorized_peers_before_delivery() {
+        let node_1 = MobileMeshNode::start(Some(vec![5; 32]), vec![], None).unwrap();
+        let node_2 = MobileMeshNode::start(Some(vec![6; 32]), vec![], None).unwrap();
+
+        let error = node_1
+            .request_json(
+                node_2.endpoint_addr_json().unwrap(),
+                r#"{"kind":"must-not-arrive","version":1}"#.into(),
+                1_000,
+            )
+            .unwrap_err();
+        assert!(!error.to_string().is_empty());
+        assert!(node_2.receive_request(100).unwrap().is_none());
 
         node_1.close().unwrap();
         node_2.close().unwrap();

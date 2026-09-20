@@ -959,6 +959,10 @@ public protocol MobileMeshNodeProtocol: AnyObject, Sendable {
 
     func joinGossip(topic: String, bootstrapPeerAddrsJson: [String]) throws  -> MobileGossipTopic
 
+    func receiveRequest(timeoutMs: UInt64) throws  -> MobileRpcRequest?
+
+    func requestJson(endpoint: String, payloadJson: String, timeoutMs: UInt64) throws  -> String
+
     func revokePeer(peerId: String) throws
 
 }
@@ -1102,6 +1106,28 @@ open func joinGossip(topic: String, bootstrapPeerAddrsJson: [String])throws  -> 
 })
 }
 
+open func receiveRequest(timeoutMs: UInt64)throws  -> MobileRpcRequest?  {
+    return try  FfiConverterOptionTypeMobileRpcRequest.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_receive_request(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(timeoutMs),uniffiCallStatus
+    )
+})
+}
+
+open func requestJson(endpoint: String, payloadJson: String, timeoutMs: UInt64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_request_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(endpoint),
+        FfiConverterString.lower(payloadJson),
+        FfiConverterUInt64.lower(timeoutMs),uniffiCallStatus
+    )
+})
+}
+
 open func revokePeer(peerId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_revoke_peer(
@@ -1154,6 +1180,156 @@ public func FfiConverterTypeMobileMeshNode_lift(_ handle: UInt64) throws -> Mobi
 #endif
 public func FfiConverterTypeMobileMeshNode_lower(_ value: MobileMeshNode) -> UInt64 {
     return FfiConverterTypeMobileMeshNode.lower(value)
+}
+
+
+
+
+
+
+public protocol MobileRpcRequestProtocol: AnyObject, Sendable {
+
+    func fail(message: String) throws
+
+    func payloadJson()  -> String
+
+    func remoteEndpointId()  -> String
+
+    func respondJson(responseJson: String) throws
+
+}
+open class MobileRpcRequest: MobileRpcRequestProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_meta_mesh_mobile_fn_clone_mobilerpcrequest(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_meta_mesh_mobile_fn_free_mobilerpcrequest(handle, $0) }
+    }
+
+
+
+
+open func fail(message: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_fail(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(message),uniffiCallStatus
+    )
+}
+}
+
+open func payloadJson() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_payload_json(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func remoteEndpointId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_remote_endpoint_id(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+open func respondJson(responseJson: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_respond_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(responseJson),uniffiCallStatus
+    )
+}
+}
+
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileRpcRequest: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = MobileRpcRequest
+
+    public static func lift(_ handle: UInt64) throws -> MobileRpcRequest {
+        return MobileRpcRequest(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: MobileRpcRequest) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileRpcRequest {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MobileRpcRequest, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileRpcRequest_lift(_ handle: UInt64) throws -> MobileRpcRequest {
+    return try FfiConverterTypeMobileRpcRequest.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileRpcRequest_lower(_ value: MobileRpcRequest) -> UInt64 {
+    return FfiConverterTypeMobileRpcRequest.lower(value)
 }
 
 
@@ -1427,6 +1603,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeMobileRpcRequest: FfiConverterRustBuffer {
+    typealias SwiftType = MobileRpcRequest?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMobileRpcRequest.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMobileRpcRequest.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -2025,7 +2225,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_join_gossip() != 35285) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_receive_request() != 4116) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_request_json() != 776) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_revoke_peer() != 38064) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_fail() != 30629) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_payload_json() != 44515) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_remote_endpoint_id() != 13868) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_respond_json() != 55497) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() != 18983) {
