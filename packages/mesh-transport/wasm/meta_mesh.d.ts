@@ -98,6 +98,19 @@ export class WasmGossipEngine {
     constructor(local_peer_id: string);
 }
 
+export class WasmIdentityCrypto {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    static canonicalizeJson(value: any): string;
+    static certificateHash(certificate: any): string;
+    static publicKeyFromSeed(seed: Uint8Array): string;
+    static publicKeyId(public_key: string): string;
+    static signEnvelope(seed: Uint8Array, payload: any, signer_key_id: string, domain?: string | null): any;
+    static verifyDeviceCertificateChain(identity: any, device_id: string, certificates: any, domain?: string | null): string;
+    static verifyEnvelope(envelope: any, public_key: string, domain?: string | null): boolean;
+}
+
 export class WasmPairingCodec {
     free(): void;
     [Symbol.dispose](): void;
@@ -115,27 +128,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly mesh_version: () => [number, number];
-    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
-    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
-    readonly wasmgossipengine_new: (a: number, b: number) => number;
-    readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
-    readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasmblobengine_hasBlob: (a: number, b: number, c: number) => number;
-    readonly wasmblobengine_new: () => number;
-    readonly wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
-    readonly wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbg_browseracceptor_free: (a: number, b: number) => void;
     readonly __wbg_browserconnection_free: (a: number, b: number) => void;
     readonly __wbg_browsernode_free: (a: number, b: number) => void;
     readonly __wbg_browserstream_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
     readonly browseracceptor_accept: (a: number) => any;
     readonly browseracceptor_close: (a: number) => any;
     readonly browserconnection_acceptStream: (a: number) => any;
@@ -152,10 +148,35 @@ export interface InitOutput {
     readonly browserstream_read: (a: number) => any;
     readonly browserstream_send: (a: number, b: number, c: number) => any;
     readonly start_browser_node: (a: number, b: number) => any;
+    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly wasmgossipengine_activeNeighbors: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_broadcast: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_handleMessage: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_joinTopic: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmgossipengine_leaveTopic: (a: number, b: number, c: number) => [number, number];
+    readonly wasmgossipengine_new: (a: number, b: number) => number;
     readonly wasmpairingcodec_decode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmpairingcodec_new: () => number;
+    readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
+    readonly __wbg_wasmidentitycrypto_free: (a: number, b: number) => void;
+    readonly wasmblobengine_createBlob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly wasmblobengine_getBlob: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmblobengine_hasBlob: (a: number, b: number, c: number) => number;
+    readonly wasmblobengine_new: () => number;
+    readonly wasmblobengine_parseTicket: (a: number, b: number) => [number, number, number];
+    readonly wasmblobengine_putBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmblobengine_verifyBlob: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmidentitycrypto_canonicalizeJson: (a: any) => [number, number, number, number];
+    readonly wasmidentitycrypto_certificateHash: (a: any) => [number, number, number, number];
+    readonly wasmidentitycrypto_publicKeyFromSeed: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_publicKeyId: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_signEnvelope: (a: number, b: number, c: any, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;

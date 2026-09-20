@@ -3,6 +3,7 @@ set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 crate_dir="$root_dir/crates/meta-mesh"
+target_dir="$root_dir/target"
 out_dir="$root_dir/dist/wasm"
 rust_bin=$(dirname "$(rustup which rustc)")
 llvm_prefix=${LLVM_PREFIX:-$(brew --prefix llvm 2>/dev/null || true)}
@@ -21,7 +22,7 @@ CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER="$lld_prefix/bin/ld.lld" \
 cargo build --manifest-path "$crate_dir/Cargo.toml" --release --target wasm32-unknown-unknown
 
 wasm-bindgen \
-  "$crate_dir/target/wasm32-unknown-unknown/release/meta_mesh.wasm" \
+  "$target_dir/wasm32-unknown-unknown/release/meta_mesh.wasm" \
   --out-dir "$out_dir" \
   --target web
 
