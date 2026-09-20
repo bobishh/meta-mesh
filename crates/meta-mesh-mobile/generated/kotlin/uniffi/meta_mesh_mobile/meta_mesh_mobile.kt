@@ -839,7 +839,7 @@ internal object UniffiLib {
     ): Long
     external fun uniffi_meta_mesh_mobile_fn_free_mobilemeshnode(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    external fun uniffi_meta_mesh_mobile_fn_constructor_mobilemeshnode_start(`secret`: RustBuffer.ByValue,`allowedPeerIds`: RustBuffer.ByValue,`storagePath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    external fun uniffi_meta_mesh_mobile_fn_constructor_mobilemeshnode_start(`secret`: RustBuffer.ByValue,`allowedPeerIds`: RustBuffer.ByValue,`allowUnknownPeers`: Byte,`storagePath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Long
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_add_blob(`ptr`: Long,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
@@ -1236,7 +1236,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() and 0xFFFF) != 18983) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() and 0xFFFF) != 14801) {
+    if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() and 0xFFFF) != 5286) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -2617,7 +2617,7 @@ open class MobileMeshNode: Disposable, AutoCloseable, MobileMeshNodeInterface
 
     companion object {
 
-    @Throws(MobileMeshException::class) fun `start`(`secret`: kotlin.ByteArray?, `allowedPeerIds`: List<kotlin.String>, `storagePath`: kotlin.String?): MobileMeshNode {
+    @Throws(MobileMeshException::class) fun `start`(`secret`: kotlin.ByteArray?, `allowedPeerIds`: List<kotlin.String>, `allowUnknownPeers`: kotlin.Boolean, `storagePath`: kotlin.String?): MobileMeshNode {
             return FfiConverterTypeMobileMeshNode.lift(
     uniffiRustCallWithError(MobileMeshException) { _status ->
     UniffiLib.uniffi_meta_mesh_mobile_fn_constructor_mobilemeshnode_start(
@@ -2625,6 +2625,7 @@ open class MobileMeshNode: Disposable, AutoCloseable, MobileMeshNodeInterface
 
         FfiConverterOptionalByteArray.lower(`secret`),
         FfiConverterSequenceString.lower(`allowedPeerIds`),
+        FfiConverterBoolean.lower(`allowUnknownPeers`),
         FfiConverterOptionalString.lower(`storagePath`),_status)
 }
     )

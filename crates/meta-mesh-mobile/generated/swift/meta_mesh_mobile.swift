@@ -1017,12 +1017,13 @@ open class MobileMeshNode: MobileMeshNodeProtocol, @unchecked Sendable {
     }
 
 
-public static func start(secret: Data?, allowedPeerIds: [String], storagePath: String?)throws  -> MobileMeshNode  {
+public static func start(secret: Data?, allowedPeerIds: [String], allowUnknownPeers: Bool, storagePath: String?)throws  -> MobileMeshNode  {
     return try  FfiConverterTypeMobileMeshNode_lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_constructor_mobilemeshnode_start(
         FfiConverterOptionData.lower(secret),
         FfiConverterSequenceString.lower(allowedPeerIds),
+        FfiConverterBool.lower(allowUnknownPeers),
         FfiConverterOptionString.lower(storagePath),uniffiCallStatus
     )
 })
@@ -2249,7 +2250,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() != 18983) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() != 14801) {
+    if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() != 5286) {
         return InitializationResult.apiChecksumMismatch
     }
 

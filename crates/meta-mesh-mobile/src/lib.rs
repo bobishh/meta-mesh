@@ -11,20 +11,20 @@ use iroh_blobs::{Hash, ticket::BlobTicket};
 use meta_mesh_core::{
     AutomergeSyncEngine, AutomergeSyncFrame, DEFAULT_SIGNATURE_DOMAIN, DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
-    IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity,
-    IncomingDocumentChange, OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth,
-    SignedDeviceRoute, SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
-    WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
-    WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
-    derive_device_seed, durable_ack_matches, has_conflicting_ownership_transfers,
-    identity_security_for_recovery, legacy_recovery_from_samples, merge_peer_records,
-    open_identity_seed, open_identity_seed_with_passphrase, order_delivery_routes,
-    parse_invitation, plan_change_admission, public_key_from_seed, public_key_id,
-    reconcile_replica_sets, recovery_phrase_from_entropy, recovery_phrase_to_entropy,
-    seal_identity_seed, seal_identity_seed_with_passphrase, select_scoped_neighbors,
-    sign_device_route, sign_durable_batch_ack, sign_json_envelope, transition_outbox_claim,
-    validate_device_route, verify_device_route, verify_durable_batch_ack, verify_signed_envelope,
-    verify_workspace_grant, verify_workspace_ownership_transfer, verify_workspace_revocation,
+    IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, IncomingDocumentChange,
+    OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth, SignedDeviceRoute,
+    SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
+    WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation, WorkspaceSuccessionClaim,
+    WorkspaceSuccessionPolicy, WorkspaceSuccessionVote, derive_device_seed, durable_ack_matches,
+    has_conflicting_ownership_transfers, identity_security_for_recovery,
+    legacy_recovery_from_samples, merge_peer_records, open_identity_seed,
+    open_identity_seed_with_passphrase, order_delivery_routes, parse_invitation,
+    plan_change_admission, public_key_from_seed, public_key_id, reconcile_replica_sets,
+    recovery_phrase_from_entropy, recovery_phrase_to_entropy, seal_identity_seed,
+    seal_identity_seed_with_passphrase, select_scoped_neighbors, sign_device_route,
+    sign_durable_batch_ack, sign_json_envelope, transition_outbox_claim, validate_device_route,
+    verify_device_route, verify_durable_batch_ack, verify_signed_envelope, verify_workspace_grant,
+    verify_workspace_ownership_transfer, verify_workspace_revocation,
     verify_workspace_succession_claim, verify_workspace_succession_policy,
     verify_workspace_succession_vote,
 };
@@ -504,9 +504,7 @@ pub fn mesh_transition_outbox_claim_json(
     current_json: Option<String>,
     input_json: String,
 ) -> Result<String, MobileMeshError> {
-    let current: Option<OutboxClaim> = current_json
-        .map(|value| from_json(&value))
-        .transpose()?;
+    let current: Option<OutboxClaim> = current_json.map(|value| from_json(&value)).transpose()?;
     let input: OutboxClaimInput = from_json(&input_json)?;
     to_json(&transition_outbox_claim(current, input).map_err(MobileMeshError::from_display)?)
 }
@@ -664,6 +662,7 @@ impl MobileMeshNode {
     pub fn start(
         secret: Option<Vec<u8>>,
         allowed_peer_ids: Vec<String>,
+        allow_unknown_peers: bool,
         storage_path: Option<String>,
     ) -> Result<Arc<Self>, MobileMeshError> {
         let secret = secret
@@ -678,6 +677,7 @@ impl MobileMeshNode {
             .block_on(NativeNode::start_with_options(NativeNodeOptions {
                 secret,
                 allowed_peers,
+                allow_any: allow_unknown_peers,
                 storage_path: storage_path.map(PathBuf::from),
                 ..NativeNodeOptions::default()
             }))
@@ -746,11 +746,7 @@ impl MobileMeshNode {
         timeout_ms: u64,
     ) -> Result<Option<Arc<MobileRpcRequest>>, MobileMeshError> {
         let request = self.runtime.block_on(async {
-            tokio::time::timeout(
-                Duration::from_millis(timeout_ms),
-                self.rpc_inbox.receive(),
-            )
-            .await
+            tokio::time::timeout(Duration::from_millis(timeout_ms), self.rpc_inbox.receive()).await
         });
         let Some(request) = (match request {
             Ok(request) => request,
@@ -758,8 +754,8 @@ impl MobileMeshNode {
         }) else {
             return Ok(None);
         };
-        let payload_json = String::from_utf8(request.payload().to_vec())
-            .map_err(MobileMeshError::from_display)?;
+        let payload_json =
+            String::from_utf8(request.payload().to_vec()).map_err(MobileMeshError::from_display)?;
         validate_json(&payload_json)?;
         Ok(Some(Arc::new(MobileRpcRequest {
             remote_endpoint_id: request.remote_endpoint_id().to_string(),
@@ -951,10 +947,14 @@ mod tests {
 
     #[test]
     fn mobile_native_nodes_exchange_blob_and_gossip() {
-        let node_1 = MobileMeshNode::start(Some(vec![1; 32]), vec![], None).unwrap();
-        let node_2 =
-            MobileMeshNode::start(Some(vec![2; 32]), vec![node_1.endpoint_id().unwrap()], None)
-                .unwrap();
+        let node_1 = MobileMeshNode::start(Some(vec![1; 32]), vec![], false, None).unwrap();
+        let node_2 = MobileMeshNode::start(
+            Some(vec![2; 32]),
+            vec![node_1.endpoint_id().unwrap()],
+            false,
+            None,
+        )
+        .unwrap();
         node_1
             .authorize_peer(node_2.endpoint_id().unwrap())
             .unwrap();
@@ -981,10 +981,11 @@ mod tests {
 
     #[test]
     fn mobile_native_nodes_exchange_rpc_and_propagate_handler_errors() {
-        let node_1 = MobileMeshNode::start(Some(vec![3; 32]), vec![], None).unwrap();
+        let node_1 = MobileMeshNode::start(Some(vec![3; 32]), vec![], false, None).unwrap();
         let node_2 = MobileMeshNode::start(
             Some(vec![4; 32]),
             vec![node_1.endpoint_id().unwrap()],
+            false,
             None,
         )
         .unwrap();
@@ -1037,8 +1038,8 @@ mod tests {
 
     #[test]
     fn mobile_rpc_rejects_unauthorized_peers_before_delivery() {
-        let node_1 = MobileMeshNode::start(Some(vec![5; 32]), vec![], None).unwrap();
-        let node_2 = MobileMeshNode::start(Some(vec![6; 32]), vec![], None).unwrap();
+        let node_1 = MobileMeshNode::start(Some(vec![5; 32]), vec![], false, None).unwrap();
+        let node_2 = MobileMeshNode::start(Some(vec![6; 32]), vec![], false, None).unwrap();
 
         let error = node_1
             .request_json(
@@ -1050,6 +1051,36 @@ mod tests {
         assert!(!error.to_string().is_empty());
         assert!(node_2.receive_request(100).unwrap().is_none());
 
+        node_1.close().unwrap();
+        node_2.close().unwrap();
+    }
+
+    #[test]
+    fn mobile_public_rpc_accepts_unknown_peer_for_application_admission() {
+        let node_1 = MobileMeshNode::start(Some(vec![7; 32]), vec![], false, None).unwrap();
+        let node_2 = MobileMeshNode::start(Some(vec![8; 32]), vec![], true, None).unwrap();
+        let listener = std::thread::spawn({
+            let node_2 = node_2.clone();
+            move || {
+                let request = node_2.receive_request(2_000).unwrap().unwrap();
+                request
+                    .respond_json(r#"{"status":"admitted"}"#.into())
+                    .unwrap();
+            }
+        });
+
+        assert_eq!(
+            node_1
+                .request_json(
+                    node_2.endpoint_addr_json().unwrap(),
+                    r#"{"kind":"contact-request","version":1}"#.into(),
+                    2_000,
+                )
+                .unwrap(),
+            r#"{"status":"admitted"}"#,
+        );
+
+        listener.join().unwrap();
         node_1.close().unwrap();
         node_2.close().unwrap();
     }
