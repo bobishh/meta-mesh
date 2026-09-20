@@ -27,6 +27,16 @@ export type IrohModule = {
     inspect(frame: Uint8Array): unknown
     decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
   } }
+  WasmStateCore?: {
+    mergePeerRecords(existing: unknown, incoming: unknown): unknown
+    reconcileReplicaSets(left: unknown, right: unknown): unknown
+    selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]
+    validateDeviceRoute(route: unknown): void
+    durableAckMatches(ack: unknown, batch: unknown, targetDeviceId: string): boolean
+    orderDeliveryRoutes(targetDeviceId: string, routes: unknown): unknown
+  }
+  WasmDeviceRouteCatalog?: { new(): any }
+  WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
