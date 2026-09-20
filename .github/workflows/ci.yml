@@ -33,9 +33,6 @@ jobs:
           ./scripts/generate-mobile-bindings.sh
           git diff --exit-code -- crates/meta-mesh-mobile/generated
       - name: Verify generated browser WASM bindings
-        env:
-          LLVM_PREFIX: /usr
-          LLD_PREFIX: /usr
         run: |
           ./scripts/build-wasm.sh
           git diff --exit-code -- packages/mesh-transport/wasm
