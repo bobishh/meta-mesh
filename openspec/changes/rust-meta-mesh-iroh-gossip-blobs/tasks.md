@@ -68,7 +68,8 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 - [ ] 6.1 Split platform-neutral protocol/core code from browser transport and native Iroh runtime dependencies.
   - [x] Extract `meta-mesh-core` with no browser, WASM, or Iroh dependency; pairing framing now compiles and tests there.
   - [x] Create independent browser and current-Iroh native runtime dependency graphs.
-  - [ ] Port native node, gossip, blob, storage, and access-control behavior from the legacy mixed adapter into `meta-mesh-native`.
+  - [x] Port native endpoint identity lifecycle and mutable deny-by-default allowlist to `meta-mesh-native`.
+  - [ ] Port gossip, blob, durable storage, router, and networked access-control parity into `meta-mesh-native`.
 - [ ] 6.2 Port identity keys, certificates, grants, signatures, pairing invitations, and admission checks from TypeScript to Rust.
 - [ ] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match and Twang production runtimes; remove the TypeScript fallback after parity tests pass.
 - [ ] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
