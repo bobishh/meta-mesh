@@ -1,7 +1,12 @@
+pub mod authorization;
 pub mod identity;
 pub mod invitation;
 pub mod pairing;
 
+pub use authorization::{
+    WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
+    verify_workspace_grant,
+};
 pub use identity::{
     DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
     MAX_CERTIFICATE_CHAIN_LENGTH, PublicIdentity, SignedEnvelope, canonicalize_json,

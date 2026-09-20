@@ -1,7 +1,7 @@
 use meta_mesh_core::{
-    DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, PublicIdentity, SignedEnvelope, canonicalize_json,
-    certificate_hash, public_key_from_seed, public_key_id, sign_json_envelope,
-    verify_device_certificate_chain, verify_signed_envelope,
+    DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, PublicIdentity, SignedEnvelope, WorkspaceGrant,
+    canonicalize_json, certificate_hash, public_key_from_seed, public_key_id, sign_json_envelope,
+    verify_device_certificate_chain, verify_signed_envelope, verify_workspace_grant,
 };
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
@@ -92,6 +92,33 @@ impl WasmIdentityCrypto {
             domain.as_deref().unwrap_or(DEFAULT_SIGNATURE_DOMAIN),
         )
         .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceGrant)]
+    pub fn verify_workspace_grant(
+        grant: JsValue,
+        workspace_id: &str,
+        member_person_id: &str,
+        owner: JsValue,
+        owner_certificates: JsValue,
+    ) -> Result<String, JsValue> {
+        let grant: WorkspaceGrant = serde_wasm_bindgen::from_value(grant).map_err(js_error)?;
+        let owner: PublicIdentity = serde_wasm_bindgen::from_value(owner).map_err(js_error)?;
+        let owner_certificates: Vec<DeviceCertificate> =
+            serde_wasm_bindgen::from_value(owner_certificates).map_err(js_error)?;
+        let role = verify_workspace_grant(
+            &grant,
+            workspace_id,
+            member_person_id,
+            &owner,
+            &owner_certificates,
+        )
+        .map_err(js_error)?;
+        serde_json::to_value(role)
+            .map_err(js_error)?
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| js_error("Invalid workspace role"))
     }
 }
 
