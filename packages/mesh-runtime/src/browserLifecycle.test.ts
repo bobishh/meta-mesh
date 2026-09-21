@@ -13,7 +13,7 @@ describe("BrowserMeshLifecycle", () => {
         running += 1
         await new Promise<void>(resolve => {
           finish = resolve
-          signal.addEventListener("abort", resolve, { once: true })
+          signal.addEventListener("abort", () => resolve(), { once: true })
         })
       },
       shutdown,
