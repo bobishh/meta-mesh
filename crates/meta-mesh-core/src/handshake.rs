@@ -21,13 +21,13 @@ pub struct MeshHandshake {
     pub ownership_transfers: Vec<Value>,
     #[serde(default)]
     pub break_glass_claims: Vec<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub succession_policy: Option<Value>,
     #[serde(default)]
     pub succession_votes: Vec<Value>,
     #[serde(default)]
     pub succession_claims: Vec<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_workspace_ids: Option<Vec<String>>,
     pub capabilities: Vec<String>,
 }
@@ -65,7 +65,11 @@ mod tests {
             "peer": { "advertisement": {} },
             "capabilities": ["iroh-gossip-v1"],
         });
-        assert_eq!(validate_mesh_handshake(handshake, Some("workspace")).unwrap().workspace_id, "workspace");
+        let validated = validate_mesh_handshake(handshake, Some("workspace")).unwrap();
+        assert_eq!(validated.workspace_id, "workspace");
+        let round_trip = serde_json::to_value(validated).unwrap();
+        assert!(round_trip.get("successionPolicy").is_none());
+        assert!(round_trip.get("ownerWorkspaceIds").is_none());
     }
 
     #[test]
