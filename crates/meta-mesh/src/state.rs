@@ -4,6 +4,7 @@ use meta_mesh_core::{
     ReplicaSet, RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, WorkspaceAuthority,
     WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
     WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
+    VerifyWorkspaceMemberOptions,
 };
 use wasm_bindgen::prelude::*;
 
@@ -12,6 +13,22 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = verifyWorkspaceMemberBundle)]
+    pub fn verify_workspace_member_bundle(
+        raw: JsValue,
+        options: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        let options: VerifyWorkspaceMemberOptions = from_value(options)?;
+        let verified = meta_mesh_core::verify_workspace_member_bundle(
+            raw,
+            options,
+            i128::from(integer(now_ms, "Invalid member timestamp")?),
+        ).map_err(js_error)?;
+        to_value(&verified)
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceGrant)]
     pub fn verify_workspace_grant(
         grant: JsValue,

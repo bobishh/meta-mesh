@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
   verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
   hasConflictingOwnershipTransfers(records: unknown): boolean
   verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
