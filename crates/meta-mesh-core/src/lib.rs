@@ -1,4 +1,5 @@
 pub mod authority;
+pub mod catalog;
 pub mod authorization;
 pub mod automerge;
 pub mod identity;
@@ -22,6 +23,7 @@ pub use authority::{
     verify_workspace_succession_claim, verify_workspace_succession_policy,
     verify_workspace_succession_vote,
 };
+pub use catalog::{MeshCatalog, validate_mesh_catalog};
 pub use authorization::{
     WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
     verify_workspace_grant,

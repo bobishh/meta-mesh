@@ -13,6 +13,13 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = validateMeshCatalog)]
+    pub fn validate_mesh_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        let catalog = meta_mesh_core::validate_mesh_catalog(raw).map_err(js_error)?;
+        to_value(&catalog)
+    }
+
     #[wasm_bindgen(js_name = validateMeshHandshake)]
     pub fn validate_mesh_handshake(raw: JsValue, expected_workspace_id: Option<String>) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;

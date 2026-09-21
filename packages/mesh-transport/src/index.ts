@@ -28,6 +28,7 @@ export type IrohModule = {
     decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
   } }
   WasmStateCore?: {
+    validateMeshCatalog(raw: unknown): unknown
     validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
     meshCapabilities(): string[]
     validateMeshCapabilities(capabilities: unknown): void

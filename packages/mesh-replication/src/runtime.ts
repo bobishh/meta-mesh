@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  validateMeshCatalog(raw: unknown): unknown
   validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
   meshCapabilities(): string[]
   validateMeshCapabilities(capabilities: unknown): void
