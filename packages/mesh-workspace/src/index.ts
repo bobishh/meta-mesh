@@ -524,7 +524,7 @@ export const createWorkspaceMemberBundle = createPeerAdvertisement
  * - Root signature or owner device chain for grants
  * - Canonical ISO timestamp within 5 minutes future and max 30 days stale
  */
-export async function verifyWorkspaceMemberBundle(
+async function legacyVerifyWorkspaceMemberBundle(
   rawBundle: unknown,
   workspaceIdOrOptions?: string | VerifyWorkspaceMemberBundleOptions,
   ownerPersonIdOrPublicKeyOrOptions?: string | VerifyWorkspaceMemberBundleOptions,
@@ -559,34 +559,6 @@ export async function verifyWorkspaceMemberBundle(
   if (typeof optionsOrOwnerPublicKey === "string") {
     secondaryOwnerKeyOrId = optionsOrOwnerPublicKey
   }
-
-  let runtimeOwnerPublicKey = opts.ownerPublicKey
-  let runtimeOwnerPersonId = opts.ownerPersonId
-  if (ownerKeyOrId) {
-    if (!runtimeOwnerPublicKey) {
-      runtimeOwnerPublicKey = ownerKeyOrId
-      try { runtimeOwnerPersonId ??= await keyId(ownerKeyOrId) }
-      catch { runtimeOwnerPersonId ??= ownerKeyOrId }
-    }
-    if (secondaryOwnerKeyOrId) {
-      try {
-        if ((await keyId(secondaryOwnerKeyOrId)) === ownerKeyOrId) {
-          runtimeOwnerPersonId = ownerKeyOrId
-          runtimeOwnerPublicKey = secondaryOwnerKeyOrId
-        }
-      } catch {}
-    }
-  }
-  const now = typeof opts.now === "number" ? opts.now
-    : opts.now instanceof Date ? opts.now.getTime()
-      : typeof opts.now === "string" ? Date.parse(opts.now) : Date.now()
-  const verified = meshRustRuntime().state.verifyWorkspaceMemberBundle(rawBundle, {
-    workspaceId: opts.workspaceId, ownerPersonId: runtimeOwnerPersonId, ownerPublicKey: runtimeOwnerPublicKey,
-    ownerCertificates: opts.ownerCertificates ?? [], ownerHistory: opts.ownerHistory ?? [],
-    maxByteLength: opts.maxByteLength, allowStaleRoute: opts.allowStaleRoute ?? false,
-  }, now) as VerifiedWorkspaceMember & { grant?: WorkspaceGrant | null }
-  if (verified.grant === null) delete verified.grant
-  if (!(globalThis as { __legacyMeshMemberVerifier?: boolean }).__legacyMeshMemberVerifier) return verified
 
   // 1. Check bounded serialized size
   const maxByteLength = opts.maxByteLength ?? MAX_PEER_ADVERTISEMENT_SIZE
@@ -802,6 +774,47 @@ export async function verifyWorkspaceMemberBundle(
     ownerPublicKey,
     ownerCertificates,
   }
+}
+
+export async function verifyWorkspaceMemberBundle(
+  rawBundle: unknown,
+  workspaceIdOrOptions?: string | VerifyWorkspaceMemberBundleOptions,
+  ownerPersonIdOrPublicKeyOrOptions?: string | VerifyWorkspaceMemberBundleOptions,
+  optionsOrOwnerPublicKey?: string | VerifyWorkspaceMemberBundleOptions,
+  maybeOptions?: VerifyWorkspaceMemberBundleOptions,
+): Promise<VerifiedWorkspaceMember> {
+  let options: VerifyWorkspaceMemberBundleOptions = {}
+  if (typeof workspaceIdOrOptions === "object" && workspaceIdOrOptions) options = workspaceIdOrOptions
+  else if (typeof ownerPersonIdOrPublicKeyOrOptions === "object" && ownerPersonIdOrPublicKeyOrOptions) {
+    options = { ...ownerPersonIdOrPublicKeyOrOptions, ...(typeof workspaceIdOrOptions === "string" ? { workspaceId: workspaceIdOrOptions } : {}) }
+  } else if (typeof optionsOrOwnerPublicKey === "object" && optionsOrOwnerPublicKey) {
+    options = { ...optionsOrOwnerPublicKey, ...(typeof workspaceIdOrOptions === "string" ? { workspaceId: workspaceIdOrOptions } : {}) }
+  } else if (typeof maybeOptions === "object" && maybeOptions) {
+    options = { ...maybeOptions, ...(typeof workspaceIdOrOptions === "string" ? { workspaceId: workspaceIdOrOptions } : {}) }
+  } else if (typeof workspaceIdOrOptions === "string") options = { workspaceId: workspaceIdOrOptions }
+  const ownerKey = typeof ownerPersonIdOrPublicKeyOrOptions === "string" ? ownerPersonIdOrPublicKeyOrOptions : undefined
+  const alternateKey = typeof optionsOrOwnerPublicKey === "string" ? optionsOrOwnerPublicKey : undefined
+  let ownerPublicKey = options.ownerPublicKey
+  let ownerPersonId = options.ownerPersonId
+  if (ownerKey && !ownerPublicKey) {
+    ownerPublicKey = ownerKey
+    try { ownerPersonId ??= await keyId(ownerKey) } catch { ownerPersonId ??= ownerKey }
+  }
+  if (ownerKey && alternateKey) {
+    try {
+      if ((await keyId(alternateKey)) === ownerKey) { ownerPersonId = ownerKey; ownerPublicKey = alternateKey }
+      else if ((await keyId(ownerKey)) === alternateKey) { ownerPersonId = alternateKey; ownerPublicKey = ownerKey }
+    } catch {}
+  }
+  const now = typeof options.now === "number" ? options.now : options.now instanceof Date ? options.now.getTime()
+    : typeof options.now === "string" ? Date.parse(options.now) : Date.now()
+  const verified = meshRustRuntime().state.verifyWorkspaceMemberBundle(rawBundle, {
+    workspaceId: options.workspaceId, ownerPersonId, ownerPublicKey,
+    ownerCertificates: options.ownerCertificates ?? [], ownerHistory: options.ownerHistory ?? [],
+    maxByteLength: options.maxByteLength, allowStaleRoute: options.allowStaleRoute ?? false,
+  }, now) as VerifiedWorkspaceMember & { grant?: WorkspaceGrant | null }
+  if (verified.grant === null) delete verified.grant
+  return verified
 }
 
 export const verifyPeerAdvertisement = verifyWorkspaceMemberBundle
