@@ -2,6 +2,7 @@ import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-repl
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
+export { mergeBreakGlassClaims, type BreakGlassHost } from "./breakGlass"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
