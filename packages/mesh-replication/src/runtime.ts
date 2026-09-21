@@ -60,6 +60,7 @@ export type RustMeshRuntimeState = {
   }>
   beginRouteAttempt(routeKey: string, nowMs: number): { routeKey: string; token: number; startedAtMs: number }
   routeAttemptActive(routeKey: string): boolean
+  clearRouteAttempt(routeKey: string): void
   finishRouteAttempt(routeKey: string, token: number): boolean
   scheduleReconnect(routeKey: string, nowMs: number, baseDelayMs: number, maximumDelayMs: number): {
     failures: number; retryAtMs: number

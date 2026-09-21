@@ -203,6 +203,10 @@ impl MeshRuntimeState {
         self.attempts.contains_key(route_key)
     }
 
+    pub fn clear_route_attempt(&mut self, route_key: &str) {
+        self.attempts.remove(route_key);
+    }
+
     pub fn finish_route_attempt(&mut self, route_key: &str, token: u64) -> bool {
         if self
             .attempts
@@ -564,6 +568,8 @@ mod tests {
         let mut runtime = MeshRuntimeState::default();
         let first = runtime.begin_route_attempt("route".into(), 10);
         assert!(runtime.route_attempt_active("route"));
+        runtime.clear_route_attempt("route");
+        assert!(!runtime.route_attempt_active("route"));
         let second = runtime.begin_route_attempt("route".into(), 20);
         assert!(!runtime.finish_route_attempt("route", first.token));
         assert!(runtime.finish_route_attempt("route", second.token));

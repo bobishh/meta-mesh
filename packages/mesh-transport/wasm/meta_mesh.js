@@ -1315,6 +1315,14 @@ export class WasmMeshRuntimeState {
         wasm.wasmmeshruntimestate_clearReconnectsWithPrefix(this.__wbg_ptr, ptr0, len0);
     }
     /**
+     * @param {string} route_key
+     */
+    clearRouteAttempt(route_key) {
+        const ptr0 = passStringToWasm0(route_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmmeshruntimestate_clearRouteAttempt(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @param {string} workspace_id
      * @returns {any}
      */
