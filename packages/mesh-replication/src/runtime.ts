@@ -36,10 +36,43 @@ export type RustAutomergeSyncEngine = {
   free?(): void
 }
 
+export type RustMeshRuntimeState = {
+  readonly running: boolean
+  start(): void
+  stop(): string[]
+  sessions(): Array<{
+    key: { workspaceId: string; deviceId: string; instanceId: string }
+    connectionId: string
+    remoteIssuedAt: string
+    remoteRouteSequence?: number | null
+    direction: "incoming" | "outgoing"
+    generation: number
+  }>
+  beginRouteAttempt(routeKey: string, nowMs: number): { routeKey: string; token: number; startedAtMs: number }
+  finishRouteAttempt(routeKey: string, token: number): boolean
+  scheduleReconnect(routeKey: string, nowMs: number, baseDelayMs: number, maximumDelayMs: number): {
+    failures: number; retryAtMs: number
+  }
+  clearReconnect(routeKey: string): void
+  dueReconnects(nowMs: number): string[]
+  admitSession(candidate: unknown, preferredDirection: "incoming" | "outgoing"): {
+    decision: "accepted" | "rejected"
+    generation?: number
+    replacedConnectionId?: string | null
+    retainedConnectionId?: string
+  }
+  removeSession(key: unknown, generation: number): string | null
+  connectedDevices(workspaceId: string): string[]
+  controlFrames(workspaceId: string, bytes: Uint8Array): Uint8Array[]
+  receiveControlFrame(workspaceId: string, frame: Uint8Array): Uint8Array | undefined
+  free?(): void
+}
+
 export type MeshRustRuntime = {
   state: RustStateCore
   createDeviceRouteCatalog(): RustDeviceRouteCatalog
   createAutomergeSyncEngine(localDeviceId: string, maximumFrameBytes?: number): RustAutomergeSyncEngine
+  createMeshRuntimeState(): RustMeshRuntimeState
 }
 
 let installed: MeshRustRuntime | undefined

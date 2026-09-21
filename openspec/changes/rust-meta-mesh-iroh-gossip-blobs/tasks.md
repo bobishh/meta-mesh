@@ -94,6 +94,17 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 - [x] 6.9 Add CI gates for Rust unit/integration tests, WASM build/export verification, mobile binding generation, TypeScript wrappers, and consumer builds.
   - [x] Meta-mesh CI verifies core/browser/native/mobile tests, regenerated WASM exports, regenerated Swift/Kotlin bindings, TypeScript checks, and wrapper tests; pinned Match and Twang updates run their own complete test/build workflows.
 
+## 7. Complete Runtime Ownership
+
+The 6.7 completion mark covered protocol primitives, but overstated the consumer boundary. Match still owns connection lifecycle, handshake orchestration, route racing, session replacement, reconnect scheduling, gossip session management, control-frame reassembly, and ownership workflows in a nine-class TypeScript inheritance chain.
+
+- [ ] 7.1 Add a platform-neutral Rust runtime state machine for lifecycle, route attempts, session admission/replacement, reconnect scheduling, and bounded control transfers.
+- [ ] 7.2 Expose the runtime through the browser WASM adapter and native/mobile adapters with equivalent observable behavior.
+- [ ] 7.3 Move authenticated handshake, gossip-session orchestration, Automerge session lifecycle, and ownership/recovery commands behind the Rust runtime API.
+- [ ] 7.4 Replace Match's `DurableMesh` hierarchy with a thin host adapter for persistence, browser lifecycle signals, and UI notifications; remove the superseded TypeScript runtime.
+- [ ] 7.5 Integrate the same runtime in Twang without product-specific forks.
+- [ ] 7.6 Verify browser↔browser, browser↔native, reconnect, duplicate-session, multi-tab, ownership transfer, and oversized-control scenarios through consumer E2E tests.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.

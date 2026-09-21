@@ -7,6 +7,7 @@ pub mod pairing;
 pub mod persistence;
 pub mod recovery;
 pub mod replication;
+pub mod runtime;
 pub mod state;
 
 pub use authority::{
@@ -54,6 +55,11 @@ pub use replication::{
     durable_ack_matches, order_delivery_routes, sign_device_route, sign_durable_batch_ack,
     validate_device_route, validate_device_route_payload, validate_durable_ack_payload,
     verify_device_route, verify_durable_batch_ack,
+};
+pub use runtime::{
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, MAX_CONTROL_FRAME_BYTES,
+    MAX_CONTROL_SNAPSHOT_BYTES, MeshRuntimeState, ReconnectState, RouteAttempt, RuntimeSession,
+    SessionAdmission, SessionCandidate, SessionDirection, SessionKey, control_frames,
 };
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,

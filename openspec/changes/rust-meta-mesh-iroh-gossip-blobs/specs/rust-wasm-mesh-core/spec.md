@@ -17,3 +17,14 @@ The system SHALL support Ed25519 identity generation, PBKDF2/BIP-39 mnemonic rec
 #### Scenario: Envelope signing and chain verification
 - **WHEN** a local profile signs an envelope with its device key
 - **THEN** any peer holding the corresponding public certificate chain verifies the envelope signature and signer validity
+
+### Requirement: Rust-owned mesh runtime orchestration
+The system SHALL own connection lifecycle, route attempts, authenticated session admission, duplicate-session replacement, reconnect scheduling, gossip participation, incremental document sessions, and bounded control transfers in the shared Rust runtime. Consumer TypeScript SHALL only provide platform persistence, browser lifecycle signals, application document admission, and UI notifications.
+
+#### Scenario: Competing routes establish the same session
+- **WHEN** incoming and outgoing connections for the same workspace, device, and runtime instance complete concurrently
+- **THEN** the Rust runtime deterministically retains one connection and closes the loser without reporting the reachable peer as offline
+
+#### Scenario: Consumer uses the browser runtime
+- **WHEN** Match starts workspace synchronization
+- **THEN** it constructs the WASM runtime with host callbacks and does not implement handshake, dialing, reconnect, session ownership, or gossip topology itself

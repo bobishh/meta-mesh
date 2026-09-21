@@ -155,6 +155,26 @@ export class WasmInvitations {
     static parsePairingInvite(raw: string): any;
 }
 
+export class WasmMeshRuntimeState {
+    free(): void;
+    [Symbol.dispose](): void;
+    admitSession(candidate: any, preferred_direction: string): any;
+    beginRouteAttempt(route_key: string, now_ms: number): any;
+    clearReconnect(route_key: string): void;
+    connectedDevices(workspace_id: string): any;
+    controlFrames(workspace_id: string, bytes: Uint8Array): any;
+    dueReconnects(now_ms: number): any;
+    finishRouteAttempt(route_key: string, token: number): boolean;
+    constructor();
+    receiveControlFrame(workspace_id: string, frame: Uint8Array): Uint8Array | undefined;
+    removeSession(key: any, generation: number): any;
+    scheduleReconnect(route_key: string, now_ms: number, base_delay_ms: number, maximum_delay_ms: number): any;
+    sessions(): any;
+    start(): void;
+    stop(): any;
+    readonly running: boolean;
+}
+
 export class WasmPairingCodec {
     free(): void;
     [Symbol.dispose](): void;
@@ -199,6 +219,33 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_browseracceptor_free: (a: number, b: number) => void;
+    readonly __wbg_browserconnection_free: (a: number, b: number) => void;
+    readonly __wbg_browsernode_free: (a: number, b: number) => void;
+    readonly __wbg_browserstream_free: (a: number, b: number) => void;
+    readonly browseracceptor_accept: (a: number) => any;
+    readonly browseracceptor_close: (a: number) => any;
+    readonly browserconnection_acceptStream: (a: number) => any;
+    readonly browserconnection_close: (a: number) => any;
+    readonly browserconnection_openStream: (a: number) => any;
+    readonly browserconnection_remoteEndpointId: (a: number) => [number, number];
+    readonly browsernode_accept: (a: number) => any;
+    readonly browsernode_close: (a: number, b: number, c: number) => any;
+    readonly browsernode_dial: (a: number, b: number, c: number) => any;
+    readonly browsernode_dialRelay: (a: number, b: number, c: number) => any;
+    readonly browsernode_endpointId: (a: number) => [number, number];
+    readonly browsernode_start: (a: number, b: number) => any;
+    readonly browserstream_closeSend: (a: number) => any;
+    readonly browserstream_read: (a: number) => any;
+    readonly browserstream_send: (a: number, b: number, c: number) => any;
+    readonly start_browser_node: (a: number, b: number) => any;
+    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
+    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
+    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
+    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
     readonly __wbg_wasmblobengine_free: (a: number, b: number) => void;
     readonly __wbg_wasmgossipengine_free: (a: number, b: number) => void;
     readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
@@ -221,26 +268,6 @@ export interface InitOutput {
     readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmpairingcodec_new: () => number;
-    readonly __wbg_browseracceptor_free: (a: number, b: number) => void;
-    readonly __wbg_browserconnection_free: (a: number, b: number) => void;
-    readonly __wbg_browsernode_free: (a: number, b: number) => void;
-    readonly __wbg_browserstream_free: (a: number, b: number) => void;
-    readonly browseracceptor_accept: (a: number) => any;
-    readonly browseracceptor_close: (a: number) => any;
-    readonly browserconnection_acceptStream: (a: number) => any;
-    readonly browserconnection_close: (a: number) => any;
-    readonly browserconnection_openStream: (a: number) => any;
-    readonly browserconnection_remoteEndpointId: (a: number) => [number, number];
-    readonly browsernode_accept: (a: number) => any;
-    readonly browsernode_close: (a: number, b: number, c: number) => any;
-    readonly browsernode_dial: (a: number, b: number, c: number) => any;
-    readonly browsernode_dialRelay: (a: number, b: number, c: number) => any;
-    readonly browsernode_endpointId: (a: number) => [number, number];
-    readonly browsernode_start: (a: number, b: number) => any;
-    readonly browserstream_closeSend: (a: number) => any;
-    readonly browserstream_read: (a: number) => any;
-    readonly browserstream_send: (a: number, b: number, c: number) => any;
-    readonly start_browser_node: (a: number, b: number) => any;
     readonly __wbg_wasmidentitycrypto_free: (a: number, b: number) => void;
     readonly wasmidentitycrypto_canonicalizeJson: (a: any) => [number, number, number, number];
     readonly wasmidentitycrypto_certificateHash: (a: any) => [number, number, number, number];
@@ -259,10 +286,11 @@ export interface InitOutput {
     readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
     readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
+    readonly mesh_version: () => [number, number];
     readonly __wbg_wasmautomergesyncengine_free: (a: number, b: number) => void;
     readonly __wbg_wasmdeviceroutecatalog_free: (a: number, b: number) => void;
-    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
-    readonly mesh_version: () => [number, number];
+    readonly __wbg_wasmmeshruntimestate_free: (a: number, b: number) => void;
+    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
     readonly wasmautomergesyncengine_generate: (a: number, b: number, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
     readonly wasmautomergesyncengine_heads: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmautomergesyncengine_loadDocument: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
@@ -273,12 +301,21 @@ export interface InitOutput {
     readonly wasmdeviceroutecatalog_admit: (a: number, b: any) => [number, number, number];
     readonly wasmdeviceroutecatalog_new: () => number;
     readonly wasmdeviceroutecatalog_routesFor: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
-    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
-    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
+    readonly wasmmeshruntimestate_admitSession: (a: number, b: any, c: number, d: number) => [number, number, number];
+    readonly wasmmeshruntimestate_beginRouteAttempt: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmmeshruntimestate_clearReconnect: (a: number, b: number, c: number) => void;
+    readonly wasmmeshruntimestate_connectedDevices: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmmeshruntimestate_controlFrames: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmmeshruntimestate_dueReconnects: (a: number, b: number) => [number, number, number];
+    readonly wasmmeshruntimestate_finishRouteAttempt: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmmeshruntimestate_new: () => number;
+    readonly wasmmeshruntimestate_receiveControlFrame: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmmeshruntimestate_removeSession: (a: number, b: any, c: number) => [number, number, number];
+    readonly wasmmeshruntimestate_running: (a: number) => number;
+    readonly wasmmeshruntimestate_scheduleReconnect: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly wasmmeshruntimestate_sessions: (a: number) => [number, number, number];
+    readonly wasmmeshruntimestate_start: (a: number) => void;
+    readonly wasmmeshruntimestate_stop: (a: number) => [number, number, number];
     readonly wasmstatecore_durableAckMatches: (a: any, b: any, c: number, d: number) => [number, number, number];
     readonly wasmstatecore_hasConflictingOwnershipTransfers: (a: any) => [number, number, number];
     readonly wasmstatecore_mergePeerRecords: (a: any, b: any) => [number, number, number];
@@ -300,7 +337,6 @@ export interface InitOutput {
     readonly wasmstatecore_verifyWorkspaceSuccessionClaim: (a: any, b: number, c: number, d: any, e: number, f: any, g: number) => [number, number, number];
     readonly wasmstatecore_verifyWorkspaceSuccessionPolicy: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
     readonly wasmstatecore_verifyWorkspaceSuccessionVote: (a: any, b: any, c: number, d: number, e: any, f: any, g: number) => [number, number, number];
-    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;

@@ -8,6 +8,7 @@ pub mod identity;
 pub mod invitation;
 pub mod node;
 pub mod pairing;
+pub mod runtime;
 #[cfg(target_family = "wasm")]
 pub mod state;
 
@@ -15,6 +16,7 @@ pub use blobs::{BlobDescriptor, BlobEngine, ParsedTicket, WasmBlobEngine};
 pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
 pub use pairing::WasmPairingCodec;
+pub use runtime::WasmMeshRuntimeState;
 
 #[cfg(target_family = "wasm")]
 pub use automerge::WasmAutomergeSyncEngine;
