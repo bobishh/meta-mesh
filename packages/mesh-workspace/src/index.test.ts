@@ -177,6 +177,21 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
         personId: owner.identity.personId, publicKey: owner.identity.publicKey, certificates: [owner.certificate],
       }, 1)).rejects.toThrow(/editor/i)
     })
+
+    it("Given an editor grant survived an ownership transfer, when recovery is needed, then the trusted owner history still proves editor status", async () => {
+      const genesis = await createProfile("Genesis owner")
+      const current = await createProfile("Offline current owner")
+      const editor = await createProfile("Recovering editor")
+      const grant = await createWorkspaceGrant(genesis, workspaceId, editor.identity.personId, "editor")
+      const claim = await createWorkspaceBreakGlassClaim(editor, workspaceId, current.identity.personId,
+        grant, ["head-before-recovery"], 3)
+      const currentAuthority = { personId: current.identity.personId, publicKey: current.identity.publicKey,
+        certificates: [current.certificate] }
+
+      await expect(verifyWorkspaceBreakGlassClaim(claim, workspaceId, currentAuthority, 2, [currentAuthority, {
+        personId: genesis.identity.personId, publicKey: genesis.identity.publicKey, certificates: [genesis.certificate],
+      }])).resolves.toEqual(claim)
+    })
   })
 
   async function createProfile(displayName: string): Promise<LocalProfile> {

@@ -874,6 +874,7 @@ export async function verifyWorkspaceBreakGlassClaim(
   workspaceId: string,
   authority: WorkspaceAuthority,
   currentEpoch: number,
+  grantAuthorities: WorkspaceAuthority[] = [authority],
 ): Promise<WorkspaceBreakGlassClaim> {
   const claim = raw as WorkspaceBreakGlassClaim
   const p = claim?.payload
@@ -887,10 +888,16 @@ export async function verifyWorkspaceBreakGlassClaim(
     throw new Error("Invalid workspace break-glass claim")
   }
   if (await keyId(p.toOwnerPublicKey) !== p.toOwnerPersonId) throw new Error("Invalid workspace break-glass identity")
-  const role = await verifyWorkspaceGrant(p.editorGrant, {
-    workspaceId, personId: p.toOwnerPersonId, ownerPersonId: authority.personId,
-    ownerPublicKey: authority.publicKey, ownerCertificates: authority.certificates,
-  })
+  let role: WorkspaceRole | undefined
+  for (const issuer of grantAuthorities) {
+    try {
+      role = await verifyWorkspaceGrant(p.editorGrant, {
+        workspaceId, personId: p.toOwnerPersonId, ownerPersonId: issuer.personId,
+        ownerPublicKey: issuer.publicKey, ownerCertificates: issuer.certificates,
+      })
+      break
+    } catch {}
+  }
   if (role !== "editor") throw new Error("Workspace break-glass requires an editor grant")
   const deviceKey = await verifyDeviceChain({ personId: p.toOwnerPersonId, publicKey: p.toOwnerPublicKey,
     deviceId: claim.signerKeyId, certificates: p.toOwnerCertificates })
