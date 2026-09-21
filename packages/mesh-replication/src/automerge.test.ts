@@ -29,19 +29,21 @@ describe("Automerge document lifecycle", () => {
     expect(runtime.load).toHaveBeenCalledTimes(2)
   })
 
-  it("Given a replacement document, when remembered, then later reads use it without another load", () => {
+  it("Given replacement bytes, when cached, then the cache owns a separately loaded document", () => {
     const first = { room: "first" } as unknown as Automerge.Doc<Chat>
     const second = { room: "second" } as unknown as Automerge.Doc<Chat>
     const runtime = {
-      load: vi.fn(() => first),
+      load: vi.fn()
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second),
     } as unknown as Pick<typeof Automerge, "load">
     const cache = new AutomergeDocumentCache<Chat>(runtime)
 
     cache.getOrLoad("room-1", new Uint8Array([1]))
-    cache.remember("room-1", second)
+    cache.replaceFromBytes("room-1", new Uint8Array([2]))
 
     expect(cache.getOrLoad("room-1", new Uint8Array([2]))).toBe(second)
-    expect(runtime.load).toHaveBeenCalledOnce()
+    expect(runtime.load).toHaveBeenCalledTimes(2)
   })
 })
 import { createRecoverableIdentity, verifyDeviceCertificateChain } from "@meta-uber/mesh-identity"

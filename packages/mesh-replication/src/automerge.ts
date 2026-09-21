@@ -32,8 +32,10 @@ export class AutomergeDocumentCache<T extends Record<string, unknown>> {
     return document
   }
 
-  remember(documentId: string, document: Automerge.Doc<T>): void {
+  replaceFromBytes(documentId: string, bytes: Uint8Array): Automerge.Doc<T> {
+    const document = this.automerge.load<T>(bytes)
     this.documents.set(documentId, document)
+    return document
   }
 
   clear(): void {
