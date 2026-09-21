@@ -22,6 +22,7 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-automerge-sync",
     "mesh-control-sync",
     "mesh-gossip",
+    "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
 ];
@@ -122,6 +123,16 @@ mod tests {
         assert_eq!(
             PairingCodec::decode(&frame, "sync-request", "expected-secret").unwrap_err(),
             "Pairing authorization failed"
+        );
+    }
+
+    #[test]
+    fn iroh_gossip_frame_round_trips_binary_packet() {
+        let packet = [0, 1, 2, 255];
+        let frame = PairingCodec::encode("mesh-iroh-gossip", "workspace-secret", &packet).unwrap();
+        assert_eq!(
+            PairingCodec::decode(&frame, "mesh-iroh-gossip", "workspace-secret").unwrap(),
+            packet
         );
     }
 

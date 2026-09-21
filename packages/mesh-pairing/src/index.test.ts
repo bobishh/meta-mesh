@@ -79,6 +79,7 @@ describe("pairing protocol", () => {
     "mesh-automerge-sync",
     "mesh-control-sync",
     "mesh-gossip",
+    "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
   ] as const)("Given a %s runtime frame, when inspected, then the live session accepts it", (type) => {
