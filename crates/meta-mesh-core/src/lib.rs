@@ -19,6 +19,7 @@ pub use authority::{
     WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy, WorkspaceSuccessionPolicyPayload,
     WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload, SuccessionSummary, SuccessionVoteSummary,
     has_conflicting_break_glass_claims, summarize_succession, eligible_editor_person_ids, canonical_revocations,
+    plan_ownership_transitions,
     has_conflicting_ownership_transfers,
     verify_workspace_ownership_transfer, verify_workspace_revocation,
     verify_workspace_succession_claim, verify_workspace_succession_policy,

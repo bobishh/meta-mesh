@@ -86,6 +86,20 @@ impl WasmStateCore {
         ))
     }
 
+    #[wasm_bindgen(js_name = planOwnershipTransitions)]
+    pub fn plan_ownership_transitions(
+        records: JsValue,
+        initial_owner_person_id: String,
+        initial_epoch: f64,
+    ) -> Result<JsValue, JsValue> {
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        to_value(&meta_mesh_core::plan_ownership_transitions(
+            &records,
+            &initial_owner_person_id,
+            unsigned_integer(initial_epoch, "Invalid ownership epoch")?,
+        ))
+    }
+
     #[wasm_bindgen(js_name = hasConflictingBreakGlassClaims)]
     pub fn has_conflicting_break_glass_claims(records: JsValue) -> Result<bool, JsValue> {
         let records: Vec<serde_json::Value> = from_value(records)?;

@@ -159,6 +159,58 @@ pub fn has_conflicting_ownership_transfers(records: &[Value]) -> bool {
     successors.values().any(|values| values.len() > 1)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipTransitionPlan {
+    pub records: Vec<Value>,
+    pub conflicted: bool,
+}
+
+/// Select the deterministic ownership chain from already verified authority
+/// records.  A conflicting successor stalls the chain instead of letting a
+/// host adapter adopt whichever packet it happened to see first.
+pub fn plan_ownership_transitions(
+    records: &[Value],
+    initial_owner_person_id: &str,
+    initial_epoch: u64,
+) -> OwnershipTransitionPlan {
+    let mut owner_person_id = initial_owner_person_id;
+    let mut epoch = initial_epoch;
+    let mut planned = Vec::new();
+
+    loop {
+        let Some(next_epoch) = epoch.checked_add(1) else {
+            return OwnershipTransitionPlan { records: planned, conflicted: false };
+        };
+        let mut candidates = records
+            .iter()
+            .filter(|record| {
+                record.pointer("/payload/epoch").and_then(Value::as_u64) == Some(next_epoch)
+                    && record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str)
+                        == Some(owner_person_id)
+                    && record.pointer("/payload/toOwnerPersonId").and_then(Value::as_str)
+                        .is_some_and(|value| !value.is_empty())
+                    && record.get("signature").and_then(Value::as_str)
+                        .is_some_and(|value| !value.is_empty())
+            })
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return OwnershipTransitionPlan { records: planned, conflicted: false };
+        }
+        let successors = candidates.iter()
+            .filter_map(|record| record.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
+            .collect::<HashSet<_>>();
+        if successors.len() > 1 {
+            return OwnershipTransitionPlan { records: planned, conflicted: true };
+        }
+        candidates.sort_by_key(|record| record.get("signature").and_then(Value::as_str).unwrap_or_default());
+        let selected = candidates[0];
+        owner_person_id = selected.pointer("/payload/toOwnerPersonId").and_then(Value::as_str).unwrap_or_default();
+        epoch = next_epoch;
+        planned.push(selected.clone());
+    }
+}
+
 /// A recovery claim may only advance a specific owner/epoch to one successor.
 /// Keep this decision in the protocol core so replicas cannot disagree over a
 /// catalog merely because their host adapter observed records in a different order.
@@ -694,5 +746,30 @@ mod tests {
         assert_eq!(canonical.len(), 2);
         assert_eq!(canonical[0].pointer("/payload/personId").unwrap(), "alice");
         assert_eq!(canonical[1].pointer("/payload/epoch").unwrap(), 3);
+    }
+
+    #[test]
+    fn ownership_transition_plan_stops_on_conflicting_successors() {
+        let records = vec![
+            json!({ "signature": "b", "payload": { "epoch": 2, "fromOwnerPersonId": "alice", "toOwnerPersonId": "bob" } }),
+            json!({ "signature": "a", "payload": { "epoch": 2, "fromOwnerPersonId": "alice", "toOwnerPersonId": "carol" } }),
+        ];
+        let plan = super::plan_ownership_transitions(&records, "alice", 1);
+        assert!(plan.conflicted);
+        assert!(plan.records.is_empty());
+    }
+
+    #[test]
+    fn ownership_transition_plan_selects_a_deterministic_chain() {
+        let records = vec![
+            json!({ "signature": "z", "payload": { "epoch": 2, "fromOwnerPersonId": "alice", "toOwnerPersonId": "bob" } }),
+            json!({ "signature": "a", "payload": { "epoch": 2, "fromOwnerPersonId": "alice", "toOwnerPersonId": "bob" } }),
+            json!({ "signature": "c", "payload": { "epoch": 3, "fromOwnerPersonId": "bob", "toOwnerPersonId": "carol" } }),
+        ];
+        let plan = super::plan_ownership_transitions(&records, "alice", 1);
+        assert!(!plan.conflicted);
+        assert_eq!(plan.records.len(), 2);
+        assert_eq!(plan.records[0].get("signature").unwrap(), "a");
+        assert_eq!(plan.records[1].get("signature").unwrap(), "c");
     }
 }

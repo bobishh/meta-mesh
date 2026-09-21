@@ -1724,6 +1724,21 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} records
+     * @param {string} initial_owner_person_id
+     * @param {number} initial_epoch
+     * @returns {any}
+     */
+    static planOwnershipTransitions(records, initial_owner_person_id, initial_epoch) {
+        const ptr0 = passStringToWasm0(initial_owner_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_planOwnershipTransitions(records, ptr0, len0, initial_epoch);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} left
      * @param {any} right
      * @returns {any}
@@ -2864,7 +2879,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6150, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6151, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
             return ret;
         },

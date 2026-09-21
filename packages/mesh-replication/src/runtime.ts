@@ -6,6 +6,7 @@ export type RustStateCore = {
   verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
   verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
   hasConflictingOwnershipTransfers(records: unknown): boolean
+  planOwnershipTransitions(records: unknown, initialOwnerPersonId: string, initialEpoch: number): { records: unknown[], conflicted: boolean }
   hasConflictingBreakGlassClaims(records: unknown): boolean
   summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, breakGlassClaims: unknown, revocations: unknown, epoch: number): unknown
   eligibleEditorPersonIds(peers: unknown): string[]
