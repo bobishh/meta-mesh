@@ -257,6 +257,18 @@ pub fn summarize_succession(
         votes, quorum: eligible.len() / 2 + 1, conflicted }))
 }
 
+pub fn eligible_editor_person_ids(peers: &[Value]) -> Vec<String> {
+    let mut people = peers.iter().filter_map(|peer| {
+        let role = peer.get("role").and_then(Value::as_str)?;
+        let person_id = peer.get("personId").and_then(Value::as_str)?;
+        let revoked = peer.get("revokedAt").is_some_and(|value| !value.is_null());
+        (role == "editor" && !revoked && !person_id.is_empty()).then(|| person_id.to_owned())
+    }).collect::<Vec<_>>();
+    people.sort();
+    people.dedup();
+    people
+}
+
 pub fn verify_workspace_revocation(
     record: &WorkspaceRevocation,
     workspace_id: &str,
@@ -642,5 +654,17 @@ mod tests {
         assert_eq!(summary.eligible_editor_person_ids, vec!["alice", "bob"]);
         assert_eq!(summary.quorum, 2);
         assert_eq!(summary.votes.len(), 1);
+    }
+
+    #[test]
+    fn eligible_editors_are_unique_sorted_and_active() {
+        let peers = vec![
+            json!({ "role": "editor", "personId": "bob", "revokedAt": null }),
+            json!({ "role": "editor", "personId": "alice" }),
+            json!({ "role": "editor", "personId": "bob" }),
+            json!({ "role": "editor", "personId": "carol", "revokedAt": "2026-09-21T00:00:00.000Z" }),
+            json!({ "role": "visitor", "personId": "dave" }),
+        ];
+        assert_eq!(super::eligible_editor_person_ids(&peers), vec!["alice", "bob"]);
     }
 }

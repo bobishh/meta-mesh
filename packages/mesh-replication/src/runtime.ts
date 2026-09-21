@@ -8,6 +8,7 @@ export type RustStateCore = {
   hasConflictingOwnershipTransfers(records: unknown): boolean
   hasConflictingBreakGlassClaims(records: unknown): boolean
   summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, breakGlassClaims: unknown, revocations: unknown, epoch: number): unknown
+  eligibleEditorPersonIds(peers: unknown): string[]
   verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
   verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
   verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown

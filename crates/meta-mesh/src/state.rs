@@ -112,6 +112,12 @@ impl WasmStateCore {
             &break_glass_claims, &revocations, unsigned_integer(epoch, "Invalid succession epoch")?).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = eligibleEditorPersonIds)]
+    pub fn eligible_editor_person_ids(peers: JsValue) -> Result<JsValue, JsValue> {
+        let peers: Vec<serde_json::Value> = from_value(peers)?;
+        to_value(&meta_mesh_core::eligible_editor_person_ids(&peers))
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
     pub fn verify_workspace_revocation(
         record: JsValue,
