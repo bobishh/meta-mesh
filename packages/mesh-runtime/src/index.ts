@@ -5,6 +5,7 @@ export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionH
 export { mergeBreakGlassClaims, type BreakGlassHost } from "./breakGlass"
 export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
+export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
