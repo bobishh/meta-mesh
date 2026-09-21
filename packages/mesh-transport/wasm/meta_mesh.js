@@ -1307,6 +1307,14 @@ export class WasmMeshRuntimeState {
         wasm.wasmmeshruntimestate_clearReconnect(this.__wbg_ptr, ptr0, len0);
     }
     /**
+     * @param {string} prefix
+     */
+    clearReconnectsWithPrefix(prefix) {
+        const ptr0 = passStringToWasm0(prefix, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmmeshruntimestate_clearReconnectsWithPrefix(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @param {string} workspace_id
      * @returns {any}
      */
@@ -1401,6 +1409,19 @@ export class WasmMeshRuntimeState {
             wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         }
         return v3;
+    }
+    /**
+     * @param {string} route_key
+     * @returns {any}
+     */
+    reconnectState(route_key) {
+        const ptr0 = passStringToWasm0(route_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshruntimestate_reconnectState(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * @param {string} peer_key

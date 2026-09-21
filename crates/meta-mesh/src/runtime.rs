@@ -85,6 +85,16 @@ impl WasmMeshRuntimeState {
         self.inner.clear_reconnect(route_key);
     }
 
+    #[wasm_bindgen(js_name = reconnectState)]
+    pub fn reconnect_state(&self, route_key: &str) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.reconnect_state(route_key))
+    }
+
+    #[wasm_bindgen(js_name = clearReconnectsWithPrefix)]
+    pub fn clear_reconnects_with_prefix(&mut self, prefix: &str) {
+        self.inner.clear_reconnects_with_prefix(prefix);
+    }
+
     #[wasm_bindgen(js_name = dueReconnects)]
     pub fn due_reconnects(&self, now_ms: f64) -> Result<JsValue, JsValue> {
         to_value(

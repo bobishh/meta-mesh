@@ -61,6 +61,8 @@ export type RustMeshRuntimeState = {
     failures: number; retryAtMs: number
   }
   clearReconnect(routeKey: string): void
+  reconnectState(routeKey: string): { failures: number; retryAtMs: number } | undefined
+  clearReconnectsWithPrefix(prefix: string): void
   dueReconnects(nowMs: number): string[]
   admitSession(candidate: unknown, preferredDirection: "incoming" | "outgoing"): {
     decision: "accepted" | "rejected"

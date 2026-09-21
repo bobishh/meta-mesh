@@ -239,6 +239,14 @@ impl MeshRuntimeState {
         self.reconnects.remove(route_key);
     }
 
+    pub fn reconnect_state(&self, route_key: &str) -> Option<ReconnectState> {
+        self.reconnects.get(route_key).cloned()
+    }
+
+    pub fn clear_reconnects_with_prefix(&mut self, prefix: &str) {
+        self.reconnects.retain(|key, _| !key.starts_with(prefix));
+    }
+
     pub fn due_reconnects(&self, now_ms: u64) -> Vec<String> {
         self.reconnects
             .iter()
