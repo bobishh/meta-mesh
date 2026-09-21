@@ -2,6 +2,7 @@ pub mod authority;
 pub mod authorization;
 pub mod automerge;
 pub mod identity;
+pub mod handshake;
 pub mod invitation;
 pub mod member;
 pub mod pairing;
@@ -35,6 +36,7 @@ pub use identity::{
     sign_device_certificate, sign_json_envelope, signature_input, verify_device_certificate_chain,
     verify_signed_envelope,
 };
+pub use handshake::{MeshHandshake, validate_mesh_handshake};
 pub use invitation::{
     DeviceEnrollmentInvitation, InvitationIssuer, PairingInvite, ScopedInvitation, WorkspaceItem,
     WorkspaceJoinInvitation, create_device_enrollment_invitation, create_workspace_join_invitation,

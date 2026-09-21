@@ -13,6 +13,13 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = validateMeshHandshake)]
+    pub fn validate_mesh_handshake(raw: JsValue, expected_workspace_id: Option<String>) -> Result<JsValue, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        let handshake = meta_mesh_core::validate_mesh_handshake(raw, expected_workspace_id.as_deref()).map_err(js_error)?;
+        to_value(&handshake)
+    }
+
     #[wasm_bindgen(js_name = meshCapabilities)]
     pub fn mesh_capabilities() -> Result<JsValue, JsValue> {
         to_value(&meta_mesh_core::MESH_CAPABILITIES)

@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
   meshCapabilities(): string[]
   validateMeshCapabilities(capabilities: unknown): void
   verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
