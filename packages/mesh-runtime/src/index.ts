@@ -42,6 +42,10 @@ export class MeshReconnectPolicy {
     if (networkFailure) this.runtime.recordNetworkFailure(peerKey, now)
   }
 
+  mode(node: Pick<DialNode, "dialRelay">, peerKey: string): "direct" | "relay" {
+    return this.runtime.planDial(peerKey, Boolean(node.dialRelay), Date.now()).mode
+  }
+
   async dial<TConnection extends MeshConnection>(node: DialNode<TConnection>, peerKey: string, endpoint: string): Promise<TConnection> {
     const plan = this.runtime.planDial(peerKey, Boolean(node.dialRelay), Date.now())
     if (plan.mode === "relay") {
