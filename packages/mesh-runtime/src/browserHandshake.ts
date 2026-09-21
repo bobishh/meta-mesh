@@ -131,6 +131,7 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
     const response = this.codec.readResponse(await stream.read(), this.host.secret(credential), this.host.workspaceId(credential))
     credential = await this.host.mergeAuthority(credential, response)
     const remote = await this.host.verifyPeer(credential, response.peer)
+    if (remote.deviceId !== peerId) throw new Error("Unexpected mesh peer")
     await this.host.putVerifiedBundle(credential, response.peer)
     this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
     return { credential, response, remote, features: this.codec.features(response.capabilities) }
