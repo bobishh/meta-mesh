@@ -3,6 +3,7 @@ import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
 export { mergeBreakGlassClaims, type BreakGlassHost } from "./breakGlass"
+export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
