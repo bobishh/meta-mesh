@@ -1463,6 +1463,16 @@ export class WasmMeshRuntimeState {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {string} route_key
+     * @returns {boolean}
+     */
+    routeAttemptActive(route_key) {
+        const ptr0 = passStringToWasm0(route_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshruntimestate_routeAttemptActive(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
      * @returns {boolean}
      */
     get running() {

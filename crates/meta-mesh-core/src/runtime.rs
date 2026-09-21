@@ -199,6 +199,10 @@ impl MeshRuntimeState {
         attempt
     }
 
+    pub fn route_attempt_active(&self, route_key: &str) -> bool {
+        self.attempts.contains_key(route_key)
+    }
+
     pub fn finish_route_attempt(&mut self, route_key: &str, token: u64) -> bool {
         if self
             .attempts
@@ -559,9 +563,11 @@ mod tests {
     fn route_attempt_tokens_and_reconnects_ignore_stale_work() {
         let mut runtime = MeshRuntimeState::default();
         let first = runtime.begin_route_attempt("route".into(), 10);
+        assert!(runtime.route_attempt_active("route"));
         let second = runtime.begin_route_attempt("route".into(), 20);
         assert!(!runtime.finish_route_attempt("route", first.token));
         assert!(runtime.finish_route_attempt("route", second.token));
+        assert!(!runtime.route_attempt_active("route"));
         assert_eq!(
             runtime
                 .schedule_reconnect("route".into(), 100, 50, 1_000)

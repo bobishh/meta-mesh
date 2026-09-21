@@ -55,6 +55,11 @@ impl WasmMeshRuntimeState {
         to_value(&self.inner.begin_route_attempt(route_key, now_ms))
     }
 
+    #[wasm_bindgen(js_name = routeAttemptActive)]
+    pub fn route_attempt_active(&self, route_key: &str) -> bool {
+        self.inner.route_attempt_active(route_key)
+    }
+
     #[wasm_bindgen(js_name = finishRouteAttempt)]
     pub fn finish_route_attempt(&mut self, route_key: &str, token: f64) -> Result<bool, JsValue> {
         Ok(self.inner.finish_route_attempt(
