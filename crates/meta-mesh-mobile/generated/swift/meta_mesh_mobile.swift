@@ -1188,6 +1188,221 @@ public func FfiConverterTypeMobileMeshNode_lower(_ value: MobileMeshNode) -> UIn
 
 
 
+public protocol MobileMeshRuntimeProtocol: AnyObject, Sendable {
+
+    func admitSessionJson(candidateJson: String, preferredDirection: String) throws  -> String
+
+    func controlFrames(workspaceId: String, bytes: Data) throws  -> [Data]
+
+    func dueReconnects(nowMs: UInt64) throws  -> [String]
+
+    func receiveControlFrame(receiverId: String, workspaceId: String, frame: Data) throws  -> Data?
+
+    func removeSessionJson(keyJson: String, generation: UInt64) throws  -> String?
+
+    func scheduleReconnectJson(routeKey: String, nowMs: UInt64, baseDelayMs: UInt64, maximumDelayMs: UInt64) throws  -> String
+
+    func start() throws
+
+    func stop() throws  -> [String]
+
+}
+open class MobileMeshRuntime: MobileMeshRuntimeProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_meta_mesh_mobile_fn_clone_mobilemeshruntime(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_constructor_mobilemeshruntime_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_meta_mesh_mobile_fn_free_mobilemeshruntime(handle, $0) }
+    }
+
+
+
+
+open func admitSessionJson(candidateJson: String, preferredDirection: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_admit_session_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(candidateJson),
+        FfiConverterString.lower(preferredDirection),uniffiCallStatus
+    )
+})
+}
+
+open func controlFrames(workspaceId: String, bytes: Data)throws  -> [Data]  {
+    return try  FfiConverterSequenceData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_control_frames(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+})
+}
+
+open func dueReconnects(nowMs: UInt64)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_due_reconnects(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+
+open func receiveControlFrame(receiverId: String, workspaceId: String, frame: Data)throws  -> Data?  {
+    return try  FfiConverterOptionData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_receive_control_frame(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(receiverId),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterData.lower(frame),uniffiCallStatus
+    )
+})
+}
+
+open func removeSessionJson(keyJson: String, generation: UInt64)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_remove_session_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(keyJson),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+
+open func scheduleReconnectJson(routeKey: String, nowMs: UInt64, baseDelayMs: UInt64, maximumDelayMs: UInt64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_schedule_reconnect_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(routeKey),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterUInt64.lower(baseDelayMs),
+        FfiConverterUInt64.lower(maximumDelayMs),uniffiCallStatus
+    )
+})
+}
+
+open func start()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_start(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+
+open func stop()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_stop(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileMeshRuntime: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = MobileMeshRuntime
+
+    public static func lift(_ handle: UInt64) throws -> MobileMeshRuntime {
+        return MobileMeshRuntime(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: MobileMeshRuntime) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileMeshRuntime {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MobileMeshRuntime, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileMeshRuntime_lift(_ handle: UInt64) throws -> MobileMeshRuntime {
+    return try FfiConverterTypeMobileMeshRuntime.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileMeshRuntime_lower(_ value: MobileMeshRuntime) -> UInt64 {
+    return FfiConverterTypeMobileMeshRuntime.lower(value)
+}
+
+
+
+
+
+
 public protocol MobileRpcRequestProtocol: AnyObject, Sendable {
 
     func fail(message: String) throws
@@ -1730,6 +1945,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceData: FfiConverterRustBuffer {
+    typealias SwiftType = [Data]
+
+    public static func write(_ value: [Data], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterData.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Data] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Data]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterData.read(from: &buf))
+        }
+        return seq
+    }
+}
 public func meshCoreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -2235,6 +2475,30 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_shutdown() != 27449) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_admit_session_json() != 17058) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_control_frames() != 64260) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_due_reconnects() != 36131) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_receive_control_frame() != 6272) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_remove_session_json() != 18204) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_schedule_reconnect_json() != 11666) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start() != 32108) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_stop() != 39994) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_fail() != 30629) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2251,6 +2515,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() != 5286) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshruntime_new() != 60988) {
         return InitializationResult.apiChecksumMismatch
     }
 

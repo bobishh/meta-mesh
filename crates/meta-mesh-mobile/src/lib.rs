@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -9,10 +9,12 @@ use std::{
 use iroh::{EndpointAddr, EndpointId};
 use iroh_blobs::{Hash, ticket::BlobTicket};
 use meta_mesh_core::{
-    AutomergeSyncEngine, AutomergeSyncFrame, DEFAULT_SIGNATURE_DOMAIN, DeviceBatch, DeviceRoute,
+    AutomergeSyncEngine, AutomergeSyncFrame, ControlFrameReceiver, DEFAULT_SIGNATURE_DOMAIN,
+    DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, IncomingDocumentChange,
-    OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth, SignedDeviceRoute,
+    MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth,
+    SessionCandidate, SessionDirection, SessionKey, SignedDeviceRoute,
     SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
     WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation, WorkspaceSuccessionClaim,
     WorkspaceSuccessionPolicy, WorkspaceSuccessionVote, derive_device_seed, durable_ack_matches,
@@ -26,7 +28,7 @@ use meta_mesh_core::{
     verify_device_route, verify_durable_batch_ack, verify_signed_envelope, verify_workspace_grant,
     verify_workspace_ownership_transfer, verify_workspace_revocation,
     verify_workspace_succession_claim, verify_workspace_succession_policy,
-    verify_workspace_succession_vote,
+    verify_workspace_succession_vote, control_frames,
 };
 use meta_mesh_native::{
     GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions, NativeRpcInbox,
@@ -507,6 +509,113 @@ pub fn mesh_transition_outbox_claim_json(
     let current: Option<OutboxClaim> = current_json.map(|value| from_json(&value)).transpose()?;
     let input: OutboxClaimInput = from_json(&input_json)?;
     to_json(&transition_outbox_claim(current, input).map_err(MobileMeshError::from_display)?)
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileMeshRuntime {
+    state: Mutex<MeshRuntimeState>,
+    control_receivers: Mutex<BTreeMap<String, ControlFrameReceiver>>,
+    transfer_sequence: Mutex<u64>,
+}
+
+#[uniffi::export]
+impl MobileMeshRuntime {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(MeshRuntimeState::default()),
+            control_receivers: Mutex::new(BTreeMap::new()),
+            transfer_sequence: Mutex::new(0),
+        })
+    }
+
+    pub fn start(&self) -> Result<(), MobileMeshError> {
+        self.with_state(|state| { state.start(); Ok(()) })
+    }
+
+    pub fn stop(&self) -> Result<Vec<String>, MobileMeshError> {
+        self.with_state(|state| Ok(state.stop()))
+    }
+
+    pub fn admit_session_json(
+        &self,
+        candidate_json: String,
+        preferred_direction: String,
+    ) -> Result<String, MobileMeshError> {
+        let candidate: SessionCandidate = from_json(&candidate_json)?;
+        let preferred = mobile_direction(&preferred_direction)?;
+        let admission = self.with_state(|state| Ok(state.admit_session(candidate, preferred)))?;
+        to_json(&admission)
+    }
+
+    pub fn remove_session_json(
+        &self,
+        key_json: String,
+        generation: u64,
+    ) -> Result<Option<String>, MobileMeshError> {
+        let key: SessionKey = from_json(&key_json)?;
+        self.with_state(|state| Ok(state.remove_session(&key, generation)))
+    }
+
+    pub fn schedule_reconnect_json(
+        &self,
+        route_key: String,
+        now_ms: u64,
+        base_delay_ms: u64,
+        maximum_delay_ms: u64,
+    ) -> Result<String, MobileMeshError> {
+        let value = self.with_state(|state| Ok(state.schedule_reconnect(
+            route_key, now_ms, base_delay_ms, maximum_delay_ms,
+        )))?;
+        to_json(&value)
+    }
+
+    pub fn due_reconnects(&self, now_ms: u64) -> Result<Vec<String>, MobileMeshError> {
+        self.with_state(|state| Ok(state.due_reconnects(now_ms)))
+    }
+
+    pub fn control_frames(
+        &self,
+        workspace_id: String,
+        bytes: Vec<u8>,
+    ) -> Result<Vec<Vec<u8>>, MobileMeshError> {
+        let mut sequence = self.transfer_sequence.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile runtime transfer lock poisoned"))?;
+        *sequence = sequence.saturating_add(1);
+        control_frames(&workspace_id, &format!("mobile-{sequence}"), &bytes)
+            .map_err(MobileMeshError::from_display)
+    }
+
+    pub fn receive_control_frame(
+        &self,
+        receiver_id: String,
+        workspace_id: String,
+        frame: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, MobileMeshError> {
+        let mut receivers = self.control_receivers.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile runtime control lock poisoned"))?;
+        receivers.entry(receiver_id).or_insert_with(|| ControlFrameReceiver::new(workspace_id))
+            .receive(&frame).map_err(MobileMeshError::from_display)
+    }
+}
+
+impl MobileMeshRuntime {
+    fn with_state<T>(
+        &self,
+        action: impl FnOnce(&mut MeshRuntimeState) -> Result<T, String>,
+    ) -> Result<T, MobileMeshError> {
+        let mut state = self.state.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile runtime lock poisoned"))?;
+        action(&mut state).map_err(MobileMeshError::from_display)
+    }
+}
+
+fn mobile_direction(value: &str) -> Result<SessionDirection, MobileMeshError> {
+    match value {
+        "incoming" => Ok(SessionDirection::Incoming),
+        "outgoing" => Ok(SessionDirection::Outgoing),
+        _ => Err(MobileMeshError::from_display("Invalid session direction")),
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -1131,5 +1240,38 @@ mod tests {
             left.heads("doc".into()).unwrap(),
             right.heads("doc".into()).unwrap()
         );
+    }
+
+    #[test]
+    fn mobile_runtime_uses_shared_session_and_control_state_machine() {
+        let runtime = MobileMeshRuntime::new();
+        runtime.start().unwrap();
+        let candidate = |connection: &str, sequence: u64| {
+            serde_json::json!({
+                "key": { "workspaceId": "workspace", "deviceId": "device", "instanceId": "instance" },
+                "connectionId": connection,
+                "remoteIssuedAt": "2026-09-21T00:00:00Z",
+                "remoteRouteSequence": sequence,
+                "direction": "incoming"
+            }).to_string()
+        };
+        let first: meta_mesh_core::SessionAdmission = from_json(&runtime
+            .admit_session_json(candidate("first", 1), "incoming".into()).unwrap()).unwrap();
+        let replacement: meta_mesh_core::SessionAdmission = from_json(&runtime
+            .admit_session_json(candidate("replacement", 2), "incoming".into()).unwrap()).unwrap();
+        assert!(matches!(first, meta_mesh_core::SessionAdmission::Accepted { .. }));
+        assert!(matches!(replacement, meta_mesh_core::SessionAdmission::Accepted {
+            replaced_connection_id: Some(value), ..
+        } if value == "first"));
+
+        let bytes = vec![3_u8; meta_mesh_core::MAX_CONTROL_FRAME_BYTES + 1];
+        let frames = runtime.control_frames("workspace".into(), bytes.clone()).unwrap();
+        let mut result = None;
+        for frame in frames.into_iter().rev() {
+            if let Some(value) = runtime.receive_control_frame(
+                "receiver".into(), "workspace".into(), frame,
+            ).unwrap() { result = Some(value); }
+        }
+        assert_eq!(result, Some(bytes));
     }
 }

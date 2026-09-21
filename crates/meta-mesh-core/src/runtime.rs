@@ -44,7 +44,11 @@ pub struct RuntimeSession {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "decision", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "decision",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SessionAdmission {
     Accepted {
         generation: u64,
@@ -303,10 +307,16 @@ impl ControlFrameReceiver {
         if frame.len() > MAX_CONTROL_FRAME_BYTES {
             return Err("Mesh control frame exceeds size limit".to_string());
         }
-        let Ok(chunk) = serde_json::from_slice::<ControlChunk>(frame) else {
-            self.pending = None;
+        let value: serde_json::Value =
+            serde_json::from_slice(frame).map_err(|_| "Invalid mesh control frame".to_string())?;
+        if value.get("version").and_then(serde_json::Value::as_u64) != Some(2) {
+            if self.pending.is_some() {
+                return Err("Incomplete mesh control snapshot".to_string());
+            }
             return Ok(Some(frame.to_vec()));
-        };
+        }
+        let chunk: ControlChunk =
+            serde_json::from_value(value).map_err(|_| "Invalid mesh control chunk".to_string())?;
         validate_chunk(&chunk, &self.workspace_id)?;
         let part = URL_SAFE_NO_PAD
             .decode(&chunk.data)
@@ -337,7 +347,7 @@ impl ControlFrameReceiver {
         }
         let pending = self.pending.as_mut().expect("pending transfer initialized");
         if pending.parts.insert(chunk.index, part).is_some() {
-            return Err("Duplicate mesh control chunk".to_string());
+            return Err("Conflicting mesh control chunk".to_string());
         }
         if pending.parts.len() != expected_parts {
             return Ok(None);

@@ -98,8 +98,8 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 
 The 6.7 completion mark covered protocol primitives, but overstated the consumer boundary. Match still owns connection lifecycle, handshake orchestration, route racing, session replacement, reconnect scheduling, gossip session management, control-frame reassembly, and ownership workflows in a nine-class TypeScript inheritance chain.
 
-- [ ] 7.1 Add a platform-neutral Rust runtime state machine for lifecycle, route attempts, session admission/replacement, reconnect scheduling, and bounded control transfers.
-- [ ] 7.2 Expose the runtime through the browser WASM adapter and native/mobile adapters with equivalent observable behavior.
+- [x] 7.1 Add a platform-neutral Rust runtime state machine for lifecycle, route attempts, session admission/replacement, reconnect scheduling, and bounded control transfers.
+- [x] 7.2 Expose the runtime through the browser WASM adapter and native/mobile adapters with equivalent observable behavior.
 - [ ] 7.3 Move authenticated handshake, gossip-session orchestration, Automerge session lifecycle, and ownership/recovery commands behind the Rust runtime API.
 - [ ] 7.4 Replace Match's `DurableMesh` hierarchy with a thin host adapter for persistence, browser lifecycle signals, and UI notifications; remove the superseded TypeScript runtime.
 - [ ] 7.5 Integrate the same runtime in Twang without product-specific forks.
