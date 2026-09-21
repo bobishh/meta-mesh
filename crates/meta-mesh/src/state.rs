@@ -72,6 +72,12 @@ impl WasmStateCore {
         ))
     }
 
+    #[wasm_bindgen(js_name = hasConflictingBreakGlassClaims)]
+    pub fn has_conflicting_break_glass_claims(records: JsValue) -> Result<bool, JsValue> {
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        Ok(meta_mesh_core::has_conflicting_break_glass_claims(&records))
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
     pub fn verify_workspace_revocation(
         record: JsValue,

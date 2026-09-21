@@ -33,6 +33,7 @@ export type IrohModule = {
     verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
     verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
     hasConflictingOwnershipTransfers(records: unknown): boolean
+    hasConflictingBreakGlassClaims(records: unknown): boolean
     verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
     verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
     verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown

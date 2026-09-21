@@ -159,6 +159,30 @@ pub fn has_conflicting_ownership_transfers(records: &[Value]) -> bool {
     successors.values().any(|values| values.len() > 1)
 }
 
+/// A recovery claim may only advance a specific owner/epoch to one successor.
+/// Keep this decision in the protocol core so replicas cannot disagree over a
+/// catalog merely because their host adapter observed records in a different order.
+pub fn has_conflicting_break_glass_claims(records: &[Value]) -> bool {
+    let mut successors: HashMap<(u64, &str), HashSet<&str>> = HashMap::new();
+    for record in records {
+        let Some(payload) = record.get("payload") else { continue; };
+        let Some(epoch) = payload.get("epoch").and_then(Value::as_u64) else { continue; };
+        let Some(from_owner) = payload
+            .get("fromOwnerPersonId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else { continue; };
+        let Some(to_owner) = payload
+            .get("toOwnerPersonId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else { continue; };
+        if epoch > 9_007_199_254_740_991 { continue; }
+        successors.entry((epoch, from_owner)).or_default().insert(to_owner);
+    }
+    successors.values().any(|values| values.len() > 1)
+}
+
 pub fn verify_workspace_revocation(
     record: &WorkspaceRevocation,
     workspace_id: &str,
@@ -509,5 +533,27 @@ fn bounded(value: &impl Serialize, maximum: usize, message: &str) -> Result<(), 
         Err(message.to_string())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::has_conflicting_break_glass_claims;
+
+    #[test]
+    fn break_glass_conflicts_are_scoped_to_the_owner_and_epoch() {
+        let same_transition = vec![
+            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "alice", "epoch": 2 } }),
+            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "bob", "epoch": 2 } }),
+        ];
+        assert!(has_conflicting_break_glass_claims(&same_transition));
+
+        let independent_transitions = vec![
+            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "alice", "epoch": 2 } }),
+            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "bob", "epoch": 3 } }),
+        ];
+        assert!(!has_conflicting_break_glass_claims(&independent_transitions));
     }
 }
