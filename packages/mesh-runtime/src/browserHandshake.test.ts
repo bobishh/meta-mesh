@@ -54,3 +54,28 @@ describe("BrowserMeshHandshake", () => {
     expect(host.install).not.toHaveBeenCalled()
   })
 })
+
+describe("BrowserMeshOutgoingHandshake", () => {
+  it("writes a canonical request then merges authority before returning the verified peer", async () => {
+    const { BrowserMeshOutgoingHandshake } = await import("./browserHandshake")
+    const stream = { read: vi.fn(async () => new Uint8Array([3])), send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
+    const connection = { openStream: vi.fn(async () => stream) }
+    const credential = { secret: "secret", workspaceId: "workspace" }
+    const response = { ...request, peer: {} as never }
+    const host = {
+      secret: () => "secret", workspaceId: () => "workspace", request: vi.fn(async () => request),
+      mergeAuthority: vi.fn(async () => credential),
+      verifyPeer: vi.fn(async () => ({ deviceId: "remote", instanceId: "slot", issuedAt: "2026-01-01T00:00:00.000Z", personId: "person", endpoint: "endpoint" })),
+      putVerifiedBundle: vi.fn(async () => {}), trace: vi.fn(),
+    }
+    const codec = { encodeRequest: vi.fn(() => new Uint8Array([2])), readResponse: vi.fn(() => response),
+      features: vi.fn(() => ({ heartbeatSupported: false, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false })) }
+    const handshake = new BrowserMeshOutgoingHandshake(host, codec as never)
+
+    const result = await handshake.exchange(connection, credential, "out-1", "remote")
+
+    expect(stream.send).toHaveBeenCalledWith(new Uint8Array([2]))
+    expect(host.mergeAuthority).toHaveBeenCalledBefore(host.verifyPeer)
+    expect(result.remote.deviceId).toBe("remote")
+  })
+})

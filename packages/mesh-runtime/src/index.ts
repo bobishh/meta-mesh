@@ -7,7 +7,7 @@ export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
-export { BrowserMeshHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream } from "./browserHandshake"
+export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
 export { credentialBelongsToProfile, activeCredentialsForProfile, type CredentialIdentityHost, type RuntimeAuthority, type RuntimeCredential, type RuntimeProfile } from "./credentials"
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"

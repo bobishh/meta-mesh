@@ -103,3 +103,36 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
 }
 
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+export type BrowserMeshOutgoingConnection<S extends BrowserMeshHandshakeStream> = {
+  openStream(): Promise<S>
+}
+
+export type BrowserMeshOutgoingHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
+  secret(credential: C): string
+  workspaceId(credential: C): string
+  request(credential: C): Promise<MeshHandshakePayload>
+  mergeAuthority(credential: C, response: MeshHandshakePayload): Promise<C>
+  verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
+  putVerifiedBundle(credential: C, bundle: WorkspaceMemberBundle): Promise<void>
+  trace(event: string, detail?: Record<string, unknown>, level?: "info" | "warn"): void
+}
+
+/** Shared authenticated outbound handshake after a host has opened its transport connection. */
+export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer> {
+  constructor(private readonly host: BrowserMeshOutgoingHandshakeHost<C, P>, private readonly codec = new MeshHandshakeCodec()) {}
+
+  async exchange<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshOutgoingConnection<S>, credential: C,
+    connectionId: string, peerId: string): Promise<{ credential: C; response: MeshHandshakePayload; remote: P; features: MeshHandshakeFeatures }> {
+    const stream = await connection.openStream()
+    this.host.trace("handshake.outgoing.started", { connectionId, peerId: peerId.slice(0, 8) })
+    await stream.send(this.codec.encodeRequest(this.host.secret(credential), await this.host.request(credential)))
+    await stream.closeSend()
+    const response = this.codec.readResponse(await stream.read(), this.host.secret(credential), this.host.workspaceId(credential))
+    credential = await this.host.mergeAuthority(credential, response)
+    const remote = await this.host.verifyPeer(credential, response.peer)
+    await this.host.putVerifiedBundle(credential, response.peer)
+    this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
+    return { credential, response, remote, features: this.codec.features(response.capabilities) }
+  }
+}
