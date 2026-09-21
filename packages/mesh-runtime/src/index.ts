@@ -11,6 +11,7 @@ export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHan
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
 export { credentialBelongsToProfile, activeCredentialsForProfile, type CredentialIdentityHost, type RuntimeAuthority, type RuntimeCredential, type RuntimeProfile } from "./credentials"
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"
+export { BrowserMeshCredentials, type BrowserMeshCredentialsHost, type BrowserMeshOwnerCredential, type BrowserMeshOwnerProfile } from "./browserCredentials"
 export { BrowserMeshAuthority, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile } from "./browserAuthority"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
