@@ -19,7 +19,7 @@ export type RuntimeWorkspaceCredential = {
   localGrant?: unknown
   epoch: number
   updatedAt: string
-  catalog: unknown
+  catalog?: unknown
 }
 
 export type SuccessionHost<TCredential extends RuntimeWorkspaceCredential = RuntimeWorkspaceCredential> = {
