@@ -51,6 +51,7 @@ export class BrowserMeshLifecycle {
     this.abortController?.abort()
     this.abortController = undefined
     this.host.retryChanged()
+    await this.host.shutdown()
     await this.task?.catch(() => {})
     this.task = undefined
     await this.host.shutdown()
