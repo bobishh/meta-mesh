@@ -8,6 +8,8 @@ out_dir="$root_dir/dist/wasm"
 rust_bin=$(dirname "$(rustup which rustc)")
 llvm_prefix=${LLVM_PREFIX:-$(brew --prefix llvm 2>/dev/null || true)}
 lld_prefix=${LLD_PREFIX:-$(brew --prefix lld 2>/dev/null || true)}
+if [ -z "$llvm_prefix" ] && [ -d /opt/homebrew/opt/llvm ]; then llvm_prefix=/opt/homebrew/opt/llvm; fi
+if [ -z "$lld_prefix" ] && [ -d /opt/homebrew/opt/lld ]; then lld_prefix=/opt/homebrew/opt/lld; fi
 
 find_tool() {
   prefix=$1
@@ -34,8 +36,13 @@ find_tool() {
 }
 
 clang_bin=$(find_tool "$llvm_prefix" clang || true)
-ar_bin=$(find_tool "$llvm_prefix" llvm-ar || true)
+ar_bin=$(find_tool "$llvm_prefix" llvm-ar ar || true)
 lld_bin=$(find_tool "$lld_prefix" wasm-ld ld.lld || true)
+if [ -z "$lld_bin" ]; then
+  rust_sysroot=$(rustc --print sysroot 2>/dev/null || true)
+  rust_lld="$rust_sysroot/lib/rustlib/$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')/bin/rust-lld"
+  if [ -x "$rust_lld" ]; then lld_bin="$rust_lld"; fi
+fi
 
 if [ -z "$clang_bin" ] || [ -z "$ar_bin" ] || [ -z "$lld_bin" ]; then
   echo "build-wasm requires LLVM and LLD with wasm support" >&2

@@ -57,7 +57,7 @@ pub use replication::{
     verify_device_route, verify_durable_batch_ack,
 };
 pub use runtime::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, MAX_CONTROL_FRAME_BYTES,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan, RelayDialPolicy, MAX_CONTROL_FRAME_BYTES,
     MAX_CONTROL_SNAPSHOT_BYTES, MeshRuntimeState, ReconnectState, RouteAttempt, RuntimeSession,
     SessionAdmission, SessionCandidate, SessionDirection, SessionKey, control_frames,
 };

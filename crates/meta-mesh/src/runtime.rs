@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    ControlFrameReceiver, MeshRuntimeState, SessionCandidate, SessionDirection, SessionKey,
+    ControlFrameReceiver, DialMode, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
     control_frames,
 };
 use serde::Serialize;
@@ -12,6 +12,7 @@ pub struct WasmMeshRuntimeState {
     inner: MeshRuntimeState,
     control_receivers: BTreeMap<String, ControlFrameReceiver>,
     transfer_sequence: u64,
+    relay_policy: RelayDialPolicy,
 }
 
 #[wasm_bindgen]
@@ -22,6 +23,7 @@ impl WasmMeshRuntimeState {
             inner: MeshRuntimeState::default(),
             control_receivers: BTreeMap::new(),
             transfer_sequence: 0,
+            relay_policy: RelayDialPolicy::default(),
         }
     }
 
@@ -135,6 +137,32 @@ impl WasmMeshRuntimeState {
             .or_insert_with(|| ControlFrameReceiver::new(workspace_id))
             .receive(frame)
             .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = planDial)]
+    pub fn plan_dial(&mut self, peer_key: &str, relay_available: bool, now_ms: f64) -> Result<JsValue, JsValue> {
+        to_value(&self.relay_policy.plan(
+            peer_key,
+            relay_available,
+            unsigned_integer(now_ms, "Invalid dial timestamp")?,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = recordNetworkFailure)]
+    pub fn record_network_failure(&mut self, peer_key: String, now_ms: f64) -> Result<(), JsValue> {
+        self.relay_policy.record_network_failure(peer_key, unsigned_integer(now_ms, "Invalid dial timestamp")?);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = recordDialSuccess)]
+    pub fn record_dial_success(&mut self, peer_key: &str, mode: &str, now_ms: f64) -> Result<(), JsValue> {
+        let mode = match mode {
+            "direct" => DialMode::Direct,
+            "relay" => DialMode::Relay,
+            _ => return Err(js_error("Invalid dial mode")),
+        };
+        self.relay_policy.record_success(peer_key, mode, unsigned_integer(now_ms, "Invalid dial timestamp")?);
+        Ok(())
     }
 }
 

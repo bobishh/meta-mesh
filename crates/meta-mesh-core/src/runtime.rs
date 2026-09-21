@@ -74,6 +74,67 @@ pub struct ReconnectState {
     pub retry_at_ms: u64,
 }
 
+/// Transport selection is runtime state, not a browser concern. The host owns
+/// the socket calls; this policy decides whether to try direct, relay, or race
+/// direct with a delayed relay fallback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DialPlan {
+    pub mode: DialMode,
+    pub relay_fallback_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DialMode {
+    Direct,
+    Relay,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayDialPolicy {
+    relay_until: BTreeMap<String, u64>,
+    relay_cooldown_ms: u64,
+    fallback_delay_ms: u64,
+}
+
+impl Default for RelayDialPolicy {
+    fn default() -> Self { Self::new(60_000, 1_500) }
+}
+
+impl RelayDialPolicy {
+    pub fn new(relay_cooldown_ms: u64, fallback_delay_ms: u64) -> Self {
+        Self { relay_until: BTreeMap::new(), relay_cooldown_ms, fallback_delay_ms }
+    }
+
+    pub fn plan(&mut self, peer_key: &str, relay_available: bool, now_ms: u64) -> DialPlan {
+        let until = self.relay_until.get(peer_key).copied().unwrap_or_default();
+        if until <= now_ms { self.relay_until.remove(peer_key); }
+        if relay_available && until > now_ms {
+            DialPlan { mode: DialMode::Relay, relay_fallback_at_ms: None }
+        } else {
+            DialPlan {
+                mode: DialMode::Direct,
+                relay_fallback_at_ms: relay_available.then(|| now_ms.saturating_add(self.fallback_delay_ms)),
+            }
+        }
+    }
+
+    pub fn record_network_failure(&mut self, peer_key: String, now_ms: u64) {
+        self.relay_until.insert(peer_key, now_ms.saturating_add(self.relay_cooldown_ms));
+    }
+
+    pub fn record_success(&mut self, peer_key: &str, mode: DialMode, now_ms: u64) {
+        match mode {
+            DialMode::Direct => { self.relay_until.remove(peer_key); }
+            DialMode::Relay => {
+                self.relay_until.insert(peer_key.to_string(), now_ms.saturating_add(self.relay_cooldown_ms));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MeshRuntimeState {
@@ -464,6 +525,25 @@ mod tests {
         );
         assert!(runtime.due_reconnects(299).is_empty());
         assert_eq!(runtime.due_reconnects(300), vec!["route"]);
+    }
+
+    #[test]
+    fn relay_policy_preserves_direct_race_and_cooldown_in_rust() {
+        let mut policy = RelayDialPolicy::new(60_000, 1_500);
+        assert_eq!(
+            policy.plan("phone", true, 100),
+            DialPlan { mode: DialMode::Direct, relay_fallback_at_ms: Some(1_600) }
+        );
+        policy.record_network_failure("phone".into(), 200);
+        assert_eq!(
+            policy.plan("phone", true, 10_000),
+            DialPlan { mode: DialMode::Relay, relay_fallback_at_ms: None }
+        );
+        policy.record_success("phone", DialMode::Direct, 10_001);
+        assert_eq!(
+            policy.plan("phone", true, 10_002),
+            DialPlan { mode: DialMode::Direct, relay_fallback_at_ms: Some(11_502) }
+        );
     }
 
     #[test]

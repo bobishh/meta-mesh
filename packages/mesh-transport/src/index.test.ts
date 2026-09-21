@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, MeshNetworkError, MeshReconnectPolicy, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohNode, type IrohStream, type MeshConnection } from "./index"
+import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohNode, type IrohStream, type MeshConnection } from "./index"
+import { MeshReconnectPolicy } from "@meta-uber/mesh-runtime"
 
 describe("mesh transport wire", () => {
   it("Given a structured payload, when sent over the wire, then its shape survives", () => {
@@ -125,17 +126,17 @@ describe("mesh transport wire", () => {
     const relay = { close: vi.fn() } as unknown as MeshConnection
     const dial = vi.fn(async () => direct)
     const dialRelay = vi.fn(async () => relay)
-    const policy = new MeshReconnectPolicy({ fallbackDelayMs: 0 })
+    const policy = new MeshReconnectPolicy()
     const node = { dial, dialRelay }
 
-    policy.recordFailure("phone", new MeshNetworkError("connection lost"))
+    policy.recordFailure("phone", true)
     await expect(policy.dial(node, "phone", "endpoint")).resolves.toBe(relay)
     expect(dial).not.toHaveBeenCalled()
   })
 
   it("Given a direct dial fails, when relay exists, then the same attempt starts relay immediately", async () => {
     const relay = { close: vi.fn() } as unknown as MeshConnection
-    const policy = new MeshReconnectPolicy({ fallbackDelayMs: 60_000 })
+    const policy = new MeshReconnectPolicy()
     const node = {
       dial: vi.fn(async () => { throw new MeshNetworkError("direct unavailable") }),
       dialRelay: vi.fn(async () => relay),

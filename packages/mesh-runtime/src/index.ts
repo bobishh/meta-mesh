@@ -1,4 +1,5 @@
 import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
+import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
@@ -28,4 +29,52 @@ export class ControlFrameReceiver {
   free() {
     this.runtime.free?.()
   }
+}
+
+/**
+ * Executes host I/O from a plan owned by the Rust runtime. The fallback timer,
+ * relay cooldown and success/failure state never live in product TypeScript.
+ */
+export class MeshReconnectPolicy {
+  private readonly runtime = createMeshRuntime()
+
+  recordFailure(peerKey: string, networkFailure: boolean, now = Date.now()): void {
+    if (networkFailure) this.runtime.recordNetworkFailure(peerKey, now)
+  }
+
+  async dial<TConnection extends MeshConnection>(node: DialNode<TConnection>, peerKey: string, endpoint: string): Promise<TConnection> {
+    const plan = this.runtime.planDial(peerKey, Boolean(node.dialRelay), Date.now())
+    if (plan.mode === "relay") {
+      const connection = await node.dialRelay!(endpoint)
+      this.runtime.recordDialSuccess(peerKey, "relay", Date.now())
+      return connection
+    }
+    if (!node.dialRelay) {
+      const connection = await node.dial(endpoint)
+      this.runtime.recordDialSuccess(peerKey, "direct", Date.now())
+      return connection
+    }
+    type Result = { mode: "direct" | "relay"; connection: TConnection }
+    const direct = node.dial(endpoint).then(connection => ({ mode: "direct", connection }) as Result)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let relayStarted = false
+    let startRelay!: () => void
+    const relay = new Promise<Result>((resolve, reject) => {
+      startRelay = () => {
+        if (relayStarted) return
+        relayStarted = true
+        node.dialRelay!(endpoint).then(connection => resolve({ mode: "relay", connection }), reject)
+      }
+      timer = setTimeout(startRelay, Math.max(0, (plan.relayFallbackAtMs ?? Date.now()) - Date.now()))
+    })
+    void direct.catch(startRelay)
+    const winner = await Promise.any([direct, relay])
+    clearTimeout(timer)
+    this.runtime.recordDialSuccess(peerKey, winner.mode, Date.now())
+    void direct.then(result => { if (result.connection !== winner.connection) void result.connection.close() }).catch(() => undefined)
+    void relay.then(result => { if (result.connection !== winner.connection) void result.connection.close() }).catch(() => undefined)
+    return winner.connection
+  }
+
+  free(): void { this.runtime.free?.() }
 }

@@ -65,6 +65,11 @@ export type RustMeshRuntimeState = {
   connectedDevices(workspaceId: string): string[]
   controlFrames(workspaceId: string, bytes: Uint8Array): Uint8Array[]
   receiveControlFrame(workspaceId: string, frame: Uint8Array): Uint8Array | undefined
+  planDial(peerKey: string, relayAvailable: boolean, nowMs: number): {
+    mode: "direct" | "relay"; relayFallbackAtMs?: number
+  }
+  recordNetworkFailure(peerKey: string, nowMs: number): void
+  recordDialSuccess(peerKey: string, mode: "direct" | "relay", nowMs: number): void
   free?(): void
 }
 
