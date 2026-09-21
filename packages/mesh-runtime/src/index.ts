@@ -1,6 +1,8 @@
 import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
+export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
+
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
 /** Creates the shared Rust/WASM mesh runtime state machine. */

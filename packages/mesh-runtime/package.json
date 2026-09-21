@@ -6,6 +6,7 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@meta-uber/mesh-replication": "*",
-    "@meta-uber/mesh-transport": "*"
+    "@meta-uber/mesh-transport": "*",
+    "@meta-uber/mesh-workspace": "*"
   }
 }
