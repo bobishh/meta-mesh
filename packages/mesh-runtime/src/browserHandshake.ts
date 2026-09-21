@@ -108,10 +108,10 @@ export type BrowserMeshOutgoingConnection<S extends BrowserMeshHandshakeStream> 
   openStream(): Promise<S>
 }
 
-export type BrowserMeshOutgoingHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
+export type BrowserMeshOutgoingHandshakeHost<C, P extends BrowserMeshHandshakePeer, Q = undefined> = {
   secret(credential: C): string
   workspaceId(credential: C): string
-  request(credential: C): Promise<MeshHandshakePayload>
+  request(credential: C, context: Q): Promise<MeshHandshakePayload>
   mergeAuthority(credential: C, response: MeshHandshakePayload): Promise<C>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
   putVerifiedBundle(credential: C, bundle: WorkspaceMemberBundle): Promise<void>
@@ -119,14 +119,14 @@ export type BrowserMeshOutgoingHandshakeHost<C, P extends BrowserMeshHandshakePe
 }
 
 /** Shared authenticated outbound handshake after a host has opened its transport connection. */
-export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer> {
-  constructor(private readonly host: BrowserMeshOutgoingHandshakeHost<C, P>, private readonly codec = new MeshHandshakeCodec()) {}
+export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer, Q = undefined> {
+  constructor(private readonly host: BrowserMeshOutgoingHandshakeHost<C, P, Q>, private readonly codec = new MeshHandshakeCodec()) {}
 
   async exchange<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshOutgoingConnection<S>, credential: C,
-    connectionId: string, peerId: string): Promise<{ credential: C; response: MeshHandshakePayload; remote: P; features: MeshHandshakeFeatures }> {
+    connectionId: string, peerId: string, context: Q = undefined as Q): Promise<{ credential: C; response: MeshHandshakePayload; remote: P; features: MeshHandshakeFeatures }> {
     const stream = await connection.openStream()
     this.host.trace("handshake.outgoing.started", { connectionId, peerId: peerId.slice(0, 8) })
-    await stream.send(this.codec.encodeRequest(this.host.secret(credential), await this.host.request(credential)))
+    await stream.send(this.codec.encodeRequest(this.host.secret(credential), await this.host.request(credential, context)))
     await stream.closeSend()
     const response = this.codec.readResponse(await stream.read(), this.host.secret(credential), this.host.workspaceId(credential))
     credential = await this.host.mergeAuthority(credential, response)
