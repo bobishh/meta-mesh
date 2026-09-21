@@ -118,6 +118,12 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::eligible_editor_person_ids(&peers))
     }
 
+    #[wasm_bindgen(js_name = canonicalRevocations)]
+    pub fn canonical_revocations(records: JsValue) -> Result<JsValue, JsValue> {
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        to_value(&meta_mesh_core::canonical_revocations(&records))
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
     pub fn verify_workspace_revocation(
         record: JsValue,

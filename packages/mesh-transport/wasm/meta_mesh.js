@@ -1612,6 +1612,17 @@ export class WasmStateCore {
         wasm.__wbg_wasmstatecore_free(ptr, 0);
     }
     /**
+     * @param {any} records
+     * @returns {any}
+     */
+    static canonicalRevocations(records) {
+        const ret = wasm.wasmstatecore_canonicalRevocations(records);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} ack
      * @param {any} batch
      * @param {string} target_device_id

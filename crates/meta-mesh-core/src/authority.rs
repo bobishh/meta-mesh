@@ -269,6 +269,21 @@ pub fn eligible_editor_person_ids(peers: &[Value]) -> Vec<String> {
     people
 }
 
+pub fn canonical_revocations(records: &[Value]) -> Vec<Value> {
+    let mut latest: HashMap<&str, (&Value, u64)> = HashMap::new();
+    for record in records {
+        let Some(person_id) = record.pointer("/payload/personId").and_then(Value::as_str).filter(|value| !value.is_empty()) else { continue; };
+        let Some(epoch) = record.pointer("/payload/epoch").and_then(Value::as_u64) else { continue; };
+        if latest.get(person_id).is_none_or(|(_, prior_epoch)| epoch > *prior_epoch) {
+            latest.insert(person_id, (record, epoch));
+        }
+    }
+    let mut result = latest.into_values().map(|(record, _)| record.clone()).collect::<Vec<_>>();
+    result.sort_by(|left, right| left.pointer("/payload/personId").and_then(Value::as_str)
+        .cmp(&right.pointer("/payload/personId").and_then(Value::as_str)));
+    result
+}
+
 pub fn verify_workspace_revocation(
     record: &WorkspaceRevocation,
     workspace_id: &str,
@@ -666,5 +681,18 @@ mod tests {
             json!({ "role": "visitor", "personId": "dave" }),
         ];
         assert_eq!(super::eligible_editor_person_ids(&peers), vec!["alice", "bob"]);
+    }
+
+    #[test]
+    fn canonical_revocations_keep_highest_epoch_per_person() {
+        let records = vec![
+            json!({ "payload": { "personId": "bob", "epoch": 2 } }),
+            json!({ "payload": { "personId": "alice", "epoch": 4 } }),
+            json!({ "payload": { "personId": "bob", "epoch": 3 } }),
+        ];
+        let canonical = super::canonical_revocations(&records);
+        assert_eq!(canonical.len(), 2);
+        assert_eq!(canonical[0].pointer("/payload/personId").unwrap(), "alice");
+        assert_eq!(canonical[1].pointer("/payload/epoch").unwrap(), 3);
     }
 }
