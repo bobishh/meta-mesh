@@ -8,6 +8,7 @@ export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, t
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
+export { credentialBelongsToProfile, activeCredentialsForProfile, type CredentialIdentityHost, type RuntimeAuthority, type RuntimeCredential, type RuntimeProfile } from "./credentials"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
