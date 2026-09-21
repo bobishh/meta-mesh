@@ -98,3 +98,5 @@ export class MeshReconnectPolicy {
 
   free(): void { if (this.ownsRuntime) this.runtime.free?.() }
 }
+
+export { BrowserMeshLifecycle, type BrowserMeshLifecycleHost } from "./browserLifecycle"
