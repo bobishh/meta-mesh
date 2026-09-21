@@ -15,7 +15,7 @@ export type RuntimeWorkspaceCredential = {
   ownerPersonId: string
   ownerPublicKey: string
   ownerCertificates: unknown[]
-  ownerHistory?: WorkspaceAuthority[]
+  ownerHistory?: Array<{ personId: string; publicKey: string; certificates: unknown[] }>
   localGrant?: unknown
   epoch: number
   updatedAt: string
