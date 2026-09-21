@@ -119,6 +119,20 @@ export type WorkspaceOwnershipTransferPayload = {
 
 export type WorkspaceOwnershipTransfer = SignedEnvelope<WorkspaceOwnershipTransferPayload>
 
+export type WorkspaceBreakGlassClaim = SignedEnvelope<{
+  kind: "workspace-break-glass"
+  version: 1
+  workspaceId: string
+  fromOwnerPersonId: string
+  toOwnerPersonId: string
+  toOwnerPublicKey: string
+  toOwnerCertificates: DeviceCertificate[]
+  editorGrant: WorkspaceGrant
+  workspaceHeads: string[]
+  epoch: number
+  claimedAt: string
+}>
+
 export function hasConflictingOwnershipTransfers(records: WorkspaceOwnershipTransfer[]): boolean {
   return meshRustRuntime().state.hasConflictingOwnershipTransfers(records)
 }
@@ -830,6 +844,58 @@ export async function verifyWorkspaceOwnershipTransfer(
   return meshRustRuntime().state.verifyWorkspaceOwnershipTransfer(
     raw, workspaceId, authority, minimumEpoch, now,
   ) as WorkspaceOwnershipTransfer
+}
+
+export async function createWorkspaceBreakGlassClaim(
+  profile: LocalProfile,
+  workspaceId: string,
+  fromOwnerPersonId: string,
+  editorGrant: WorkspaceGrant,
+  workspaceHeads: string[],
+  epoch: number,
+  claimedAt = new Date().toISOString(),
+  certificates: DeviceCertificate[] = [profile.certificate],
+): Promise<WorkspaceBreakGlassClaim> {
+  if (!workspaceId || !fromOwnerPersonId || fromOwnerPersonId === profile.identity.personId ||
+    !Array.isArray(workspaceHeads) || workspaceHeads.length === 0 || workspaceHeads.length > 256 ||
+    workspaceHeads.some(head => typeof head !== "string" || !head) || !Number.isSafeInteger(epoch) || epoch < 2 ||
+    !validIso(claimedAt) || !Array.isArray(certificates) || !certificates.length || certificates.length > MAX_CERT_CHAIN_LENGTH) {
+    throw new Error("Invalid workspace break-glass claim")
+  }
+  return signEnvelope(profile.privateKeys.devicePrivateKey, {
+    kind: "workspace-break-glass", version: 1, workspaceId, fromOwnerPersonId,
+    toOwnerPersonId: profile.identity.personId, toOwnerPublicKey: profile.identity.publicKey,
+    toOwnerCertificates: certificates, editorGrant, workspaceHeads, epoch, claimedAt,
+  }, profile.device.deviceId) as Promise<WorkspaceBreakGlassClaim>
+}
+
+export async function verifyWorkspaceBreakGlassClaim(
+  raw: unknown,
+  workspaceId: string,
+  authority: WorkspaceAuthority,
+  currentEpoch: number,
+): Promise<WorkspaceBreakGlassClaim> {
+  const claim = raw as WorkspaceBreakGlassClaim
+  const p = claim?.payload
+  if (!p || p.kind !== "workspace-break-glass" || p.version !== 1 || p.workspaceId !== workspaceId ||
+    p.fromOwnerPersonId !== authority.personId || p.toOwnerPersonId === p.fromOwnerPersonId ||
+    p.epoch !== currentEpoch + 1 || !validIso(p.claimedAt) ||
+    !Array.isArray(p.workspaceHeads) || !p.workspaceHeads.length || p.workspaceHeads.length > 256 ||
+    p.workspaceHeads.some(head => typeof head !== "string" || !head) ||
+    !Array.isArray(p.toOwnerCertificates) || !p.toOwnerCertificates.length || p.toOwnerCertificates.length > MAX_CERT_CHAIN_LENGTH ||
+    new TextEncoder().encode(JSON.stringify(claim)).byteLength > MAX_PEER_ADVERTISEMENT_SIZE) {
+    throw new Error("Invalid workspace break-glass claim")
+  }
+  if (await keyId(p.toOwnerPublicKey) !== p.toOwnerPersonId) throw new Error("Invalid workspace break-glass identity")
+  const role = await verifyWorkspaceGrant(p.editorGrant, {
+    workspaceId, personId: p.toOwnerPersonId, ownerPersonId: authority.personId,
+    ownerPublicKey: authority.publicKey, ownerCertificates: authority.certificates,
+  })
+  if (role !== "editor") throw new Error("Workspace break-glass requires an editor grant")
+  const deviceKey = await verifyDeviceChain({ personId: p.toOwnerPersonId, publicKey: p.toOwnerPublicKey,
+    deviceId: claim.signerKeyId, certificates: p.toOwnerCertificates })
+  if (!await verifyEnvelope(claim, deviceKey)) throw new Error("Invalid workspace break-glass signature")
+  return claim
 }
 
 function validIso(value: unknown, now = Date.now()) {
