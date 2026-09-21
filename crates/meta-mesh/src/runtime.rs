@@ -119,6 +119,15 @@ impl WasmMeshRuntimeState {
         to_value(&self.inner.connected_devices(workspace_id))
     }
 
+    #[wasm_bindgen(js_name = setGossipEndpoints)]
+    pub fn set_gossip_endpoints(&mut self, workspace_id: String, endpoints: JsValue) -> Result<JsValue, JsValue> {
+        let endpoints: Vec<String> = from_value(endpoints)?;
+        to_value(&self.inner.set_gossip_endpoints(workspace_id, endpoints))
+    }
+
+    #[wasm_bindgen(js_name = clearGossip)]
+    pub fn clear_gossip(&mut self, workspace_id: &str) { self.inner.clear_gossip(workspace_id); }
+
     #[wasm_bindgen(js_name = controlFrames)]
     pub fn control_frames(&mut self, workspace_id: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
         self.transfer_sequence = self.transfer_sequence.saturating_add(1);

@@ -152,6 +152,14 @@ pub struct MeshRuntimeState {
     sessions: BTreeMap<SessionKey, RuntimeSession>,
     attempts: BTreeMap<String, RouteAttempt>,
     reconnects: BTreeMap<String, ReconnectState>,
+    gossip_peers: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipTopology {
+    pub changed: bool,
+    pub endpoints: Vec<String>,
 }
 
 impl MeshRuntimeState {
@@ -291,6 +299,18 @@ impl MeshRuntimeState {
             .map(|key| key.device_id.clone())
             .collect()
     }
+
+    pub fn set_gossip_endpoints(&mut self, workspace_id: String, endpoints: Vec<String>) -> GossipTopology {
+        let mut endpoints = endpoints;
+        endpoints.sort();
+        endpoints.dedup();
+        let changed = self.gossip_peers.get(&workspace_id) != Some(&endpoints);
+        if endpoints.is_empty() { self.gossip_peers.remove(&workspace_id); }
+        else { self.gossip_peers.insert(workspace_id, endpoints.clone()); }
+        GossipTopology { changed, endpoints }
+    }
+
+    pub fn clear_gossip(&mut self, workspace_id: &str) { self.gossip_peers.remove(workspace_id); }
 }
 
 fn should_replace_session(
@@ -510,6 +530,21 @@ mod tests {
             None
         );
         assert_eq!(runtime.sessions().count(), 2);
+    }
+
+    #[test]
+    fn gossip_topology_is_canonicalized_and_change_aware() {
+        let mut runtime = MeshRuntimeState::default();
+
+        let first = runtime.set_gossip_endpoints("workspace".into(), vec!["b".into(), "a".into(), "a".into()]);
+        assert_eq!(first, GossipTopology { changed: true, endpoints: vec!["a".into(), "b".into()] });
+
+        let unchanged = runtime.set_gossip_endpoints("workspace".into(), vec!["b".into(), "a".into()]);
+        assert_eq!(unchanged, GossipTopology { changed: false, endpoints: vec!["a".into(), "b".into()] });
+
+        runtime.clear_gossip("workspace");
+        let restored = runtime.set_gossip_endpoints("workspace".into(), vec!["a".into(), "b".into()]);
+        assert!(restored.changed);
     }
 
     #[test]

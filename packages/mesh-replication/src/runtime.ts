@@ -65,6 +65,8 @@ export type RustMeshRuntimeState = {
   }
   removeSession(key: unknown, generation: number): string | null
   connectedDevices(workspaceId: string): string[]
+  setGossipEndpoints(workspaceId: string, endpoints: string[]): { changed: boolean; endpoints: string[] }
+  clearGossip(workspaceId: string): void
   controlFrames(workspaceId: string, bytes: Uint8Array): Uint8Array[]
   receiveControlFrame(workspaceId: string, frame: Uint8Array): Uint8Array | undefined
   planDial(peerKey: string, relayAvailable: boolean, nowMs: number): {
