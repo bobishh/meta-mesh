@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createMeshRuntime } from "./index"
+import { createMeshRuntime, MeshHandshakeCodec } from "./index"
 
 describe("Rust mesh runtime", () => {
   it("keeps sibling instances and rejects a stale session cleanup", () => {
@@ -28,5 +28,14 @@ describe("Rust mesh runtime", () => {
       .toBeNull()
     expect(runtime.sessions()).toHaveLength(2)
     runtime.free?.()
+  })
+})
+
+describe("MeshHandshakeCodec", () => {
+  it("exposes negotiated features", () => {
+    const codec = new MeshHandshakeCodec()
+    expect(codec.features(["heartbeat-v1", "automerge-sync-v1"])).toEqual({
+      heartbeatSupported: true, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
+    })
   })
 })
