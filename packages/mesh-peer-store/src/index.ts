@@ -62,9 +62,29 @@ export interface WorkspaceMeshCredential {
   catalog?: unknown
 }
 
+/** Durable signed workspace authority. Kept when routes or active mesh membership are removed. */
+export interface WorkspaceAuthorityRecord {
+  version: 1
+  workspaceId: string
+  genesisOwnerPersonId?: string
+  ownerPersonId: string
+  ownerPublicKey: string
+  epoch: number
+  updatedAt: string
+  localGrant?: unknown
+  ownerCertificates: unknown[]
+  ownerHistory?: Array<{
+    personId: string
+    publicKey: string
+    certificates: unknown[]
+  }>
+  catalog?: unknown
+}
+
 export const DEFAULT_PEER_DB_NAME = "match-peer-catalog-v1"
 export const STORE_PEERS = "peers"
 export const STORE_NODE = "node"
+export const STORE_AUTHORITY = "authority"
 
 export const INDEX_PEERS_WORKSPACE = "by_workspace"
 export const INDEX_PEERS_DEVICE = "by_device"
@@ -94,6 +114,30 @@ export function validateWorkspaceCredential(value: unknown): asserts value is Wo
     new TextEncoder().encode(JSON.stringify(item)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
     throw new Error("Invalid workspace mesh credential")
   }
+}
+
+export function validateWorkspaceAuthority(value: unknown): asserts value is WorkspaceAuthorityRecord {
+  const item = value as WorkspaceAuthorityRecord
+  if (!item || item.version !== 1 || typeof item.workspaceId !== "string" || !item.workspaceId || item.workspaceId.length > MAX_STRING_LENGTH ||
+    (item.genesisOwnerPersonId !== undefined && (typeof item.genesisOwnerPersonId !== "string" || !item.genesisOwnerPersonId || item.genesisOwnerPersonId.length > MAX_STRING_LENGTH)) ||
+    typeof item.ownerPersonId !== "string" || !item.ownerPersonId || item.ownerPersonId.length > MAX_STRING_LENGTH ||
+    typeof item.ownerPublicKey !== "string" || !item.ownerPublicKey || item.ownerPublicKey.length > MAX_SECRET_LENGTH ||
+    !Number.isSafeInteger(item.epoch) || item.epoch < 1 ||
+    typeof item.updatedAt !== "string" || Number.isNaN(Date.parse(item.updatedAt)) ||
+    !Array.isArray(item.ownerCertificates) || item.ownerCertificates.length > 32 ||
+    (item.ownerHistory !== undefined && (!Array.isArray(item.ownerHistory) || item.ownerHistory.length > 32 || item.ownerHistory.some(owner =>
+      !owner || typeof owner.personId !== "string" || !owner.personId || typeof owner.publicKey !== "string" || !owner.publicKey ||
+      !Array.isArray(owner.certificates) || owner.certificates.length > 32))) ||
+    new TextEncoder().encode(JSON.stringify(item)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
+    throw new Error("Invalid workspace authority")
+  }
+}
+
+export function authorityFromCredential(credential: WorkspaceMeshCredential): WorkspaceAuthorityRecord {
+  validateWorkspaceCredential(credential)
+  const { transportSecret: _transportSecret, ...authority } = credential
+  validateWorkspaceAuthority(authority)
+  return structuredClone(authority)
 }
 
 /**
@@ -241,6 +285,16 @@ function promisifyRequest<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+async function putAuthorityIfNewer(store: IDBObjectStore, authority: WorkspaceAuthorityRecord): Promise<void> {
+  const current = await promisifyRequest<WorkspaceAuthorityRecord | undefined>(store.get(authority.workspaceId))
+  if (current) {
+    validateWorkspaceAuthority(current)
+    if (authority.epoch < current.epoch) return
+    if (authority.epoch === current.epoch && authority.updatedAt < current.updatedAt) return
+  }
+  await promisifyRequest(store.put(structuredClone(authority)))
+}
+
 export class PeerStore {
   private readonly dbName: string
   private readonly idbFactory?: IDBFactory
@@ -264,7 +318,7 @@ export class PeerStore {
   private openDb(): Promise<IDBDatabase> {
     const idb = this.getIdb()
     return new Promise((resolve, reject) => {
-      const request = idb.open(this.dbName, 1)
+      const request = idb.open(this.dbName, 2)
 
       request.onblocked = () => {
         reject(new Error(`IndexedDB open blocked for database ${this.dbName}`))
@@ -286,6 +340,9 @@ export class PeerStore {
         }
         if (!db.objectStoreNames.contains(STORE_NODE)) {
           db.createObjectStore(STORE_NODE, { keyPath: "key" })
+        }
+        if (!db.objectStoreNames.contains(STORE_AUTHORITY)) {
+          db.createObjectStore(STORE_AUTHORITY, { keyPath: "workspaceId" })
         }
       }
 
@@ -495,7 +552,7 @@ export class PeerStore {
 
   async putWorkspaceCredential(credential: WorkspaceMeshCredential): Promise<void> {
     validateWorkspaceCredential(credential)
-    await this.runTx([STORE_NODE], "readwrite", async tx => {
+    await this.runTx([STORE_NODE, STORE_AUTHORITY], "readwrite", async tx => {
       const store = tx.objectStore(STORE_NODE)
       const key = `${WORKSPACE_CREDENTIAL_PREFIX}${credential.workspaceId}`
       const current = await promisifyRequest<{ key: string; credential: WorkspaceMeshCredential } | undefined>(store.get(key))
@@ -506,12 +563,13 @@ export class PeerStore {
         if (credential.epoch === current.credential.epoch && credential.updatedAt < current.credential.updatedAt) return
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))
+      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(credential))
     })
   }
 
   async transferWorkspaceCredential(expectedOwnerPersonId: string, credential: WorkspaceMeshCredential): Promise<void> {
     validateWorkspaceCredential(credential)
-    await this.runTx([STORE_NODE], "readwrite", async tx => {
+    await this.runTx([STORE_NODE, STORE_AUTHORITY], "readwrite", async tx => {
       const store = tx.objectStore(STORE_NODE)
       const key = `${WORKSPACE_CREDENTIAL_PREFIX}${credential.workspaceId}`
       const current = await promisifyRequest<{ key: string; credential: WorkspaceMeshCredential } | undefined>(store.get(key))
@@ -522,7 +580,38 @@ export class PeerStore {
         throw new Error("Invalid workspace ownership transfer")
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))
+      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(credential))
     })
+  }
+
+  async getWorkspaceAuthority(workspaceId: string): Promise<WorkspaceAuthorityRecord | null> {
+    if (!workspaceId) throw new Error("Invalid workspaceId")
+    const authority = await this.runTx([STORE_AUTHORITY], "readonly", async tx =>
+      promisifyRequest<WorkspaceAuthorityRecord | undefined>(tx.objectStore(STORE_AUTHORITY).get(workspaceId)))
+    if (authority) {
+      validateWorkspaceAuthority(authority)
+      return structuredClone(authority)
+    }
+    // Lazy v1 migration: copy authority before any transport cleanup can remove it.
+    const credential = await this.getWorkspaceCredential(workspaceId)
+    if (!credential) return null
+    const migrated = authorityFromCredential(credential)
+    await this.putWorkspaceAuthority(migrated)
+    return migrated
+  }
+
+  async putWorkspaceAuthority(authority: WorkspaceAuthorityRecord): Promise<void> {
+    validateWorkspaceAuthority(authority)
+    await this.runTx([STORE_AUTHORITY], "readwrite", async tx => {
+      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authority)
+    })
+  }
+
+  async listWorkspaceAuthorities(): Promise<WorkspaceAuthorityRecord[]> {
+    const records = await this.runTx([STORE_AUTHORITY], "readonly", async tx =>
+      promisifyRequest<WorkspaceAuthorityRecord[]>(tx.objectStore(STORE_AUTHORITY).getAll()))
+    for (const record of records) validateWorkspaceAuthority(record)
+    return records.map(record => structuredClone(record)).sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
   }
 
   async listWorkspaceCredentials(): Promise<WorkspaceMeshCredential[]> {
@@ -724,14 +813,23 @@ export class PeerStore {
     })
   }
 
-  /** Removes one workspace's trust and transport state while preserving its local document. */
+  /** Removes active transport state while preserving durable signed authority and the local document. */
   async removeWorkspaceMeshData(workspaceId: string): Promise<void> {
     if (typeof workspaceId !== "string" || !workspaceId) throw new Error("Invalid workspaceId")
-    await this.runTx([STORE_PEERS, STORE_NODE], "readwrite", async tx => {
+    await this.runTx([STORE_PEERS, STORE_NODE, STORE_AUTHORITY], "readwrite", async tx => {
       const peers = tx.objectStore(STORE_PEERS)
       const items = await promisifyRequest<WorkspacePeerRecord[]>(peers.index(INDEX_PEERS_WORKSPACE).getAll(workspaceId))
       for (const item of items) await promisifyRequest(peers.delete([item.workspaceId, item.deviceId]))
-      await promisifyRequest(tx.objectStore(STORE_NODE).delete(`${WORKSPACE_CREDENTIAL_PREFIX}${workspaceId}`))
+      const node = tx.objectStore(STORE_NODE)
+      const key = `${WORKSPACE_CREDENTIAL_PREFIX}${workspaceId}`
+      const active = await promisifyRequest<{ key: string; credential: WorkspaceMeshCredential } | undefined>(node.get(key))
+      if (active) {
+        validateWorkspaceCredential(active.credential)
+        const authorityStore = tx.objectStore(STORE_AUTHORITY)
+        const authority = authorityFromCredential(active.credential)
+        await putAuthorityIfNewer(authorityStore, authority)
+      }
+      await promisifyRequest(node.delete(key))
     })
   }
 
@@ -739,11 +837,13 @@ export class PeerStore {
    * Clears all stores (peers and node secret). Useful for test isolation.
    */
   async clearAll(): Promise<void> {
-    return this.runTx([STORE_PEERS, STORE_NODE], "readwrite", async (tx) => {
+    return this.runTx([STORE_PEERS, STORE_NODE, STORE_AUTHORITY], "readwrite", async (tx) => {
       const peerStore = tx.objectStore(STORE_PEERS)
       const nodeStore = tx.objectStore(STORE_NODE)
+      const authorityStore = tx.objectStore(STORE_AUTHORITY)
       await promisifyRequest(peerStore.clear())
       await promisifyRequest(nodeStore.clear())
+      await promisifyRequest(authorityStore.clear())
     })
   }
 

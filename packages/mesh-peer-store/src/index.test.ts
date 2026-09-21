@@ -407,7 +407,7 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect(storageSpy.clear).not.toHaveBeenCalled()
     })
 
-    it("Given multiple workspace credentials, when one workspace leaves the mesh, then only its peers and credential are removed", async () => {
+    it("Given multiple workspace credentials, when one workspace leaves the mesh, then routes and active credentials are removed but signed authority survives", async () => {
       const store = new PeerStore("match-test-leave-workspace", mockIdb as any)
       const credential = (workspaceId: string): WorkspaceMeshCredential => ({
         version: 1, workspaceId, ownerPersonId: `owner_${workspaceId}`, ownerPublicKey: `key_${workspaceId}`,
@@ -415,14 +415,23 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       })
       await store.putWorkspaceCredential(credential("ws_alpha"))
       await store.putWorkspaceCredential(credential("ws_beta"))
+      await store.putWorkspaceAuthority({
+        version: 1, workspaceId: "ws_beta", ownerPersonId: "owner_new", ownerPublicKey: "key_new",
+        epoch: 3, updatedAt: "2026-09-11T00:03:00.000Z", ownerCertificates: [],
+      })
+      await store.putWorkspaceCredential({ ...credential("ws_beta"), epoch: 2, updatedAt: "2026-09-11T00:02:00.000Z" })
       await store.upsertPeer({ workspaceId: "ws_alpha", deviceId: "a", personId: "pa", endpoint: "ep-a", transportSecret: "s", role: "editor", lastSeen: "2026-09-11T00:00:00.000Z" })
       await store.upsertPeer({ workspaceId: "ws_beta", deviceId: "b", personId: "pb", endpoint: "ep-b", transportSecret: "s", role: "editor", lastSeen: "2026-09-11T00:00:00.000Z" })
 
       await store.removeWorkspaceMeshData("ws_alpha")
 
       expect(await store.getWorkspaceCredential("ws_alpha")).toBeNull()
+      expect(await store.getWorkspaceAuthority("ws_alpha")).toMatchObject({
+        workspaceId: "ws_alpha", ownerPersonId: "owner_ws_alpha", ownerPublicKey: "key_ws_alpha", epoch: 1,
+      })
       expect(await store.listPeers("ws_alpha")).toEqual([])
-      expect(await store.getWorkspaceCredential("ws_beta")).toEqual(credential("ws_beta"))
+      expect(await store.getWorkspaceCredential("ws_beta")).toMatchObject({ ownerPersonId: "owner_ws_beta", epoch: 2 })
+      expect(await store.getWorkspaceAuthority("ws_beta")).toMatchObject({ ownerPersonId: "owner_new", epoch: 3 })
       expect(await store.listPeers("ws_beta")).toHaveLength(1)
     })
   })

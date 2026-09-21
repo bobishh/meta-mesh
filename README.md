@@ -16,6 +16,8 @@ See [verification measurements](docs/measurements.md) for current topology, byte
 
 Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recovery phrase derives an AES-256-GCM wrapping key with PBKDF2-HMAC-SHA-256 and 600,000 iterations; it never derives the identity itself. Rewrapping with newly generated words changes recovery strength without changing the person ID. Applications own storage and replication of the encrypted version-3 recovery envelope.
 
+Workspace authority is durable application state, separate from live transport. `mesh-peer-store` keeps owner history, grants, revocations, transfer records, and succession records in its `authority` store. Route cleanup and leaving an active mesh remove peers and transport credentials while preserving that signed authority. Full local-data reset may remove both.
+
 No direct-derived identity compatibility or migration path exists. Applications discard pre-envelope sessions. Application-specific passphrases can encrypt a separate envelope around the same random-root model; they never derive identity keys.
 
 ## Apple package
