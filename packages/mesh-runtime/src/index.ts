@@ -36,7 +36,13 @@ export class ControlFrameReceiver {
  * relay cooldown and success/failure state never live in product TypeScript.
  */
 export class MeshReconnectPolicy {
-  private readonly runtime = createMeshRuntime()
+  private readonly runtime: RustMeshRuntimeState
+  private readonly ownsRuntime: boolean
+
+  constructor(runtime?: RustMeshRuntimeState) {
+    this.runtime = runtime ?? createMeshRuntime()
+    this.ownsRuntime = !runtime
+  }
 
   recordFailure(peerKey: string, networkFailure: boolean, now = Date.now()): void {
     if (networkFailure) this.runtime.recordNetworkFailure(peerKey, now)
@@ -80,5 +86,5 @@ export class MeshReconnectPolicy {
     return winner.connection
   }
 
-  free(): void { this.runtime.free?.() }
+  free(): void { if (this.ownsRuntime) this.runtime.free?.() }
 }
