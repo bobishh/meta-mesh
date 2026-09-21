@@ -13,6 +13,12 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = validateMeshCapabilities)]
+    pub fn validate_mesh_capabilities(capabilities: JsValue) -> Result<(), JsValue> {
+        let capabilities: Vec<String> = from_value(capabilities)?;
+        meta_mesh_core::validate_mesh_capabilities(&capabilities).map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceMemberBundle)]
     pub fn verify_workspace_member_bundle(
         raw: JsValue,

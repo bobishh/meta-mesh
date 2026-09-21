@@ -114,7 +114,10 @@ pub fn verify_workspace_member_bundle(raw: Value, opts: VerifyWorkspaceMemberOpt
         authorities.into_iter().find_map(|authority| verify_workspace_grant(
             grant.as_ref()?, opts.workspace_id.as_deref().unwrap_or(&advertisement.payload.workspace_id),
             &advertisement.payload.person_id, &PublicIdentity { person_id: authority.person_id, public_key: authority.public_key, display_name: String::new() }, &authority.certificates).ok()
-        ).ok_or_else(|| "Invalid workspace grant signature".to_string())?
+        ).ok_or_else(|| {
+            if grant.is_none() { "Owner identity does not match peer advertisement".to_string() }
+            else { "Invalid workspace grant signature".to_string() }
+        })?
     };
     Ok(VerifiedWorkspaceMember { signed: advertisement.clone(), payload: advertisement.payload.clone(), signer_key_id: advertisement.signer_key_id.clone(), signature: advertisement.signature.clone(), advertisement, public_key, certificates, device_public_key, role, grant, owner_public_key: owner_public_key.unwrap_or_default(), owner_certificates })
 }

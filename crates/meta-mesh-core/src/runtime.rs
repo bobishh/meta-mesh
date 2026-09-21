@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 pub const MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024;
 pub const CONTROL_CHUNK_BYTES: usize = 128 * 1024;
 pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
+pub const MESH_CAPABILITIES: [&str; 5] = [
+    "heartbeat-v1", "automerge-sync-v1", "ownership-receipt-v1", "owner-workspace-v1", "iroh-gossip-v1",
+];
+
+pub fn validate_mesh_capabilities(capabilities: &[String]) -> Result<(), String> {
+    if capabilities.iter().any(|capability| capability == "iroh-gossip-v1") { Ok(()) }
+    else { Err("Peer does not support required iroh gossip".to_string()) }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
