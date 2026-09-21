@@ -327,25 +327,32 @@ type MessageChannel = {
 }
 
 export class BrowserReplicaInvalidation {
-  private readonly onMessage = (event: MessageEvent) => { void this.receive(event.data) }
+  private closed = false
+  private readonly onMessage = (event: MessageEvent) => {
+    void this.receive(event.data).catch(error => this.reportError(error))
+  }
 
   constructor(
     private readonly channel: MessageChannel,
     private readonly currentHeads: (documentId: string) => Promise<readonly string[]>,
     private readonly reconcile: (documentId: string, announcedHeads: readonly string[]) => Promise<void>,
+    private readonly reportError: (error: unknown) => void = () => undefined,
   ) {
     channel.addEventListener("message", this.onMessage)
   }
 
   publish(documentId: string, heads: readonly string[]): void {
+    if (this.closed) return
     this.channel.postMessage({ version: 1, documentId, heads: [...heads] } satisfies ReplicaInvalidation)
   }
 
   async receive(raw: unknown): Promise<void> {
+    if (this.closed) return
     const message = raw as ReplicaInvalidation
     if (message?.version !== 1 || typeof message.documentId !== "string" || !message.documentId ||
       !Array.isArray(message.heads) || message.heads.some(head => typeof head !== "string" || !head)) return
     const current = [...await this.currentHeads(message.documentId)].sort()
+    if (this.closed) return
     const announced = [...message.heads].sort()
     if (current.length !== announced.length || current.some((head, index) => head !== announced[index])) {
       await this.reconcile(message.documentId, announced)
@@ -353,10 +360,17 @@ export class BrowserReplicaInvalidation {
   }
 
   async reconcileOnFocus(documentIds: readonly string[], durableHeads: (documentId: string) => Promise<readonly string[]>): Promise<void> {
-    for (const documentId of documentIds) await this.receive({ version: 1, documentId, heads: [...await durableHeads(documentId)] })
+    for (const documentId of documentIds) {
+      if (this.closed) return
+      const heads = await durableHeads(documentId)
+      if (this.closed) return
+      await this.receive({ version: 1, documentId, heads: [...heads] })
+    }
   }
 
   close(): void {
+    if (this.closed) return
+    this.closed = true
     this.channel.removeEventListener("message", this.onMessage)
     this.channel.close()
   }

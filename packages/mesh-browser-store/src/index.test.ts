@@ -93,6 +93,37 @@ describe("mesh store", () => {
     expect(reconciled).toEqual(["room-live", "room-missed"])
     invalidation.close()
   })
+
+  it("Given invalidation work is in flight, when the consumer closes, then late work cannot reconcile", async () => {
+    let releaseHeads!: (heads: string[]) => void
+    const heads = new Promise<string[]>(resolve => { releaseHeads = resolve })
+    const reconcile = vi.fn(async () => undefined)
+    const channel = new TestChannel()
+    const invalidation = new BrowserReplicaInvalidation(channel, async () => heads, reconcile)
+
+    channel.emit({ version: 1, documentId: "room-closing", heads: ["new-head"] })
+    invalidation.close()
+    releaseHeads(["old-head"])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(reconcile).not.toHaveBeenCalled()
+  })
+
+  it("Given broadcast reconciliation fails, when delivered outside a caller promise, then the error reaches its boundary", async () => {
+    const report = vi.fn()
+    const channel = new TestChannel()
+    const invalidation = new BrowserReplicaInvalidation(
+      channel,
+      async () => { throw new Error("heads unavailable") },
+      async () => undefined,
+      report,
+    )
+
+    channel.emit({ version: 1, documentId: "room-failed", heads: ["new-head"] })
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: "heads unavailable" })))
+    invalidation.close()
+  })
 })
 
 class TestChannel {
