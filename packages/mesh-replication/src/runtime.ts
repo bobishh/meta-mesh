@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  meshCapabilities(): string[]
   validateMeshCapabilities(capabilities: unknown): void
   verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
   verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"

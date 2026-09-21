@@ -13,6 +13,11 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = meshCapabilities)]
+    pub fn mesh_capabilities() -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::MESH_CAPABILITIES)
+    }
+
     #[wasm_bindgen(js_name = validateMeshCapabilities)]
     pub fn validate_mesh_capabilities(capabilities: JsValue) -> Result<(), JsValue> {
         let capabilities: Vec<String> = from_value(capabilities)?;
