@@ -1,34 +1,142 @@
 use meta_mesh::{blobs::BlobEngine, gossip::GossipEngine};
+use std::collections::{HashMap, VecDeque};
+
+fn drive_gossip(
+    engines: &HashMap<String, GossipEngine>,
+    initial: Vec<(String, meta_mesh::gossip::GossipStep)>,
+) -> Vec<(String, Vec<u8>)> {
+    let mut queue = VecDeque::from(initial);
+    let mut delivered = Vec::new();
+    let mut steps = 0;
+    while let Some((sender, step)) = queue.pop_front() {
+        steps += 1;
+        assert!(steps < 1_000, "gossip driver did not settle");
+        delivered.extend(
+            step.deliveries
+                .into_iter()
+                .map(|delivery| (delivery.topic, delivery.content)),
+        );
+        for send in step.sends {
+            let receiver = engines
+                .get(&send.peer)
+                .unwrap_or_else(|| panic!("missing gossip peer {}", send.peer));
+            let next = receiver
+                .handle_message(&sender, &send.packet)
+                .expect("peer handles gossip packet");
+            queue.push_back((send.peer, next));
+        }
+    }
+    delivered
+}
 
 #[test]
-fn test_gossip_topic_and_broadcast() {
-    let mut engine = GossipEngine::new("local-node-1");
-    let topic_id = engine
-        .join_topic("workspace-123", vec!["peer-a".to_string()])
-        .expect("join topic failed");
-    assert_eq!(topic_id.len(), 64); // 32-byte hex hash
+fn browser_gossip_driver_forwards_multi_hop_and_suppresses_duplicates() {
+    // Given three browser protocol engines joined as A <-> B <-> C.
+    let mut a = GossipEngine::new("peer-a");
+    let mut b = GossipEngine::new("peer-b");
+    let mut c = GossipEngine::new("peer-c");
+    let joins = vec![
+        (
+            "peer-a".into(),
+            a.join_topic("workspace-123", vec!["peer-b".into()])
+                .expect("A joins"),
+        ),
+        (
+            "peer-b".into(),
+            b.join_topic("workspace-123", vec!["peer-a".into(), "peer-c".into()])
+                .expect("B joins"),
+        ),
+        (
+            "peer-c".into(),
+            c.join_topic("workspace-123", vec!["peer-b".into()])
+                .expect("C joins"),
+        ),
+    ];
+    assert_eq!(joins[0].1.topic_id.as_ref().unwrap().len(), 64);
+    let engines = HashMap::from([
+        ("peer-a".into(), a.clone()),
+        ("peer-b".into(), b.clone()),
+        ("peer-c".into(), c.clone()),
+    ]);
+    drive_gossip(&engines, joins);
 
-    let msg = b"change-hash-abc";
-    let packet = engine
-        .broadcast("workspace-123", msg)
+    // When A broadcasts and every state-machine send/forward action is driven.
+    let payload = b"change-hash-abc";
+    let step = a
+        .broadcast("workspace-123", payload)
         .expect("broadcast failed");
-    assert!(!packet.is_empty());
+    assert!(!step.sends.is_empty());
+    let first_packet = step.sends[0].packet.clone();
+    assert_eq!(
+        hex::encode(&first_packet),
+        "415f7072af6c542932314515335cb4a4f69e293a6c2db60abe80ded431aaf42f0100ca3a7f2ff410a9bf3800173f61d7fa30956d12afefbcffb537f0fb563c36e88c0f6368616e67652d686173682d6162630000"
+    );
+    let delivered = drive_gossip(&engines, vec![("peer-a".into(), step)]);
 
-    // Deliver to peer engine
-    let mut peer_engine = GossipEngine::new("peer-a");
-    peer_engine
-        .join_topic("workspace-123", vec!["local-node-1".to_string()])
-        .expect("peer join failed");
-    let delivered = peer_engine
-        .handle_message("local-node-1", &packet)
-        .expect("handle failed");
-    assert_eq!(delivered.as_deref(), Some(&msg[..]));
+    // Then both downstream peers receive exact bytes, while replay is suppressed.
+    assert_eq!(
+        delivered
+            .iter()
+            .filter(|(_, content)| content.as_slice() == payload)
+            .count(),
+        2
+    );
+    let replay = b
+        .handle_message("peer-a", &first_packet)
+        .expect("handle duplicate");
+    assert!(replay.deliveries.is_empty());
+}
 
-    // Duplicate message delivery suppression
-    let dup = peer_engine
-        .handle_message("local-node-1", &packet)
-        .expect("handle dup failed");
-    assert!(dup.is_none(), "Duplicate message must be suppressed");
+#[test]
+fn browser_gossip_driver_exposes_and_expires_protocol_timers() {
+    // Given joining emits opaque protocol timers for the browser runtime.
+    let mut engine = GossipEngine::new("peer-a");
+    let joined = engine
+        .join_topic("workspace-123", vec!["peer-b".into()])
+        .expect("join topic");
+    let timer = joined
+        .timers
+        .first()
+        .expect("join schedules a timer")
+        .clone();
+
+    // When the runtime returns that timer to the state machine.
+    let _ = engine
+        .expire_timer(timer.timer_id)
+        .expect("timer expiration succeeds");
+
+    // Then replaying the same runtime timer is an idempotent no-op.
+    assert_eq!(
+        engine.expire_timer(timer.timer_id).unwrap(),
+        meta_mesh::gossip::GossipStep::default()
+    );
+}
+
+#[test]
+fn browser_098_reads_native_0101_join_and_gossip_fixtures() {
+    // Given the browser joins a topic and receives the exact native 0.101 join packet.
+    let mut browser = GossipEngine::new("peer-a");
+    browser.join_topic("workspace-123", vec![]).unwrap();
+    let native_join = hex::decode(
+        "415f7072af6c542932314515335cb4a4f69e293a6c2db60abe80ded431aaf42f00000106706565722d62",
+    )
+    .unwrap();
+    let joined = browser.handle_message("peer-b", &native_join).unwrap();
+    assert_eq!(
+        hex::encode(&joined.sends[0].packet),
+        "415f7072af6c542932314515335cb4a4f69e293a6c2db60abe80ded431aaf42f0004000106706565722d61"
+    );
+
+    // When the exact native 0.101 gossip packet enters browser 0.98.
+    let native_gossip = hex::decode(
+        "415f7072af6c542932314515335cb4a4f69e293a6c2db60abe80ded431aaf42f010059e61a6028fb3158df6670e071b9db844f506196a75074519a85f19fe60fe254116e61746976652d746f2d62726f777365720000",
+    )
+    .unwrap();
+    let received = browser.handle_message("peer-b", &native_gossip).unwrap();
+
+    // Then browser delivers exact native content.
+    assert_eq!(received.deliveries.len(), 1);
+    assert_eq!(received.deliveries[0].content, b"native-to-browser");
 }
 
 #[test]

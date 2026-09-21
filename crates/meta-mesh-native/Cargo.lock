@@ -2048,10 +2048,14 @@ dependencies = [
  "blake3",
  "bytes",
  "futures-lite",
+ "hex",
  "iroh",
  "iroh-blobs",
  "iroh-gossip",
  "meta-mesh-core",
+ "n0-future",
+ "postcard",
+ "rand",
  "tokio",
 ]
 

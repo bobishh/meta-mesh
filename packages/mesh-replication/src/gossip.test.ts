@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
-import { DEFAULT_GOSSIP_BOUNDS, SparseGossip, selectScopedNeighbors, IrohGossipTopic, type GossipDispatch, type GossipFrame } from "./gossip"
+import {
+  BrowserGossipDriver, DEFAULT_GOSSIP_BOUNDS, SparseGossip, selectScopedNeighbors, IrohGossipTopic,
+  type GossipDispatch, type GossipFrame, type GossipStateMachine, type GossipStep,
+} from "./gossip"
 
 describe("sparse scoped gossip", () => {
   it("Given a device has several instance routes, when neighbors are selected, then it occupies one bounded replica slot", () => {
@@ -134,37 +137,87 @@ describe("sparse scoped gossip", () => {
     expect(stored.size).toBe(0)
   })
 
-  it("Given iroh-gossip topic overlay, when messages are broadcast, then peers receive content and duplicates are suppressed", () => {
+  it("Given iroh-gossip topic overlay, when messages are broadcast, then driver deliveries reach the topic", async () => {
     const seen = new Set<string>()
     const mockEngine = {
-      joinTopic: vi.fn((topic: string) => `topic-hash-${topic}`),
-      leaveTopic: vi.fn(),
-      broadcast: vi.fn((_topic: string, content: Uint8Array) => content),
-      handleMessage: vi.fn((_sender: string, raw: Uint8Array) => {
+      joinTopic: vi.fn(async (topic: string) => `topic-hash-${topic}`),
+      leaveTopic: vi.fn(async () => undefined),
+      broadcast: vi.fn(async () => undefined),
+      handleMessage: vi.fn(async (_sender: string, raw: Uint8Array) => {
         const key = new TextDecoder().decode(raw)
-        if (seen.has(key)) return undefined
+        if (seen.has(key)) return []
         seen.add(key)
-        return raw
+        return [{ topic: "workspace-updates", deliveredFrom: "peer-2", content: raw }]
       }),
       activeNeighbors: vi.fn(() => ["peer-2", "peer-3"]),
     }
 
     const topic = new IrohGossipTopic("workspace-updates", mockEngine, ["peer-2"])
+    await vi.waitFor(() => expect(topic.topicId).toBe("topic-hash-workspace-updates"))
     expect(topic.topicId).toBe("topic-hash-workspace-updates")
     expect(topic.activeNeighbors()).toEqual(["peer-2", "peer-3"])
 
     const msg = new TextEncoder().encode("change-notification")
-    const packet = topic.broadcast(msg)
-    expect(packet).toEqual(msg)
+    await topic.broadcast(msg)
+    expect(mockEngine.broadcast).toHaveBeenCalledWith("workspace-updates", msg)
 
-    const first = topic.receive("peer-2", packet)
-    expect(first).toEqual(msg)
+    const first = await topic.receive("peer-2", msg)
+    expect(first[0]?.content).toEqual(msg)
 
-    const duplicate = topic.receive("peer-3", packet)
-    expect(duplicate).toBeUndefined()
+    const duplicate = await topic.receive("peer-3", msg)
+    expect(duplicate).toEqual([])
 
-    topic.leave()
+    await topic.leave()
     expect(mockEngine.leaveTopic).toHaveBeenCalledWith("workspace-updates")
+  })
+
+  it("Given browser gossip emits fanout, timers, and failed routes, when driven, then no protocol action is discarded", async () => {
+    vi.useFakeTimers()
+    try {
+      const empty = (overrides: Partial<GossipStep> = {}): GossipStep => ({
+        sends: [], deliveries: [], timers: [], disconnects: [], neighborsUp: [], neighborsDown: [], ...overrides,
+      })
+      const state: GossipStateMachine = {
+        joinTopic: vi.fn(() => empty({ topicId: "topic-1", timers: [{ timerId: 7, delayMs: 25 }] })),
+        leaveTopic: vi.fn(() => empty({ disconnects: ["peer-2"] })),
+        broadcast: vi.fn(() => empty({ sends: [
+          { peer: "peer-2", packet: new Uint8Array([2]) },
+          { peer: "offline-peer", packet: new Uint8Array([3]) },
+        ] })),
+        handleMessage: vi.fn(() => empty({ deliveries: [
+          { topic: "workspace-updates", deliveredFrom: "peer-2", content: new Uint8Array([4]) },
+        ] })),
+        expireTimer: vi.fn(() => empty({ sends: [{ peer: "peer-3", packet: new Uint8Array([7]) }] })),
+        peerDisconnected: vi.fn(() => empty({ disconnects: ["offline-peer"] })),
+        activeNeighbors: vi.fn(() => ["peer-2"]),
+      }
+      const sent: string[] = []
+      const disconnected: string[] = []
+      const delivered: string[] = []
+      const driver = new BrowserGossipDriver(state, {
+        send: async peer => {
+          if (peer === "offline-peer") throw new Error("offline")
+          sent.push(peer)
+        },
+        disconnect: peer => { disconnected.push(peer) },
+        deliver: delivery => { delivered.push(`${delivery.topic}:${delivery.deliveredFrom}`) },
+      })
+
+      expect(await driver.joinTopic("workspace-updates", ["peer-2"])).toBe("topic-1")
+      await driver.broadcast("workspace-updates", new Uint8Array([1]))
+      await driver.handleMessage("peer-2", new Uint8Array([4]))
+      await vi.advanceTimersByTimeAsync(25)
+      await vi.waitFor(() => expect(sent).toContain("peer-3"))
+      await driver.leaveTopic("workspace-updates")
+
+      expect(sent).toEqual(["peer-2", "peer-3"])
+      expect(state.peerDisconnected).toHaveBeenCalledWith("offline-peer")
+      expect(disconnected).toEqual(["offline-peer", "peer-2"])
+      expect(delivered).toEqual(["workspace-updates:peer-2"])
+      driver.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

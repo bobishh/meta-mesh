@@ -253,6 +253,12 @@ mod tests {
         let mut rejected = frame.clone();
         rejected.to_device_id = "someone-else".into();
         assert!(right.receive("left", rejected, true, None).is_err());
+        let mut unsupported = frame.clone();
+        unsupported.version = 2;
+        assert_eq!(
+            right.receive("left", unsupported, true, None).unwrap_err(),
+            "Invalid Automerge sync frame"
+        );
 
         for _ in 0..20 {
             let result = right.receive("left", frame, true, None).unwrap();
