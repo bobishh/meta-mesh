@@ -560,6 +560,34 @@ export async function verifyWorkspaceMemberBundle(
     secondaryOwnerKeyOrId = optionsOrOwnerPublicKey
   }
 
+  let runtimeOwnerPublicKey = opts.ownerPublicKey
+  let runtimeOwnerPersonId = opts.ownerPersonId
+  if (ownerKeyOrId) {
+    if (!runtimeOwnerPublicKey) {
+      runtimeOwnerPublicKey = ownerKeyOrId
+      try { runtimeOwnerPersonId ??= await keyId(ownerKeyOrId) }
+      catch { runtimeOwnerPersonId ??= ownerKeyOrId }
+    }
+    if (secondaryOwnerKeyOrId) {
+      try {
+        if ((await keyId(secondaryOwnerKeyOrId)) === ownerKeyOrId) {
+          runtimeOwnerPersonId = ownerKeyOrId
+          runtimeOwnerPublicKey = secondaryOwnerKeyOrId
+        }
+      } catch {}
+    }
+  }
+  const now = typeof opts.now === "number" ? opts.now
+    : opts.now instanceof Date ? opts.now.getTime()
+      : typeof opts.now === "string" ? Date.parse(opts.now) : Date.now()
+  const verified = meshRustRuntime().state.verifyWorkspaceMemberBundle(rawBundle, {
+    workspaceId: opts.workspaceId, ownerPersonId: runtimeOwnerPersonId, ownerPublicKey: runtimeOwnerPublicKey,
+    ownerCertificates: opts.ownerCertificates ?? [], ownerHistory: opts.ownerHistory ?? [],
+    maxByteLength: opts.maxByteLength, allowStaleRoute: opts.allowStaleRoute ?? false,
+  }, now) as VerifiedWorkspaceMember & { grant?: WorkspaceGrant | null }
+  if (verified.grant === null) delete verified.grant
+  if (!(globalThis as { __legacyMeshMemberVerifier?: boolean }).__legacyMeshMemberVerifier) return verified
+
   // 1. Check bounded serialized size
   const maxByteLength = opts.maxByteLength ?? MAX_PEER_ADVERTISEMENT_SIZE
   const serialized = JSON.stringify(rawBundle)

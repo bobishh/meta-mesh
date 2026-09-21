@@ -88,7 +88,10 @@ pub fn verify_workspace_member_bundle(raw: Value, opts: VerifyWorkspaceMemberOpt
     let identity = PublicIdentity { person_id: advertisement.payload.person_id.clone(), public_key: public_key.clone(), display_name: String::new() };
     let device_public_key = verify_device_certificate_chain(&identity, &advertisement.payload.device_id, &certificates, DEFAULT_SIGNATURE_DOMAIN)?;
     if !verify_signed_envelope(&advertisement, &device_public_key, DEFAULT_SIGNATURE_DOMAIN)? { return Err("Invalid advertisement signature".to_string()); }
-    let grant: Option<WorkspaceGrant> = object.get("grant").map(|value| value_as(Some(value), "Invalid workspace grant")).transpose()?;
+    let grant: Option<WorkspaceGrant> = object.get("grant")
+        .filter(|value| !value.is_null())
+        .map(|value| value_as(Some(value), "Invalid workspace grant"))
+        .transpose()?;
     let mut owner_public_key = opts.owner_public_key.or_else(|| object.get("ownerPublicKey").and_then(Value::as_str).map(str::to_owned));
     let mut owner_person_id = opts.owner_person_id;
     if owner_public_key.is_none() && grant.is_none() { owner_public_key = Some(public_key.clone()); }
@@ -115,7 +118,7 @@ pub fn verify_workspace_member_bundle(raw: Value, opts: VerifyWorkspaceMemberOpt
             grant.as_ref()?, opts.workspace_id.as_deref().unwrap_or(&advertisement.payload.workspace_id),
             &advertisement.payload.person_id, &PublicIdentity { person_id: authority.person_id, public_key: authority.public_key, display_name: String::new() }, &authority.certificates).ok()
         ).ok_or_else(|| {
-            if grant.is_none() { "Owner identity does not match peer advertisement".to_string() }
+            if grant.is_none() { "Invalid workspace grant".to_string() }
             else { "Invalid workspace grant signature".to_string() }
         })?
     };
