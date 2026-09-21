@@ -14,7 +14,7 @@ export type RuntimeWorkspaceCredential = {
   workspaceId: string
   ownerPersonId: string
   ownerPublicKey: string
-  ownerCertificates: DeviceCertificate[]
+  ownerCertificates: unknown[]
   ownerHistory?: WorkspaceAuthority[]
   localGrant?: unknown
   epoch: number
