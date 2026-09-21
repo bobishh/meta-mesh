@@ -3,7 +3,7 @@ import { selectScopedNeighbors } from "@meta-uber/mesh-replication/gossip"
 export type BrowserDialPeer = {
   workspaceId: string
   deviceId: string
-  instanceId: string
+  instanceId?: string
   revokedAt?: string | null
 }
 
@@ -11,7 +11,7 @@ export type BrowserMeshDialHost<P extends BrowserDialPeer> = {
   peers(): Promise<P[]>
   hasSession(workspaceId: string, deviceId: string): boolean
   deviceKey(workspaceId: string, deviceId: string): string
-  peerKey(workspaceId: string, deviceId: string, instanceId: string): string
+  peerKey(workspaceId: string, deviceId: string, instanceId?: string): string
   routeFailures(key: string): number
   retryAt(key: string, fallback: number): number
   routeAttemptActive(key: string): boolean
