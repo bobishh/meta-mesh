@@ -22,12 +22,17 @@ pub struct PeerAdvertisementPayload {
     pub workspace_id: String,
     pub person_id: String,
     pub device_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub instance_id: Option<String>,
     pub endpoint: String,
     pub issued_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub route_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
 }
 
@@ -89,12 +94,16 @@ pub fn verify_workspace_member_bundle(raw: Value, opts: VerifyWorkspaceMemberOpt
     if owner_public_key.is_none() && grant.is_none() { owner_public_key = Some(public_key.clone()); }
     if owner_person_id.is_none() { owner_person_id = owner_public_key.as_deref().map(public_key_id).transpose()?; }
     let mut owner_certificates = opts.owner_certificates;
-    if let Some(value) = object.get("ownerCertificates") {
+    if let Some(value) = object.get("ownerCertificates").filter(|value| !value.is_null()) {
         let embedded: Vec<DeviceCertificate> = value_as(Some(value), "Invalid owner certificate chain")?;
         owner_certificates.extend(embedded);
     }
     if owner_certificates.len() > 32 { return Err("Invalid owner certificate chain".to_string()); }
-    let is_owner = owner_person_id.as_deref() == Some(&advertisement.payload.person_id);
+    let is_owner = owner_person_id.as_deref() == Some(&advertisement.payload.person_id)
+        || owner_public_key.as_deref() == Some(public_key.as_str())
+        || owner_public_key.as_deref()
+            .and_then(|key| public_key_id(key).ok())
+            .as_deref() == Some(&advertisement.payload.person_id);
     let role = if is_owner {
         WorkspaceRole::Owner
     } else {
