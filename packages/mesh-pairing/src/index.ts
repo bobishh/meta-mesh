@@ -48,7 +48,7 @@ const pairingFrameTypes = [
   "sync-request", "sync-response", "sync-ack", "sync-update", "sync-heartbeat", "sync-heartbeat-ack",
   "enroll-request", "enroll-approved", "enroll-ack", "enroll-complete",
   "workspace-join-request", "workspace-join-response",
-  "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready",
+  "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready", "mesh-handoff-confirmed",
   "mesh-automerge-sync", "mesh-control-sync", "mesh-gossip", "mesh-iroh-gossip", "mesh-durable-batch", "mesh-durable-ack",
 ] as const
 

@@ -208,6 +208,7 @@ describe("sparse scoped gossip", () => {
       await driver.handleMessage("peer-2", new Uint8Array([4]))
       await vi.advanceTimersByTimeAsync(25)
       await vi.waitFor(() => expect(sent).toContain("peer-3"))
+      expect(state.expireTimer).toHaveBeenCalledWith(7n)
       await driver.leaveTopic("workspace-updates")
 
       expect(sent).toEqual(["peer-2", "peer-3"])

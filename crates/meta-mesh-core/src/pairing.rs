@@ -19,6 +19,7 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-handshake-response",
     "mesh-handoff-request",
     "mesh-handoff-ready",
+    "mesh-handoff-confirmed",
     "mesh-automerge-sync",
     "mesh-control-sync",
     "mesh-gossip",

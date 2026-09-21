@@ -205,7 +205,7 @@ export interface GossipStateMachine {
   leaveTopic(topicName: string): GossipStep
   broadcast(topicName: string, content: Uint8Array): GossipStep
   handleMessage(sender: string, rawPacket: Uint8Array): GossipStep
-  expireTimer(timerId: bigint | number): GossipStep
+  expireTimer(timerId: bigint): GossipStep
   peerDisconnected(peer: string): GossipStep
   activeNeighbors(topicName: string): string[]
 }
@@ -292,7 +292,7 @@ export class BrowserGossipDriver {
     const delay = Math.max(0, Math.min(Number(timer.delayMs), 2_147_483_647))
     const handle = setTimeout(() => {
       this.timers.delete(key)
-      if (!this.closed) void this.enqueue(() => this.state.expireTimer(timer.timerId))
+      if (!this.closed) void this.enqueue(() => this.state.expireTimer(BigInt(timer.timerId)))
     }, delay)
     this.timers.set(key, handle)
   }

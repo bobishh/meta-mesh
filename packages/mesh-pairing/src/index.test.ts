@@ -82,6 +82,7 @@ describe("pairing protocol", () => {
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
+    "mesh-handoff-confirmed",
   ] as const)("Given a %s runtime frame, when inspected, then the live session accepts it", (type) => {
     const frame = encodePairingFrame(type, "workspace-secret", new Uint8Array([7]))
 
