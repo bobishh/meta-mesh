@@ -92,6 +92,26 @@ impl WasmStateCore {
         Ok(meta_mesh_core::has_conflicting_break_glass_claims(&records))
     }
 
+    #[wasm_bindgen(js_name = summarizeSuccession)]
+    pub fn summarize_succession(
+        policy: JsValue,
+        claims: JsValue,
+        votes: JsValue,
+        transfers: JsValue,
+        break_glass_claims: JsValue,
+        revocations: JsValue,
+        epoch: f64,
+    ) -> Result<JsValue, JsValue> {
+        let policy: Option<serde_json::Value> = optional_value(policy)?;
+        let claims: Vec<serde_json::Value> = from_value(claims)?;
+        let votes: Vec<serde_json::Value> = from_value(votes)?;
+        let transfers: Vec<serde_json::Value> = from_value(transfers)?;
+        let break_glass_claims: Vec<serde_json::Value> = from_value(break_glass_claims)?;
+        let revocations: Vec<serde_json::Value> = from_value(revocations)?;
+        to_value(&meta_mesh_core::summarize_succession(policy.as_ref(), &claims, &votes, &transfers,
+            &break_glass_claims, &revocations, unsigned_integer(epoch, "Invalid succession epoch")?).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
     pub fn verify_workspace_revocation(
         record: JsValue,
@@ -396,6 +416,14 @@ impl Default for WasmDeviceRouteCatalog {
 
 fn from_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
     serde_wasm_bindgen::from_value(value).map_err(js_error)
+}
+
+fn optional_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<Option<T>, JsValue> {
+    if value.is_null() || value.is_undefined() {
+        Ok(None)
+    } else {
+        from_value(value).map(Some)
+    }
 }
 
 fn to_value(value: &impl serde::Serialize) -> Result<JsValue, JsValue> {

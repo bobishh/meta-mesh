@@ -183,6 +183,80 @@ pub fn has_conflicting_break_glass_claims(records: &[Value]) -> bool {
     successors.values().any(|values| values.len() > 1)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionSummary {
+    pub successor_person_id: Option<String>,
+    pub eligible_editor_person_ids: Vec<String>,
+    pub votes: Vec<SuccessionVoteSummary>,
+    pub quorum: usize,
+    pub conflicted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionVoteSummary {
+    pub voter_person_id: String,
+    pub candidate_person_id: String,
+}
+
+/// Produces the user-visible recovery state from records that have already
+/// crossed their signature-verification boundary. Keeping this reduction in
+/// Rust prevents browser, desktop and mobile hosts from deriving a different
+/// quorum or conflict state for the same catalog.
+pub fn summarize_succession(
+    policy: Option<&Value>,
+    claims: &[Value],
+    votes: &[Value],
+    transfers: &[Value],
+    break_glass_claims: &[Value],
+    revocations: &[Value],
+    epoch: u64,
+) -> Result<Option<SuccessionSummary>, String> {
+    let revoked: HashSet<&str> = revocations.iter()
+        .filter_map(|record| record.pointer("/payload/personId").and_then(Value::as_str))
+        .collect();
+    let conflicted = has_conflicting_ownership_transfers(transfers)
+        || has_conflicting_break_glass_claims(break_glass_claims)
+        || claims.iter()
+            .filter(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch))
+            .filter_map(|claim| claim.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
+            .collect::<HashSet<_>>().len() > 1;
+    let policy = policy
+        .filter(|policy| policy.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch))
+        .or_else(|| claims.iter()
+            .find(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch + 1))
+            .and_then(|claim| claim.pointer("/payload/policy")));
+    let Some(policy) = policy else {
+        return if conflicted {
+            Ok(Some(SuccessionSummary { successor_person_id: None, eligible_editor_person_ids: vec![], votes: vec![], quorum: 0, conflicted }))
+        } else { Ok(None) };
+    };
+    let payload = policy.get("payload").and_then(Value::as_object)
+        .ok_or_else(|| "Invalid workspace succession policy".to_string())?;
+    let eligible = payload.get("eligibleEditorPersonIds").and_then(Value::as_array)
+        .ok_or_else(|| "Invalid workspace succession policy".to_string())?
+        .iter().map(|value| value.as_str().map(str::to_owned)
+            .ok_or_else(|| "Invalid workspace succession policy".to_string()))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter().filter(|person_id| !revoked.contains(person_id.as_str())).collect::<Vec<_>>();
+    let successor_person_id = match payload.get("successorPersonId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(person_id)) if !revoked.contains(person_id.as_str()) => Some(person_id.clone()),
+        Some(Value::String(_)) => None,
+        _ => return Err("Invalid workspace succession policy".to_string()),
+    };
+    let votes = votes.iter().filter_map(|vote| {
+        let payload = vote.pointer("/signed/payload")?.as_object()?;
+        Some(SuccessionVoteSummary {
+            voter_person_id: payload.get("voterPersonId")?.as_str()?.to_owned(),
+            candidate_person_id: payload.get("candidatePersonId")?.as_str()?.to_owned(),
+        })
+    }).collect();
+    Ok(Some(SuccessionSummary { successor_person_id, eligible_editor_person_ids: eligible.clone(),
+        votes, quorum: eligible.len() / 2 + 1, conflicted }))
+}
+
 pub fn verify_workspace_revocation(
     record: &WorkspaceRevocation,
     workspace_id: &str,
@@ -540,7 +614,7 @@ fn bounded(value: &impl Serialize, maximum: usize, message: &str) -> Result<(), 
 mod tests {
     use serde_json::json;
 
-    use super::has_conflicting_break_glass_claims;
+    use super::{has_conflicting_break_glass_claims, summarize_succession};
 
     #[test]
     fn break_glass_conflicts_are_scoped_to_the_owner_and_epoch() {
@@ -555,5 +629,18 @@ mod tests {
             json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "bob", "epoch": 3 } }),
         ];
         assert!(!has_conflicting_break_glass_claims(&independent_transitions));
+    }
+
+    #[test]
+    fn succession_summary_excludes_revoked_editors_and_reports_quorum() {
+        let policy = json!({ "payload": {
+            "epoch": 4, "successorPersonId": null, "eligibleEditorPersonIds": ["alice", "bob", "carol"]
+        }});
+        let votes = vec![json!({ "signed": { "payload": { "voterPersonId": "alice", "candidatePersonId": "bob" } } })];
+        let revocations = vec![json!({ "payload": { "personId": "carol" } })];
+        let summary = summarize_succession(Some(&policy), &[], &votes, &[], &[], &revocations, 4).unwrap().unwrap();
+        assert_eq!(summary.eligible_editor_person_ids, vec!["alice", "bob"]);
+        assert_eq!(summary.quorum, 2);
+        assert_eq!(summary.votes.len(), 1);
     }
 }
