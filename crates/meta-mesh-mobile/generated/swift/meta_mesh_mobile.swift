@@ -947,8 +947,6 @@ public protocol MobileMeshNodeProtocol: AnyObject, Sendable {
 
     func authorizePeer(peerId: String) throws
 
-    func close() throws
-
     func endpointAddrJson() throws  -> String
 
     func endpointId() throws  -> String
@@ -964,6 +962,8 @@ public protocol MobileMeshNodeProtocol: AnyObject, Sendable {
     func requestJson(endpoint: String, payloadJson: String, timeoutMs: UInt64) throws  -> String
 
     func revokePeer(peerId: String) throws
+
+    func shutdown() throws
 
 }
 open class MobileMeshNode: MobileMeshNodeProtocol, @unchecked Sendable {
@@ -1050,14 +1050,6 @@ open func authorizePeer(peerId: String)throws   {try rustCallWithError(FfiConver
 }
 }
 
-open func close()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
-        uniffiCallStatus in
-    uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_close(
-            self.uniffiCloneHandle(),uniffiCallStatus
-    )
-}
-}
-
 open func endpointAddrJson()throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -1134,6 +1126,14 @@ open func revokePeer(peerId: String)throws   {try rustCallWithError(FfiConverter
     uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_revoke_peer(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(peerId),uniffiCallStatus
+    )
+}
+}
+
+open func shutdown()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_shutdown(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
 }
@@ -1468,7 +1468,7 @@ enum MobileMeshError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErro
 
 
 
-    case Failure(message: String
+    case Failure(detail: String
     )
 
 
@@ -1500,7 +1500,7 @@ public struct FfiConverterTypeMobileMeshError: FfiConverterRustBuffer {
 
 
         case 1: return .Failure(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
 
          default: throw UniffiInternalError.unexpectedEnumCase
@@ -1514,9 +1514,9 @@ public struct FfiConverterTypeMobileMeshError: FfiConverterRustBuffer {
 
 
 
-        case let .Failure(message):
+        case let .Failure(detail):
             writeInt(&buf, Int32(1))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
 
         }
     }
@@ -2208,9 +2208,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_authorize_peer() != 51325) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_close() != 62192) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_endpoint_addr_json() != 34576) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2233,6 +2230,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_revoke_peer() != 38064) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_shutdown() != 27449) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_fail() != 30629) {

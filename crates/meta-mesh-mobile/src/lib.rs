@@ -39,14 +39,14 @@ uniffi::setup_scaffolding!();
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MobileMeshError {
-    #[error("{message}")]
-    Failure { message: String },
+    #[error("{detail}")]
+    Failure { detail: String },
 }
 
 impl MobileMeshError {
     fn from_display(error: impl std::fmt::Display) -> Self {
         Self::Failure {
-            message: error.to_string(),
+            detail: error.to_string(),
         }
     }
 }
@@ -815,7 +815,7 @@ impl MobileMeshNode {
         })
     }
 
-    pub fn close(&self) -> Result<(), MobileMeshError> {
+    pub fn shutdown(&self) -> Result<(), MobileMeshError> {
         let node = self
             .node
             .lock()
@@ -975,8 +975,8 @@ mod tests {
         let message = topic_2.receive(5_000).unwrap().unwrap();
         assert_eq!(message.content, b"hello-mobile");
 
-        node_1.close().unwrap();
-        node_2.close().unwrap();
+        node_1.shutdown().unwrap();
+        node_2.shutdown().unwrap();
     }
 
     #[test]
@@ -1032,8 +1032,8 @@ mod tests {
         assert_eq!(error.to_string(), "Request rejected");
         failure.join().unwrap();
 
-        node_1.close().unwrap();
-        node_2.close().unwrap();
+        node_1.shutdown().unwrap();
+        node_2.shutdown().unwrap();
     }
 
     #[test]
@@ -1051,8 +1051,8 @@ mod tests {
         assert!(!error.to_string().is_empty());
         assert!(node_2.receive_request(100).unwrap().is_none());
 
-        node_1.close().unwrap();
-        node_2.close().unwrap();
+        node_1.shutdown().unwrap();
+        node_2.shutdown().unwrap();
     }
 
     #[test]
@@ -1081,8 +1081,8 @@ mod tests {
         );
 
         listener.join().unwrap();
-        node_1.close().unwrap();
-        node_2.close().unwrap();
+        node_1.shutdown().unwrap();
+        node_2.shutdown().unwrap();
     }
 
     #[test]

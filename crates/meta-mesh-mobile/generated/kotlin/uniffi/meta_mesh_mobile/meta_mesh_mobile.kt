@@ -761,8 +761,6 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_authorize_peer(
     ): Int
-    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_close(
-    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_endpoint_addr_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_endpoint_id(
@@ -778,6 +776,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_request_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_revoke_peer(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_shutdown(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_fail(
     ): Int
@@ -845,8 +845,6 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_authorize_peer(`ptr`: Long,`peerId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_close(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
-    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_endpoint_addr_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_endpoint_id(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
@@ -862,6 +860,8 @@ internal object UniffiLib {
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_request_json(`ptr`: Long,`endpoint`: RustBuffer.ByValue,`payloadJson`: RustBuffer.ByValue,`timeoutMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_revoke_peer(`ptr`: Long,`peerId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_shutdown(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_clone_mobilerpcrequest(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Long
@@ -1194,9 +1194,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_authorize_peer() and 0xFFFF) != 51325) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_close() and 0xFFFF) != 62192) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_endpoint_addr_json() and 0xFFFF) != 34576) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1219,6 +1216,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_revoke_peer() and 0xFFFF) != 38064) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_shutdown() and 0xFFFF) != 27449) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_fail() and 0xFFFF) != 30629) {
@@ -2325,8 +2325,6 @@ public interface MobileMeshNodeInterface {
 
     fun `authorizePeer`(`peerId`: kotlin.String)
 
-    fun `close`()
-
     fun `endpointAddrJson`(): kotlin.String
 
     fun `endpointId`(): kotlin.String
@@ -2342,6 +2340,8 @@ public interface MobileMeshNodeInterface {
     fun `requestJson`(`endpoint`: kotlin.String, `payloadJson`: kotlin.String, `timeoutMs`: kotlin.ULong): kotlin.String
 
     fun `revokePeer`(`peerId`: kotlin.String)
+
+    fun `shutdown`()
 
     companion object
 }
@@ -2477,19 +2477,6 @@ open class MobileMeshNode: Disposable, AutoCloseable, MobileMeshNodeInterface
 
 
 
-    @Throws(MobileMeshException::class)override fun `close`()
-        =
-    callWithHandle {
-    uniffiRustCallWithError(MobileMeshException) { _status ->
-    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_close(
-        it,
-        _status)
-}
-    }
-
-
-
-
     @Throws(MobileMeshException::class)override fun `endpointAddrJson`(): kotlin.String {
             return FfiConverterString.lift(
     callWithHandle {
@@ -2604,6 +2591,19 @@ open class MobileMeshNode: Disposable, AutoCloseable, MobileMeshNodeInterface
         it,
 
         FfiConverterString.lower(`peerId`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `shutdown`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshnode_shutdown(
+        it,
+        _status)
 }
     }
 
@@ -3044,10 +3044,10 @@ sealed class MobileMeshException: kotlin.Exception() {
 
     class Failure(
 
-        val `message`: kotlin.String
+        val `detail`: kotlin.String
         ) : MobileMeshException() {
         override val message
-            get() = "message=${ `message` }"
+            get() = "detail=${ `detail` }"
     }
 
 
@@ -3081,7 +3081,7 @@ public object FfiConverterTypeMobileMeshError : FfiConverterRustBuffer<MobileMes
             is MobileMeshException.Failure -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
-                + FfiConverterString.allocationSize(value.`message`)
+                + FfiConverterString.allocationSize(value.`detail`)
             )
         }
     }
@@ -3090,7 +3090,7 @@ public object FfiConverterTypeMobileMeshError : FfiConverterRustBuffer<MobileMes
         when(value) {
             is MobileMeshException.Failure -> {
                 buf.putInt(1)
-                FfiConverterString.write(value.`message`, buf)
+                FfiConverterString.write(value.`detail`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

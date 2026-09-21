@@ -30,3 +30,9 @@ Build the iOS device and Apple Silicon simulator binaries, then package them wit
 ```
 
 The generated Swift package lives at `crates/meta-mesh-mobile/generated`. The XCFramework is a local build artifact and is not committed.
+
+Run generated Swift and Kotlin clients against the native runtime, including deny-by-default and revocation checks:
+
+```sh
+./scripts/test-mobile-language-interop.sh
+```

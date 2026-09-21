@@ -5,3 +5,5 @@ target/
 .swiftpm/
 *.log
 crates/meta-mesh-mobile/generated/apple/*.xcframework/
+crates/meta-mesh-mobile/tests/.gradle/
+crates/meta-mesh-mobile/tests/build/
