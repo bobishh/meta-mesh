@@ -209,4 +209,27 @@ mod tests {
         assert_eq!(serde_json::to_value(&decoded).unwrap()["payload"].get("accessEpoch"), None);
         assert_eq!(verify_workspace_grant(&decoded, "workspace", "member", &PublicIdentity { person_id, public_key, display_name: "Owner".into() }, &[]).unwrap(), WorkspaceRole::Editor);
     }
+
+    #[test]
+    fn explicit_access_epoch_one_is_not_dropped_from_signed_json() {
+        let payload = WorkspaceGrantPayload {
+            kind: "workspace-grant".into(), version: 1, grant_id: "explicit".into(), workspace_id: "workspace".into(),
+            person_id: "member".into(), role: WorkspaceRole::Editor, access_epoch: Some(1),
+        };
+        let raw = serde_json::to_value(&payload).unwrap();
+        assert_eq!(raw["accessEpoch"], 1);
+        let decoded: WorkspaceGrantPayload = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded.access_epoch, Some(1));
+        assert_eq!(serde_json::to_value(decoded).unwrap()["accessEpoch"], 1);
+    }
+
+    #[test]
+    fn null_access_epoch_is_not_accepted_as_a_valid_grant() {
+        let raw = serde_json::json!({"kind":"workspace-grant","version":1,"grantId":"g","workspaceId":"w","personId":"p","role":"editor","accessEpoch":null});
+        let payload: WorkspaceGrantPayload = serde_json::from_value(raw).unwrap();
+        assert_eq!(payload.effective_access_epoch(), 1);
+        // It serializes without the field, so a signature over the hostile null
+        // shape cannot validate as a legacy grant.
+        assert!(serde_json::to_value(payload).unwrap().get("accessEpoch").is_none());
+    }
 }
