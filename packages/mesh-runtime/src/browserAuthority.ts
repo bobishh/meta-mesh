@@ -13,6 +13,17 @@ export type BrowserMeshAuthorityHost<C extends BrowserMeshAuthorityCredential, P
   leave(workspaceId: string): Promise<void>
 }
 
+export type BrowserMeshSuccessionHost<C extends BrowserMeshAuthorityCredential, P extends BrowserMeshAuthorityProfile, Policy> = {
+  profile(): Promise<P>
+  credential(workspaceId: string): Promise<C | undefined>
+  eligibleEditors(workspaceId: string): Promise<string[]>
+  epoch(credential: C): number
+  createPolicy(profile: P, workspaceId: string, successorPersonId: string | null, eligibleEditorPersonIds: string[], epoch: number): Promise<Policy>
+  setPolicy(credential: C, policy: Policy): Promise<void>
+  notify(): Promise<void>
+  publishAll(): Promise<void>
+}
+
 /** Shared authority workflow; hosts provide local signing, storage and active stream effects. */
 export class BrowserMeshAuthority<C extends BrowserMeshAuthorityCredential, P extends BrowserMeshAuthorityProfile, R> {
   constructor(private readonly host: BrowserMeshAuthorityHost<C, P, R>) {}
@@ -35,5 +46,19 @@ export class BrowserMeshAuthority<C extends BrowserMeshAuthorityCredential, P ex
     if (!workspaceId) throw new Error("No active workspace")
     await this.host.leave(workspaceId)
     await this.host.notify()
+  }
+}
+
+export class BrowserMeshSuccession<C extends BrowserMeshAuthorityCredential, P extends BrowserMeshAuthorityProfile, Policy> {
+  constructor(private readonly host: BrowserMeshSuccessionHost<C, P, Policy>) {}
+
+  async setSuccessor(workspaceId: string, personId: string | null): Promise<void> {
+    const [profile, credential] = await Promise.all([this.host.profile(), this.host.credential(workspaceId)])
+    if (!credential || credential.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can set succession")
+    const eligible = await this.host.eligibleEditors(workspaceId)
+    if (personId && !eligible.includes(personId)) throw new Error("Successor must be an editor")
+    await this.host.setPolicy(credential, await this.host.createPolicy(profile, workspaceId, personId, eligible, this.host.epoch(credential)))
+    await this.host.notify()
+    await this.host.publishAll()
   }
 }
