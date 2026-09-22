@@ -1,6 +1,8 @@
 #[cfg(target_family = "wasm")]
 pub mod automerge;
 pub mod blobs;
+#[cfg(target_family = "wasm")]
+mod browser_tracing;
 pub mod gossip;
 #[cfg(target_family = "wasm")]
 pub mod identity;
@@ -32,6 +34,18 @@ pub use node::{
 pub use state::{WasmDeviceRouteCatalog, WasmStateCore};
 
 use wasm_bindgen::prelude::*;
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen(js_name = setBrowserTransportDebugLogging)]
+pub fn set_browser_transport_debug_logging(enabled: bool) {
+    browser_tracing::set_verbose_transport_logging(enabled);
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen(js_name = browserTransportDebugLoggingEnabled)]
+pub fn browser_transport_debug_logging_enabled() -> bool {
+    browser_tracing::verbose_transport_logging_enabled()
+}
 
 #[wasm_bindgen]
 pub fn mesh_version() -> String {

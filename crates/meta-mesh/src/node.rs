@@ -18,6 +18,7 @@ pub struct BrowserNode {
 impl BrowserNode {
     #[wasm_bindgen(js_name = start)]
     pub async fn start(secret: Option<Vec<u8>>) -> Result<BrowserNode, JsValue> {
+        crate::browser_tracing::install_browser_transport_tracing();
         let secret_key = match secret {
             Some(mut bytes) => {
                 if bytes.len() != 32 {
