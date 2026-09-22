@@ -22,7 +22,11 @@ pub struct WorkspaceGrantPayload {
     pub workspace_id: String,
     pub person_id: String,
     pub role: WorkspaceRole,
+    #[serde(default = "default_access_epoch")]
+    pub access_epoch: u64,
 }
+
+fn default_access_epoch() -> u64 { 1 }
 
 pub type WorkspaceGrant = SignedEnvelope<WorkspaceGrantPayload>;
 
@@ -61,6 +65,7 @@ pub fn verify_workspace_grant(
         || payload.workspace_id != workspace_id
         || payload.person_id != member_person_id
         || payload.grant_id.is_empty()
+        || payload.access_epoch == 0
     {
         return Err("Invalid workspace grant".to_string());
     }
@@ -149,6 +154,7 @@ mod tests {
             workspace_id: "workspace-1".to_string(),
             person_id: "member-1".to_string(),
             role: WorkspaceRole::Editor,
+            access_epoch: 1,
         };
 
         let root_grant = signed_grant(&owner_seed, &owner_person_id, &payload);

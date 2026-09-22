@@ -18,6 +18,7 @@ export type WorkspaceGrant = SignedEnvelope<{
   workspaceId: string
   personId: string
   role: WorkspaceRole
+  accessEpoch?: number
 }>
 
 export async function certHashDefault(cert: DeviceCertificate): Promise<string> {
@@ -48,6 +49,7 @@ export async function createWorkspaceGrant(
   workspaceId: string,
   personId: string,
   role: WorkspaceRole,
+  accessEpoch = 1,
 ): Promise<WorkspaceGrant> {
   return await signEnvelope(profile.privateKeys.devicePrivateKey, {
     kind: "workspace-grant" as const,
@@ -56,6 +58,7 @@ export async function createWorkspaceGrant(
     workspaceId,
     personId,
     role,
+    accessEpoch,
   }, profile.device.deviceId) as WorkspaceGrant
 }
 
