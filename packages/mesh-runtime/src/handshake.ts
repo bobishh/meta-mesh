@@ -1,7 +1,7 @@
 import { decodePairingFrame, encodePairingFrame, inspectPairingFrame } from "@meta-uber/mesh-pairing"
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import type {
-  WorkspaceDeparture, WorkspaceDeviceRevocation, WorkspaceBreakGlassClaim, WorkspaceMemberBundle, WorkspaceOwnershipTransfer, WorkspaceRevocation,
+  WorkspaceDeparture, WorkspaceDeviceRevocation, WorkspaceMemberBundle, WorkspaceOwnershipTransfer, WorkspaceRevocation,
   WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
 } from "@meta-uber/mesh-workspace"
 
@@ -12,7 +12,6 @@ export type MeshHandshakePayload = {
   peer: WorkspaceMemberBundle
   revocations: WorkspaceRevocation[]
   ownershipTransfers: WorkspaceOwnershipTransfer[]
-  breakGlassClaims: WorkspaceBreakGlassClaim[]
   successionPolicy?: WorkspaceSuccessionPolicy
   successionVotes: WorkspaceSuccessionVote[]
   successionClaims: WorkspaceSuccessionClaim[]

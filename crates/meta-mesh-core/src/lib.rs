@@ -15,10 +15,11 @@ pub mod state;
 
 pub use authority::{
     WorkspaceAuthority, WorkspaceOwnershipTransfer, WorkspaceOwnershipTransferPayload,
+    WorkspaceDeviceRevocation, WorkspaceDeviceRevocationPayload,
     WorkspaceRevocation, WorkspaceRevocationPayload, WorkspaceSuccessionClaim,
     WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy, WorkspaceSuccessionPolicyPayload,
     WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload, SuccessionSummary, SuccessionVoteSummary,
-    has_conflicting_break_glass_claims, summarize_succession, eligible_editor_person_ids, canonical_revocations,
+    summarize_succession, eligible_editor_person_ids, canonical_revocations,
     plan_ownership_transitions,
     has_conflicting_ownership_transfers,
     verify_workspace_ownership_transfer, verify_workspace_revocation,
@@ -28,7 +29,10 @@ pub use authority::{
 pub use catalog::{MeshCatalog, validate_mesh_catalog};
 pub use authorization::{
     WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
-    verify_workspace_grant,
+    verify_workspace_grant, WorkspaceChangeAuthorization, WorkspaceChangeAuthorizationPayload,
+    IncomingWorkspaceChangeAuthorization, WorkspaceWriteAuthorizationSnapshot,
+    WorkspaceDeviceRevocationEvidence, AuthorizedWorkspaceChange,
+    admit_workspace_change_authorization, admit_workspace_change_authorizations,
 };
 pub use automerge::{
     AutomergeSyncEngine, AutomergeSyncFrame, AutomergeSyncResult, DEFAULT_MAX_AUTOMERGE_FRAME_BYTES,

@@ -25,11 +25,12 @@ pub struct MeshCatalog {
     pub succession_votes: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub succession_claims: Option<Vec<Value>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub break_glass_claims: Option<Vec<Value>>,
 }
 
 pub fn validate_mesh_catalog(raw: Value) -> Result<MeshCatalog, String> {
+    if raw.get("breakGlassClaims").is_some() {
+        return Err("Break-glass authority is no longer supported".to_string());
+    }
     let encoded = serde_json::to_vec(&raw).map_err(|_| "Invalid mesh catalog".to_string())?;
     if encoded.len() > MAX_CATALOG_BYTES { return Err("Mesh catalog exceeds size limit".to_string()); }
     let catalog: MeshCatalog = serde_json::from_value(raw).map_err(|_| "Invalid mesh catalog".to_string())?;
@@ -41,7 +42,6 @@ pub fn validate_mesh_catalog(raw: Value) -> Result<MeshCatalog, String> {
         || catalog.ownership_transfers.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
         || catalog.succession_votes.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
         || catalog.succession_claims.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
-        || catalog.break_glass_claims.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
     {
         return Err("Invalid mesh catalog".to_string());
     }
@@ -57,7 +57,7 @@ mod tests {
     fn validates_the_catalog_boundary_and_omits_absent_optional_fields() {
         let catalog = validate_mesh_catalog(json!({ "version": 1, "peers": [], "revocations": [] })).unwrap();
         let encoded = serde_json::to_value(catalog).unwrap();
-        assert!(encoded.get("breakGlassClaims").is_none());
+        assert!(encoded.get("ownershipTransfers").is_none());
     }
 
     #[test]
@@ -65,4 +65,9 @@ mod tests {
         let catalog = json!({ "version": 1, "peers": vec![{}; 513], "revocations": [] });
         assert!(validate_mesh_catalog(catalog).is_err());
     }
+    #[test]
+    fn rejects_removed_break_glass_evidence() {
+        assert!(validate_mesh_catalog(json!({ "version": 1, "peers": [], "revocations": [], "breakGlassClaims": [{}] })).is_err());
+    }
+
 }

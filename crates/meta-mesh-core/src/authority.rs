@@ -258,30 +258,6 @@ pub fn plan_ownership_transitions(
     }
 }
 
-/// A recovery claim may only advance a specific owner/epoch to one successor.
-/// Keep this decision in the protocol core so replicas cannot disagree over a
-/// catalog merely because their host adapter observed records in a different order.
-pub fn has_conflicting_break_glass_claims(records: &[Value]) -> bool {
-    let mut successors: HashMap<(u64, &str), HashSet<&str>> = HashMap::new();
-    for record in records {
-        let Some(payload) = record.get("payload") else { continue; };
-        let Some(epoch) = payload.get("epoch").and_then(Value::as_u64) else { continue; };
-        let Some(from_owner) = payload
-            .get("fromOwnerPersonId")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-        else { continue; };
-        let Some(to_owner) = payload
-            .get("toOwnerPersonId")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-        else { continue; };
-        if epoch > 9_007_199_254_740_991 { continue; }
-        successors.entry((epoch, from_owner)).or_default().insert(to_owner);
-    }
-    successors.values().any(|values| values.len() > 1)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuccessionSummary {
@@ -308,7 +284,6 @@ pub fn summarize_succession(
     claims: &[Value],
     votes: &[Value],
     transfers: &[Value],
-    break_glass_claims: &[Value],
     revocations: &[Value],
     epoch: u64,
 ) -> Result<Option<SuccessionSummary>, String> {
@@ -316,7 +291,6 @@ pub fn summarize_succession(
         .filter_map(|record| record.pointer("/payload/personId").and_then(Value::as_str))
         .collect();
     let conflicted = has_conflicting_ownership_transfers(transfers)
-        || has_conflicting_break_glass_claims(break_glass_claims)
         || claims.iter()
             .filter(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch))
             .filter_map(|claim| claim.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
@@ -467,6 +441,7 @@ pub fn verify_workspace_ownership_transfer(
     }
     Ok(())
 }
+
 
 pub fn verify_workspace_succession_policy(
     policy: &WorkspaceSuccessionPolicy,
@@ -740,22 +715,7 @@ fn bounded(value: &impl Serialize, maximum: usize, message: &str) -> Result<(), 
 mod tests {
     use serde_json::json;
 
-    use super::{has_conflicting_break_glass_claims, summarize_succession};
-
-    #[test]
-    fn break_glass_conflicts_are_scoped_to_the_owner_and_epoch() {
-        let same_transition = vec![
-            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "alice", "epoch": 2 } }),
-            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "bob", "epoch": 2 } }),
-        ];
-        assert!(has_conflicting_break_glass_claims(&same_transition));
-
-        let independent_transitions = vec![
-            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "alice", "epoch": 2 } }),
-            json!({ "payload": { "fromOwnerPersonId": "owner", "toOwnerPersonId": "bob", "epoch": 3 } }),
-        ];
-        assert!(!has_conflicting_break_glass_claims(&independent_transitions));
-    }
+    use super::summarize_succession;
 
     #[test]
     fn succession_summary_excludes_revoked_editors_and_reports_quorum() {
@@ -764,7 +724,7 @@ mod tests {
         }});
         let votes = vec![json!({ "signed": { "payload": { "voterPersonId": "alice", "candidatePersonId": "bob" } } })];
         let revocations = vec![json!({ "payload": { "personId": "carol" } })];
-        let summary = summarize_succession(Some(&policy), &[], &votes, &[], &[], &revocations, 4).unwrap().unwrap();
+        let summary = summarize_succession(Some(&policy), &[], &votes, &[], &revocations, 4).unwrap().unwrap();
         assert_eq!(summary.eligible_editor_person_ids, vec!["alice", "bob"]);
         assert_eq!(summary.quorum, 2);
         assert_eq!(summary.votes.len(), 1);

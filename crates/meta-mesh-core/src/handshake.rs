@@ -23,8 +23,6 @@ pub struct MeshHandshake {
     pub departures: Vec<Value>,
     #[serde(default)]
     pub ownership_transfers: Vec<Value>,
-    #[serde(default)]
-    pub break_glass_claims: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub succession_policy: Option<Value>,
     #[serde(default)]
@@ -37,6 +35,9 @@ pub struct MeshHandshake {
 }
 
 pub fn validate_mesh_handshake(raw: Value, expected_workspace_id: Option<&str>) -> Result<MeshHandshake, String> {
+    if raw.get("breakGlassClaims").is_some() {
+        return Err("Break-glass authority is no longer supported".to_string());
+    }
     let encoded = serde_json::to_vec(&raw).map_err(|_| "Invalid mesh handshake".to_string())?;
     if encoded.len() > MAX_HANDSHAKE_BYTES { return Err("Mesh handshake exceeds size limit".to_string()); }
     let handshake: MeshHandshake = serde_json::from_value(raw).map_err(|_| "Invalid mesh handshake".to_string())?;
@@ -47,7 +48,6 @@ pub fn validate_mesh_handshake(raw: Value, expected_workspace_id: Option<&str>) 
         || handshake.device_revocations.len() > MAX_PEERS
         || handshake.departures.len() > MAX_PEERS
         || handshake.ownership_transfers.len() > MAX_AUTHORITY_RECORDS
-        || handshake.break_glass_claims.len() > MAX_AUTHORITY_RECORDS
         || handshake.succession_votes.len() > MAX_AUTHORITY_RECORDS
         || handshake.succession_claims.len() > MAX_AUTHORITY_RECORDS
         || handshake.owner_workspace_ids.as_ref().is_some_and(|ids| ids.len() > MAX_PEERS || ids.iter().any(|id| id.is_empty()))
@@ -83,4 +83,9 @@ mod tests {
         let handshake = json!({ "workspaceId": "other", "peer": {}, "capabilities": [] });
         assert!(validate_mesh_handshake(handshake, Some("workspace")).is_err());
     }
+    #[test]
+    fn rejects_removed_break_glass_evidence() {
+        assert!(validate_mesh_handshake(json!({ "workspaceId": "workspace", "peer": {}, "capabilities": ["iroh-gossip-v1"], "breakGlassClaims": [{}] }), Some("workspace")).is_err());
+    }
+
 }

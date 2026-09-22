@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { BrowserMeshHandshake } from "./browserHandshake"
 
-const request = { workspaceId: "workspace", peer: {} as never, revocations: [], ownershipTransfers: [], breakGlassClaims: [], successionVotes: [], successionClaims: [], capabilities: ["heartbeat-v1"] }
+const request = { workspaceId: "workspace", peer: {} as never, revocations: [], ownershipTransfers: [], successionVotes: [], successionClaims: [], capabilities: ["heartbeat-v1"] }
 const response = { ...request, peer: {} as never }
 
 describe("BrowserMeshHandshake", () => {

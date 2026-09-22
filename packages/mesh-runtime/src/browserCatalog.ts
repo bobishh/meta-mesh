@@ -4,7 +4,6 @@ export type BrowserMeshCatalogHost<C extends BrowserMeshCatalogCredential, Catal
   parse(raw: unknown): Catalog
   credential(workspaceId: string): Promise<C | undefined>
   ownership(credential: C, catalog: Catalog): Promise<C>
-  breakGlass(credential: C, catalog: Catalog): Promise<C>
   revocations(credential: C, catalog: Catalog): Promise<void>
   succession(credential: C, catalog: Catalog): Promise<C>
   peers(credential: C, catalog: Catalog): Promise<void>
@@ -21,7 +20,6 @@ export class BrowserMeshCatalog<C extends BrowserMeshCatalogCredential, Catalog,
     let credential = await this.host.credential(workspaceId)
     if (!credential) return
     credential = await this.host.ownership(credential, catalog)
-    credential = await this.host.breakGlass(credential, catalog)
     await this.host.revocations(credential, catalog)
     credential = await this.host.refreshed(workspaceId) ?? credential
     credential = await this.host.succession(credential, catalog)

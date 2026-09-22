@@ -7,7 +7,6 @@ export type BrowserMeshInvitationsHost<C extends BrowserMeshInvitationCredential
   createEnvelope(credential: C, peers: Peer[]): E
   isEnvelope(value: unknown): value is E
   ownerPersonId(envelope: E): string
-  mergeOwnershipProof(credential: C, envelope: E): Promise<C>
   /** Verify an invitation without changing durable credentials. */
   validate?(workspaceId: string, envelope: E, context: Context, grant: Grant | undefined): Promise<void>
   install(workspaceId: string, envelope: E, context: Context, grant: Grant | undefined): Promise<void>
@@ -33,12 +32,9 @@ export class BrowserMeshInvitations<C extends BrowserMeshInvitationCredential, E
   async receive(raw: unknown, workspaceIds: string[], context: Context, grants: Grant[], grantWorkspaceId: (grant: Grant) => string): Promise<void> {
     const entries = await this.prepare(raw, workspaceIds, context, grants, grantWorkspaceId)
     for (const entry of entries) {
-      let existing = await this.host.credential(entry.workspaceId)
+      const existing = await this.host.credential(entry.workspaceId)
       if (existing && existing.ownerPersonId !== this.host.ownerPersonId(entry.envelope)) {
-        existing = await this.host.mergeOwnershipProof(existing, entry.envelope)
-        if (existing.ownerPersonId !== this.host.ownerPersonId(entry.envelope)) {
-          throw new Error("Workspace ownership proof is missing")
-        }
+        throw new Error("Workspace ownership proof is missing")
       }
       await this.host.install(entry.workspaceId, entry.envelope, context, entry.grant)
     }
@@ -56,12 +52,9 @@ export class BrowserMeshInvitations<C extends BrowserMeshInvitationCredential, E
       const envelope = raw.find(item => this.host.isEnvelope(item) && item.workspaceId === workspaceId)
       if (!envelope || !this.host.isEnvelope(envelope)) throw new Error("Invalid mesh invitation")
       const grant = grants.find(grant => grantWorkspaceId(grant) === workspaceId)
-      let existing = await this.host.credential(workspaceId)
+      const existing = await this.host.credential(workspaceId)
       if (existing && existing.ownerPersonId !== this.host.ownerPersonId(envelope)) {
-        // Ownership proof is verified by the host before it can be merged.
-        // Its mutation is deferred until every invitation entry has passed
-        // validation, so a later malformed workspace cannot partially install.
-        if (!this.host.validate) throw new Error("Workspace ownership proof is missing")
+        throw new Error("Workspace ownership proof is missing")
       }
       await this.host.validate?.(workspaceId, envelope, context, grant)
       entries.push({ workspaceId, envelope, grant })

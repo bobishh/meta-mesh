@@ -20,8 +20,6 @@ import {
   createWorkspaceSuccessionClaim,
   verifyWorkspaceSuccessionVote,
   verifyWorkspaceSuccessionClaim,
-  createWorkspaceBreakGlassClaim,
-  verifyWorkspaceBreakGlassClaim,
   type WorkspaceGrant,
 } from "./index"
 
@@ -150,47 +148,6 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       await expect(verifyWorkspaceSuccessionClaim(claim, workspaceId, {
         personId: owner.identity.personId, publicKey: owner.identity.publicKey, certificates: [owner.certificate],
       }, 2, new Set([departed.identity.personId]))).resolves.toEqual(claim)
-    })
-  })
-
-  describe("break-glass ownership recovery", () => {
-    it("Given an owner-signed editor grant, when that editor recovers an orphaned workspace, then peers can verify the new authority epoch", async () => {
-      const owner = await createProfile("Offline owner")
-      const editor = await createProfile("Recovering editor")
-      const grant = await createWorkspaceGrant(owner, workspaceId, editor.identity.personId, "editor")
-      const claim = await createWorkspaceBreakGlassClaim(editor, workspaceId, owner.identity.personId,
-        grant, ["head-before-recovery"], 2)
-
-      await expect(verifyWorkspaceBreakGlassClaim(claim, workspaceId, {
-        personId: owner.identity.personId, publicKey: owner.identity.publicKey, certificates: [owner.certificate],
-      }, 1)).resolves.toEqual(claim)
-    })
-
-    it("Given a visitor grant, when its holder attempts break-glass recovery, then peers reject the claim", async () => {
-      const owner = await createProfile("Offline owner")
-      const visitor = await createProfile("Visitor")
-      const grant = await createWorkspaceGrant(owner, workspaceId, visitor.identity.personId, "visitor")
-      const claim = await createWorkspaceBreakGlassClaim(visitor, workspaceId, owner.identity.personId,
-        grant, ["head-before-recovery"], 2)
-
-      await expect(verifyWorkspaceBreakGlassClaim(claim, workspaceId, {
-        personId: owner.identity.personId, publicKey: owner.identity.publicKey, certificates: [owner.certificate],
-      }, 1)).rejects.toThrow(/editor/i)
-    })
-
-    it("Given an editor grant survived an ownership transfer, when recovery is needed, then the trusted owner history still proves editor status", async () => {
-      const genesis = await createProfile("Genesis owner")
-      const current = await createProfile("Offline current owner")
-      const editor = await createProfile("Recovering editor")
-      const grant = await createWorkspaceGrant(genesis, workspaceId, editor.identity.personId, "editor")
-      const claim = await createWorkspaceBreakGlassClaim(editor, workspaceId, current.identity.personId,
-        grant, ["head-before-recovery"], 3)
-      const currentAuthority = { personId: current.identity.personId, publicKey: current.identity.publicKey,
-        certificates: [current.certificate] }
-
-      await expect(verifyWorkspaceBreakGlassClaim(claim, workspaceId, currentAuthority, 2, [currentAuthority, {
-        personId: genesis.identity.personId, publicKey: genesis.identity.publicKey, certificates: [genesis.certificate],
-      }])).resolves.toEqual(claim)
     })
   })
 

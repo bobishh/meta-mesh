@@ -5,10 +5,15 @@ export type RustStateCore = {
   validateMeshCapabilities(capabilities: unknown): void
   verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
   verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
+  admitWorkspaceChangeAuthorization(authorization: unknown, snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
+    hash: string; role: "owner" | "editor" | "visitor"
+  }>
+  admitWorkspaceChangeAuthorizations(authorizations: unknown[], snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
+    hash: string; role: "owner" | "editor" | "visitor"
+  }>
   hasConflictingOwnershipTransfers(records: unknown): boolean
   planOwnershipTransitions(records: unknown, initialOwnerPersonId: string, initialEpoch: number): { records: unknown[], conflicted: boolean }
-  hasConflictingBreakGlassClaims(records: unknown): boolean
-  summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, breakGlassClaims: unknown, revocations: unknown, epoch: number): unknown
+  summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, revocations: unknown, epoch: number): unknown
   eligibleEditorPersonIds(peers: unknown): string[]
   canonicalRevocations(records: unknown): unknown
   verifyWorkspaceDeparture(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown

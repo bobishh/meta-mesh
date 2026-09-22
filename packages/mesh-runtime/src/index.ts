@@ -2,7 +2,6 @@ import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-repl
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
-export { mergeBreakGlassClaims, type BreakGlassHost } from "./breakGlass"
 export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
@@ -17,7 +16,6 @@ export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type Brow
 export { BrowserMeshAuthority, BrowserMeshRecovery, BrowserMeshSuccession, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile, type BrowserMeshRecoveryGrant, type BrowserMeshRecoveryHost, type BrowserMeshRecoveryPolicy, type BrowserMeshRecoveryVote, type BrowserMeshSuccessionHost } from "./browserAuthority"
 export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
 export { BrowserMeshOwnershipTransfer, type BrowserMeshTransferCredential, type BrowserMeshTransferHost, type BrowserMeshTransferPeer, type BrowserMeshTransferProfile, type BrowserMeshTransferRecord } from "./browserOwnership"
-export { BrowserMeshBreakGlass, type BrowserMeshBreakGlassHost } from "./browserBreakGlass"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 

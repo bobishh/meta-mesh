@@ -4,7 +4,8 @@ use meta_mesh_core::{
     ReplicaSet, RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, WorkspaceAuthority,
     WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
     WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
-    VerifyWorkspaceMemberOptions,
+    VerifyWorkspaceMemberOptions, IncomingWorkspaceChangeAuthorization,
+    WorkspaceWriteAuthorizationSnapshot,
 };
 use wasm_bindgen::prelude::*;
 
@@ -78,6 +79,44 @@ impl WasmStateCore {
         to_value(&role)
     }
 
+    #[wasm_bindgen(js_name = admitWorkspaceChangeAuthorization)]
+    pub fn admit_workspace_change_authorization(
+        authorization: JsValue,
+        snapshot: JsValue,
+        needed_hashes: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let authorization: IncomingWorkspaceChangeAuthorization = from_value(authorization)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let needed_hashes: Vec<String> = from_value(needed_hashes)?;
+        let admitted = meta_mesh_core::admit_workspace_change_authorization(
+            &authorization,
+            &snapshot,
+            &needed_hashes,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        ).map_err(js_error)?;
+        to_value(&admitted)
+    }
+
+    #[wasm_bindgen(js_name = admitWorkspaceChangeAuthorizations)]
+    pub fn admit_workspace_change_authorizations(
+        authorization: JsValue,
+        snapshot: JsValue,
+        needed_hashes: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let authorization: Vec<IncomingWorkspaceChangeAuthorization> = from_value(authorization)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let needed_hashes: Vec<String> = from_value(needed_hashes)?;
+        let admitted = meta_mesh_core::admit_workspace_change_authorizations(
+            &authorization,
+            &snapshot,
+            &needed_hashes,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        ).map_err(js_error)?;
+        to_value(&admitted)
+    }
+
     #[wasm_bindgen(js_name = hasConflictingOwnershipTransfers)]
     pub fn has_conflicting_ownership_transfers(records: JsValue) -> Result<bool, JsValue> {
         let records: Vec<serde_json::Value> = from_value(records)?;
@@ -100,19 +139,12 @@ impl WasmStateCore {
         ))
     }
 
-    #[wasm_bindgen(js_name = hasConflictingBreakGlassClaims)]
-    pub fn has_conflicting_break_glass_claims(records: JsValue) -> Result<bool, JsValue> {
-        let records: Vec<serde_json::Value> = from_value(records)?;
-        Ok(meta_mesh_core::has_conflicting_break_glass_claims(&records))
-    }
-
     #[wasm_bindgen(js_name = summarizeSuccession)]
     pub fn summarize_succession(
         policy: JsValue,
         claims: JsValue,
         votes: JsValue,
         transfers: JsValue,
-        break_glass_claims: JsValue,
         revocations: JsValue,
         epoch: f64,
     ) -> Result<JsValue, JsValue> {
@@ -120,10 +152,9 @@ impl WasmStateCore {
         let claims: Vec<serde_json::Value> = from_value(claims)?;
         let votes: Vec<serde_json::Value> = from_value(votes)?;
         let transfers: Vec<serde_json::Value> = from_value(transfers)?;
-        let break_glass_claims: Vec<serde_json::Value> = from_value(break_glass_claims)?;
         let revocations: Vec<serde_json::Value> = from_value(revocations)?;
         to_value(&meta_mesh_core::summarize_succession(policy.as_ref(), &claims, &votes, &transfers,
-            &break_glass_claims, &revocations, unsigned_integer(epoch, "Invalid succession epoch")?).map_err(js_error)?)
+            &revocations, unsigned_integer(epoch, "Invalid succession epoch")?).map_err(js_error)?)
     }
 
     #[wasm_bindgen(js_name = eligibleEditorPersonIds)]
