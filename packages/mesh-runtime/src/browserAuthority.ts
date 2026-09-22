@@ -24,6 +24,32 @@ export type BrowserMeshSuccessionHost<C extends BrowserMeshAuthorityCredential, 
   publishAll(): Promise<void>
 }
 
+export type BrowserMeshRecoveryGrant = { payload: { personId: string; role: string } }
+export type BrowserMeshRecoveryPolicy = { payload: { successorPersonId?: string | null; eligibleEditorPersonIds: string[] } }
+export type BrowserMeshRecoveryVote = { signed: { payload: { voterPersonId: string; candidatePersonId: string } } }
+
+export type BrowserMeshRecoveryHost<
+  C extends BrowserMeshAuthorityCredential,
+  P extends BrowserMeshAuthorityProfile,
+  Policy extends BrowserMeshRecoveryPolicy,
+  Grant extends BrowserMeshRecoveryGrant,
+  Vote extends BrowserMeshRecoveryVote,
+  Claim,
+  Certificate,
+> = {
+  profile(): Promise<P>
+  credential(workspaceId: string): Promise<C | undefined>
+  policy(credential: C): Policy | undefined
+  grant(credential: C): Grant | undefined
+  votes(credential: C): Vote[]
+  certificates(profile: P): Promise<Certificate[]>
+  createVote(profile: P, policy: Policy, candidatePersonId: string, grant: Grant, certificates: Certificate[]): Promise<Vote>
+  createClaim(profile: P, credential: C, policy: Policy, votes: Vote[], grant: Grant, certificates: Certificate[]): Promise<Claim>
+  merge(credential: C, policy: Policy, votes: Vote[], claims: Claim[]): Promise<void>
+  notify(): Promise<void>
+  publishAll(): Promise<void>
+}
+
 /** Shared authority workflow; hosts provide local signing, storage and active stream effects. */
 export class BrowserMeshAuthority<C extends BrowserMeshAuthorityCredential, P extends BrowserMeshAuthorityProfile, R> {
   constructor(private readonly host: BrowserMeshAuthorityHost<C, P, R>) {}
@@ -58,6 +84,62 @@ export class BrowserMeshSuccession<C extends BrowserMeshAuthorityCredential, P e
     const eligible = await this.host.eligibleEditors(workspaceId)
     if (personId && !eligible.includes(personId)) throw new Error("Successor must be an editor")
     await this.host.setPolicy(credential, await this.host.createPolicy(profile, workspaceId, personId, eligible, this.host.epoch(credential)))
+    await this.host.notify()
+    await this.host.publishAll()
+  }
+}
+
+/** Shared editor-vote and ownership-claim workflow. Signing and document heads stay behind host callbacks. */
+export class BrowserMeshRecovery<
+  C extends BrowserMeshAuthorityCredential,
+  P extends BrowserMeshAuthorityProfile,
+  Policy extends BrowserMeshRecoveryPolicy,
+  Grant extends BrowserMeshRecoveryGrant,
+  Vote extends BrowserMeshRecoveryVote,
+  Claim,
+  Certificate,
+> {
+  constructor(private readonly host: BrowserMeshRecoveryHost<C, P, Policy, Grant, Vote, Claim, Certificate>) {}
+
+  async vote(workspaceId: string, candidatePersonId: string): Promise<void> {
+    const profile = await this.host.profile()
+    const credential = await this.host.credential(workspaceId)
+    if (!credential) throw new Error("Workspace membership is unavailable")
+    const policy = this.host.policy(credential)
+    if (!policy) throw new Error("The owner has not enabled ownership recovery")
+    const grant = this.host.grant(credential)
+    if (!grant || grant.payload.role !== "editor" ||
+      !policy.payload.eligibleEditorPersonIds.includes(profile.personId)) {
+      throw new Error("You are not an eligible editor in the current recovery policy")
+    }
+    if (policy.payload.successorPersonId) throw new Error("This workspace uses a named successor, not editor voting")
+    const votes = this.host.votes(credential)
+    const existing = votes.find(vote => vote.signed.payload.voterPersonId === profile.personId)
+    if (existing?.signed.payload.candidatePersonId === candidatePersonId) return
+    if (existing) throw new Error("Your vote is already recorded for this policy")
+    const vote = await this.host.createVote(profile, policy, candidatePersonId, grant,
+      await this.host.certificates(profile))
+    await this.host.merge(credential, policy, [vote], [])
+    await this.finish()
+  }
+
+  async claim(workspaceId: string): Promise<void> {
+    const profile = await this.host.profile()
+    const credential = await this.host.credential(workspaceId)
+    if (!credential) throw new Error("Only an eligible editor can claim ownership")
+    const policy = this.host.policy(credential)
+    const grant = this.host.grant(credential)
+    if (!policy || !grant || grant.payload.role !== "editor" || grant.payload.personId !== profile.personId) {
+      throw new Error("Only an eligible editor can claim ownership")
+    }
+    const votes = this.host.votes(credential)
+    const claim = await this.host.createClaim(profile, credential, policy, votes, grant,
+      await this.host.certificates(profile))
+    await this.host.merge(credential, policy, votes, [claim])
+    await this.finish()
+  }
+
+  private async finish(): Promise<void> {
     await this.host.notify()
     await this.host.publishAll()
   }
