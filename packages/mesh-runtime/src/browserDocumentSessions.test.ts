@@ -31,7 +31,8 @@ function fixture() {
 const base = {
   connection: {}, credential: { secret: "secret" }, workspaceId: "workspace", deviceId: "remote-device",
   instanceId: "instance-a", profile: { deviceId: "local-device", personId: "same-person" }, connectionId: "out-1",
-  remotePersonId: "same-person", ownerWorkspaceSupported: true, remoteEndpoint: "endpoint-a",
+  remotePersonId: "same-person", ownerWorkspaceSupported: true,
+  ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer" as const, remoteEndpoint: "endpoint-a",
 }
 
 describe("BrowserMeshDocumentSessions", () => {
@@ -75,9 +76,10 @@ describe("BrowserMeshDocumentSessions", () => {
     expect(host.gossipPacket).toHaveBeenCalledWith("workspace", "endpoint-a", new Uint8Array([2]))
   })
 
-  it("does not expose owner or gossip handlers without negotiated support", () => {
+  it("does not expose owner or gossip handlers without the v2 owner-offer capability", () => {
     const { runtime, host } = fixture()
-    runtime.create({ ...base, incrementalSupported: true, ownerWorkspaceSupported: false, remoteEndpoint: "" })
+    runtime.create({ ...base, incrementalSupported: true, ownerWorkspaceSupported: true,
+      ownerWorkspaceOfferFrame: undefined, remoteEndpoint: "" })
     const input = host.incremental.mock.calls[0]![0]
     expect(input.onOwnerWorkspaceOffer).toBeUndefined()
     expect(input.onGossipPacket).toBeUndefined()

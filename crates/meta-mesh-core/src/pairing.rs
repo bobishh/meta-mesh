@@ -22,7 +22,7 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-handoff-confirmed",
     "mesh-automerge-sync",
     "mesh-control-sync",
-    "mesh-gossip",
+    "mesh-owner-workspace-offer",
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
@@ -138,6 +138,13 @@ mod tests {
             PairingCodec::decode(&frame, "mesh-iroh-gossip", "workspace-secret").unwrap(),
             packet
         );
+    }
+
+    #[test]
+    fn owner_workspace_offer_uses_the_distinct_frame_name() {
+        let frame = PairingCodec::encode("mesh-owner-workspace-offer", "workspace-secret", &[1]).unwrap();
+        assert_eq!(PairingCodec::inspect(&frame).unwrap().frame_type, "mesh-owner-workspace-offer");
+        assert_eq!(PairingCodec::encode("mesh-gossip", "workspace-secret", &[]).unwrap_err(), "Pairing frame invalid");
     }
 
     #[test]

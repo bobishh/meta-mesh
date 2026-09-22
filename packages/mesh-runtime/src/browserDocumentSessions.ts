@@ -1,3 +1,5 @@
+import type { MeshHandshakeFeatures } from "./handshake"
+
 export type BrowserDocumentSyncEngine = {
   reset(documentId: string, remoteDeviceId: string): void
 }
@@ -13,6 +15,7 @@ export type BrowserDocumentSessionInput<C, Credential, Profile> = {
   connectionId: string
   remotePersonId: string
   ownerWorkspaceSupported: boolean
+  ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
   blobTransferSupported?: boolean
   remoteEndpoint: string
 }
@@ -65,7 +68,7 @@ export class BrowserMeshDocumentSessions<C, S, Credential, Profile, Engine exten
     const localDeviceId = this.host.localDeviceId(input.profile)
     const engine = this.engine(input.workspaceId, input.deviceId, input.instanceId, localDeviceId)
     const stage = `Workspace ${short(input.workspaceId)} from ${short(input.deviceId)}`
-    const onOwnerWorkspaceOffer = input.ownerWorkspaceSupported && input.remotePersonId === this.host.localPersonId(input.profile)
+    const onOwnerWorkspaceOffer = input.ownerWorkspaceOfferFrame && input.remotePersonId === this.host.localPersonId(input.profile)
       ? (bytes: Uint8Array) => this.host.ownerWorkspaceOffer(bytes, input.remotePersonId)
       : undefined
     const session = this.host.incremental({

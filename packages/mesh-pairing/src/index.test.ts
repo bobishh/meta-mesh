@@ -78,7 +78,7 @@ describe("pairing protocol", () => {
   it.each([
     "mesh-automerge-sync",
     "mesh-control-sync",
-    "mesh-gossip",
+    "mesh-owner-workspace-offer",
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",

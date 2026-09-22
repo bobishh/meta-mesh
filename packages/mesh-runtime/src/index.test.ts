@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { createMeshRuntime, MeshHandshakeCodec } from "./index"
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 
 describe("Rust mesh runtime", () => {
+  it("advertises only the renamed owner workspace offer capability", () => {
+    expect(meshRustRuntime().state.meshCapabilities()).toContain("owner-workspace-v2")
+    expect(meshRustRuntime().state.meshCapabilities()).not.toContain("owner-workspace-v1")
+  })
+
   it("keeps sibling instances and rejects a stale session cleanup", () => {
     const runtime = createMeshRuntime()
     runtime.start()
@@ -36,7 +42,18 @@ describe("MeshHandshakeCodec", () => {
     const codec = new MeshHandshakeCodec()
     expect(codec.features(["heartbeat-v1", "automerge-sync-v1", "blob-transfer-v1"])).toEqual({
       heartbeatSupported: true, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
+      ownerWorkspaceOfferFrame: undefined,
       blobTransferSupported: true,
+    })
+  })
+
+  it("uses owner workspace offers only with the renamed v2 protocol capability", () => {
+    const codec = new MeshHandshakeCodec()
+    expect(codec.features(["owner-workspace-v1"])).toMatchObject({
+      ownerWorkspaceSupported: false, ownerWorkspaceOfferFrame: undefined,
+    })
+    expect(codec.features(["owner-workspace-v2"])).toMatchObject({
+      ownerWorkspaceSupported: true, ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer",
     })
   })
 })

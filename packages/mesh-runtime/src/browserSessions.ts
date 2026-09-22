@@ -1,4 +1,5 @@
 import { startMeshHeartbeat, type MeshConnection } from "@meta-uber/mesh-transport"
+import type { MeshHandshakeFeatures } from "./handshake"
 
 export type BrowserMeshSession = {
   publish(): Promise<void>
@@ -18,6 +19,8 @@ export type BrowserMeshSessionEntry<C extends MeshConnection, S extends BrowserM
   connection: C
   session: S
   ownershipReceiptSupported?: boolean
+  remotePersonId: string
+  ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
   blobTransferSupported?: boolean
   runtimeGeneration?: number
   evict(cause: string): Promise<void>
@@ -49,6 +52,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
     connectionId: string
     remotePersonId: string
     ownerWorkspaceSupported: boolean
+    ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
     blobTransferSupported: boolean
     remoteEndpoint: string
   }): { session: S; reset?(): void }
@@ -86,6 +90,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     ownershipReceiptSupported?: boolean
     remotePersonId?: string
     ownerWorkspaceSupported?: boolean
+    ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
     blobTransferSupported?: boolean
     remoteEndpoint?: string
   }): Promise<boolean> {
@@ -109,6 +114,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       connection: input.connection, credential, workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId,
       profile, incrementalSupported: input.incrementalSupported ?? false, connectionId: input.connectionId,
       remotePersonId: input.remotePersonId ?? "", ownerWorkspaceSupported: input.ownerWorkspaceSupported ?? false,
+      ownerWorkspaceOfferFrame: input.ownerWorkspaceOfferFrame,
       blobTransferSupported: input.blobTransferSupported ?? false,
       remoteEndpoint: input.remoteEndpoint ?? "",
     })
@@ -118,6 +124,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId, endpoint: input.remoteEndpoint ?? "",
       remoteIssuedAt: input.remoteIssuedAt, remoteRouteSequence: input.remoteRouteSequence, direction: input.direction,
       connection: input.connection, session: created.session, ownershipReceiptSupported: input.ownershipReceiptSupported,
+      remotePersonId: input.remotePersonId ?? "", ownerWorkspaceOfferFrame: input.ownerWorkspaceOfferFrame,
       blobTransferSupported: input.blobTransferSupported,
       runtimeGeneration: admission.generation,
       evict: async cause => {
@@ -133,7 +140,8 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
           created.reset?.()
           await this.host.currentRemoved(entry)
         }
-        this.host.trace("session.closed", { connectionId: input.connectionId, peerId: short(input.deviceId), wasCurrent, cause })
+        this.host.trace("session.closed", { connectionId: input.connectionId, peerId: short(input.deviceId),
+          workspaceId: short(input.workspaceId), instanceId: short(input.instanceId), wasCurrent, cause })
         await Promise.allSettled([created.session.close(), input.connection.close()])
       },
     }
@@ -159,7 +167,8 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     void created.session.done.catch(error => {
       if (evicted) return
       this.host.networkFailure(key, error)
-      this.host.trace("session.receive.failed", { connectionId: input.connectionId, peerId: short(input.deviceId), reason: message(error) }, "warn")
+      this.host.trace("session.receive.failed", { connectionId: input.connectionId, peerId: short(input.deviceId),
+        workspaceId: short(input.workspaceId), instanceId: short(input.instanceId), reason: message(error) }, "warn")
       this.host.protocolFailure(`Receive ${short(input.deviceId, 6)}`, error)
     }).finally(() => entry.evict("receive loop ended"))
     await this.host.notify()
