@@ -14,6 +14,7 @@ export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./
 export { BrowserMeshCredentials, type BrowserMeshCredentialsHost, type BrowserMeshOwnerCredential, type BrowserMeshOwnerProfile } from "./browserCredentials"
 export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type BrowserMeshInvitationEnvelope, type BrowserMeshInvitationsHost } from "./browserInvitations"
 export { BrowserMeshAuthority, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile } from "./browserAuthority"
+export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
