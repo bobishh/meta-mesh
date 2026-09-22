@@ -22,11 +22,15 @@ pub struct WorkspaceGrantPayload {
     pub workspace_id: String,
     pub person_id: String,
     pub role: WorkspaceRole,
-    #[serde(default = "default_access_epoch")]
-    pub access_epoch: u64,
+    // Absence is part of the signed legacy JSON. Do not materialize its
+    // effective value before signature verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_epoch: Option<u64>,
 }
 
-fn default_access_epoch() -> u64 { 1 }
+impl WorkspaceGrantPayload {
+    pub fn effective_access_epoch(&self) -> u64 { self.access_epoch.unwrap_or(1) }
+}
 
 pub type WorkspaceGrant = SignedEnvelope<WorkspaceGrantPayload>;
 
@@ -65,7 +69,7 @@ pub fn verify_workspace_grant(
         || payload.workspace_id != workspace_id
         || payload.person_id != member_person_id
         || payload.grant_id.is_empty()
-        || payload.access_epoch == 0
+        || payload.effective_access_epoch() == 0
     {
         return Err("Invalid workspace grant".to_string());
     }
@@ -154,7 +158,7 @@ mod tests {
             workspace_id: "workspace-1".to_string(),
             person_id: "member-1".to_string(),
             role: WorkspaceRole::Editor,
-            access_epoch: 1,
+            access_epoch: Some(1),
         };
 
         let root_grant = signed_grant(&owner_seed, &owner_person_id, &payload);
@@ -186,5 +190,23 @@ mod tests {
             verify_workspace_grant(&device_grant, "workspace-other", "member-1", &owner, &[])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn legacy_grant_without_access_epoch_keeps_its_signed_json_shape() {
+        let seed = [51; 32];
+        let public_key = public_key_from_seed(&seed).unwrap();
+        let person_id = public_key_id(&public_key).unwrap();
+        let payload = WorkspaceGrantPayload {
+            kind: "workspace-grant".into(), version: 1, grant_id: "legacy".into(), workspace_id: "workspace".into(),
+            person_id: "member".into(), role: WorkspaceRole::Editor, access_epoch: None,
+        };
+        let grant = signed_grant(&seed, &person_id, &payload);
+        let raw = serde_json::to_value(&grant).unwrap();
+        assert!(raw["payload"].get("accessEpoch").is_none());
+        let decoded: WorkspaceGrant = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded.payload.effective_access_epoch(), 1);
+        assert_eq!(serde_json::to_value(&decoded).unwrap()["payload"].get("accessEpoch"), None);
+        assert_eq!(verify_workspace_grant(&decoded, "workspace", "member", &PublicIdentity { person_id, public_key, display_name: "Owner".into() }, &[]).unwrap(), WorkspaceRole::Editor);
     }
 }
