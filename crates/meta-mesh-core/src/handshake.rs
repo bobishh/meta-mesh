@@ -34,9 +34,12 @@ pub struct MeshHandshake {
     pub capabilities: Vec<String>,
 }
 
-pub fn validate_mesh_handshake(raw: Value, expected_workspace_id: Option<&str>) -> Result<MeshHandshake, String> {
-    if raw.get("breakGlassClaims").is_some() {
-        return Err("Break-glass authority is no longer supported".to_string());
+pub fn validate_mesh_handshake(mut raw: Value, expected_workspace_id: Option<&str>) -> Result<MeshHandshake, String> {
+    if let Some(claims) = raw.get("breakGlassClaims") {
+        if !matches!(claims, Value::Array(items) if items.is_empty()) {
+            return Err("Break-glass authority is no longer supported".to_string());
+        }
+        raw.as_object_mut().expect("field belongs to an object").remove("breakGlassClaims");
     }
     let encoded = serde_json::to_vec(&raw).map_err(|_| "Invalid mesh handshake".to_string())?;
     if encoded.len() > MAX_HANDSHAKE_BYTES { return Err("Mesh handshake exceeds size limit".to_string()); }
@@ -76,6 +79,17 @@ mod tests {
         let round_trip = serde_json::to_value(validated).unwrap();
         assert!(round_trip.get("successionPolicy").is_none());
         assert!(round_trip.get("ownerWorkspaceIds").is_none());
+    }
+
+    #[test]
+    fn ignores_an_empty_obsolete_claim_list_but_rejects_authority_evidence() {
+        let base = json!({ "workspaceId": "workspace", "peer": {}, "capabilities": ["iroh-gossip-v1"] });
+        let mut empty = base.clone();
+        empty["breakGlassClaims"] = json!([]);
+        assert!(validate_mesh_handshake(empty, Some("workspace")).is_ok());
+        let mut occupied = base;
+        occupied["breakGlassClaims"] = json!([{}]);
+        assert!(validate_mesh_handshake(occupied, Some("workspace")).is_err());
     }
 
     #[test]

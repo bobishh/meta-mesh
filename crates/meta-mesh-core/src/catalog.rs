@@ -27,9 +27,12 @@ pub struct MeshCatalog {
     pub succession_claims: Option<Vec<Value>>,
 }
 
-pub fn validate_mesh_catalog(raw: Value) -> Result<MeshCatalog, String> {
-    if raw.get("breakGlassClaims").is_some() {
-        return Err("Break-glass authority is no longer supported".to_string());
+pub fn validate_mesh_catalog(mut raw: Value) -> Result<MeshCatalog, String> {
+    if let Some(claims) = raw.get("breakGlassClaims") {
+        if !matches!(claims, Value::Array(items) if items.is_empty()) {
+            return Err("Break-glass authority is no longer supported".to_string());
+        }
+        raw.as_object_mut().expect("field belongs to an object").remove("breakGlassClaims");
     }
     let encoded = serde_json::to_vec(&raw).map_err(|_| "Invalid mesh catalog".to_string())?;
     if encoded.len() > MAX_CATALOG_BYTES { return Err("Mesh catalog exceeds size limit".to_string()); }
@@ -58,6 +61,17 @@ mod tests {
         let catalog = validate_mesh_catalog(json!({ "version": 1, "peers": [], "revocations": [] })).unwrap();
         let encoded = serde_json::to_value(catalog).unwrap();
         assert!(encoded.get("ownershipTransfers").is_none());
+    }
+
+    #[test]
+    fn ignores_an_empty_obsolete_claim_list_but_rejects_authority_evidence() {
+        let base = json!({ "version": 1, "peers": [], "revocations": [] });
+        let mut empty = base.clone();
+        empty["breakGlassClaims"] = json!([]);
+        assert!(validate_mesh_catalog(empty).is_ok());
+        let mut occupied = base;
+        occupied["breakGlassClaims"] = json!([{}]);
+        assert!(validate_mesh_catalog(occupied).is_err());
     }
 
     #[test]

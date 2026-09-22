@@ -31,7 +31,12 @@ export type MeshHandshakeFeatures = {
 /** Canonical authenticated wire framing for browser, native and mobile hosts. */
 export class MeshHandshakeCodec {
   validate(raw: unknown, workspaceId: string): MeshHandshakePayload {
-    return meshRustRuntime().state.validateMeshHandshake(raw, workspaceId) as MeshHandshakePayload
+    try { return meshRustRuntime().state.validateMeshHandshake(raw, workspaceId) as MeshHandshakePayload }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/Break-glass authority is no longer supported/i.test(message)) throw error
+      throw new Error(`${message}. ${reportedSource(raw, workspaceId)}`)
+    }
   }
 
   capabilities(): string[] { return meshRustRuntime().state.meshCapabilities() }
@@ -75,3 +80,20 @@ export class MeshHandshakeCodec {
 }
 
 function encode(payload: MeshHandshakePayload): Uint8Array { return new TextEncoder().encode(JSON.stringify(payload)) }
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function label(value: unknown, maximum: number): string {
+  return typeof value === "string" ? value.replace(/[\p{Cc}\p{Bidi_Control}]/gu, "").trim().slice(0, maximum) : ""
+}
+
+function reportedSource(raw: unknown, workspaceId: string): string {
+  const payload = object(object(object(raw)?.peer)?.advertisement)?.payload
+  const peer = object(payload)
+  const name = label(peer?.deviceName, 80)
+  const id = label(peer?.deviceId, 64)
+  const device = name ? `"${name}"${id ? ` (${id.slice(0, 10)})` : ""}` : id || "unknown"
+  return `Reported device (unverified): ${device}; workspace: ${workspaceId}`
+}
