@@ -64,6 +64,8 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
   currentRemoved(entry: BrowserMeshSessionEntry<C, S>): Promise<void>
   notify(): Promise<void>
   publishRecovered(key: string, entry: BrowserMeshSessionEntry<C, S>): Promise<void>
+  /** A completed handshake alone is not proof that the stream survived. */
+  stableSession?(key: string, entry: BrowserMeshSessionEntry<C, S>): void
   protocolFailure(stage: string, error: unknown): void
   networkFailure(peerKey: string, error: unknown): void
 }
@@ -120,6 +122,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     })
     let evicted = false
     let stopHeartbeat: (() => void) | undefined
+    let stableTimer: ReturnType<typeof setTimeout> | undefined
     const entry: BrowserMeshSessionEntry<C, S> = {
       workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId, endpoint: input.remoteEndpoint ?? "",
       remoteIssuedAt: input.remoteIssuedAt, remoteRouteSequence: input.remoteRouteSequence, direction: input.direction,
@@ -131,6 +134,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
         if (evicted) return
         evicted = true
         stopHeartbeat?.()
+        if (stableTimer) clearTimeout(stableTimer)
         const removed = entry.runtimeGeneration === undefined ? input.connectionId : this.host.runtime().removeSession(
           { workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId }, entry.runtimeGeneration,
         )
@@ -155,6 +159,9 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     this.host.diagnosticCleared()
     void previous?.evict("replaced")
     queueMicrotask(() => { void this.host.publishRecovered(key, entry) })
+    stableTimer = setTimeout(() => {
+      if (!evicted && this.entries.get(key) === entry) this.host.stableSession?.(key, entry)
+    }, 10_000)
     if (input.heartbeatSupported) {
       stopHeartbeat = startMeshHeartbeat(created.session, error => {
         if (evicted) return

@@ -232,10 +232,15 @@ impl MeshRuntimeState {
             .reconnects
             .get(&route_key)
             .map_or(1, |state| state.failures.saturating_add(1));
-        let exponent = failures.saturating_sub(1).min(31);
-        let delay = base_delay_ms
-            .saturating_mul(1_u64 << exponent)
-            .min(maximum_delay_ms);
+        // Short retry steps give an offline browser a responsive recovery path
+        // without allowing a stream that closes immediately to hammer the peer.
+        let multiplier = match failures {
+            1 => 1,
+            2 => 2,
+            3 => 5,
+            _ => 10,
+        };
+        let delay = base_delay_ms.saturating_mul(multiplier).min(maximum_delay_ms);
         let state = ReconnectState {
             failures,
             retry_at_ms: now_ms.saturating_add(delay),
@@ -589,6 +594,21 @@ mod tests {
         );
         assert!(runtime.due_reconnects(299).is_empty());
         assert_eq!(runtime.due_reconnects(300), vec!["route"]);
+    }
+
+    #[test]
+    fn reconnect_uses_the_offline_retry_cadence_and_caps() {
+        let mut runtime = MeshRuntimeState::default();
+        let retries = [
+            runtime.schedule_reconnect("route".into(), 0, 1_000, 10_000).retry_at_ms,
+            runtime.schedule_reconnect("route".into(), 10_000, 1_000, 10_000).retry_at_ms,
+            runtime.schedule_reconnect("route".into(), 20_000, 1_000, 10_000).retry_at_ms,
+            runtime.schedule_reconnect("route".into(), 30_000, 1_000, 10_000).retry_at_ms,
+            runtime.schedule_reconnect("route".into(), 40_000, 1_000, 10_000).retry_at_ms,
+        ];
+        assert_eq!(retries, [1_000, 12_000, 25_000, 40_000, 50_000]);
+        runtime.clear_reconnect("route");
+        assert_eq!(runtime.schedule_reconnect("route".into(), 60_000, 1_000, 10_000).retry_at_ms, 61_000);
     }
 
     #[test]
