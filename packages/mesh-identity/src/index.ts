@@ -161,6 +161,28 @@ async function importEd25519Private(seed: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"])
 }
 
+const ED25519_PKCS8_PREFIX = Uint8Array.from([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+])
+
+/**
+ * Extract the seed only from the exact Ed25519 PKCS#8 representation this
+ * package imports. Keeping this here prevents callers from treating arbitrary
+ * PKCS#8 trailing bytes as an identity root.
+ */
+export async function identitySeedFromPrivateKey(privateKey: CryptoKey, expectedPersonId?: PersonId): Promise<Uint8Array> {
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", privateKey))
+  if (pkcs8.byteLength !== ED25519_PKCS8_PREFIX.byteLength + 32 ||
+    !ED25519_PKCS8_PREFIX.every((byte, index) => pkcs8[index] === byte)) {
+    throw new Error("Identity private key is not an exportable Ed25519 root")
+  }
+  const seed = pkcs8.slice(ED25519_PKCS8_PREFIX.byteLength)
+  if (expectedPersonId && await sha256Base64Url(await getPublicKeyAsync(seed)) !== expectedPersonId) {
+    throw new Error("Identity private key does not match this identity")
+  }
+  return seed
+}
+
 const RECOVERY_KDF_ITERATIONS = 600_000 as const
 
 function recoveryEnvelopeAad(envelope: Omit<IdentityRecoveryEnvelope, "ciphertext">): Uint8Array {
@@ -201,7 +223,7 @@ async function passphraseWrappingKey(passphrase: string, salt: Uint8Array): Prom
   }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
 }
 
-async function sealIdentitySeed(
+export async function sealIdentitySeed(
   identitySeed: Uint8Array,
   personId: PersonId,
   recoveryKey: string,
