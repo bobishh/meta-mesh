@@ -768,4 +768,23 @@ export class BrowserIdentityStore {
     this.profile = profile
     return profile
   }
+
+  /** Updates local presentation metadata without changing the identity keys. */
+  async rename(displayName: string): Promise<LocalProfile> {
+    const clean = displayName.trim()
+    if (!clean || clean.length > 256) throw new Error("Identity name must be between 1 and 256 characters")
+    const current = await this.bootstrap()
+    const defaultDeviceName = `${current.identity.displayName}'s device`
+    const profile: LocalProfile = {
+      ...current,
+      identity: { ...current.identity, displayName: clean },
+      device: {
+        ...current.device,
+        ...(current.device.displayName === defaultDeviceName ? { displayName: `${clean}'s device` } : {}),
+      },
+    }
+    await this.persist(profile, true)
+    this.profile = profile
+    return profile
+  }
 }

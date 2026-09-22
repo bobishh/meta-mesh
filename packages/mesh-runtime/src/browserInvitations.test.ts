@@ -37,4 +37,24 @@ describe("BrowserMeshInvitations", () => {
       .toThrow("Workspace ownership proof is missing")
     expect(installed).toBe(false)
   })
+
+  it("validates every workspace before installing the first credential", async () => {
+    const installed: string[] = []
+    const runtime = new BrowserMeshInvitations<Credential, Envelope, string, string, undefined>({
+      credential: async () => undefined,
+      peers: async () => [],
+      createEnvelope: credential => ({ workspaceId: credential.workspaceId, ownerPersonId: credential.ownerPersonId, peers: [] }),
+      isEnvelope: (value): value is Envelope => typeof value === "object" && value !== null && "workspaceId" in value && "ownerPersonId" in value && "peers" in value,
+      ownerPersonId: envelope => envelope.ownerPersonId,
+      mergeOwnershipProof: async credential => credential,
+      validate: async workspaceId => { if (workspaceId === "second") throw new Error("Invalid grant") },
+      install: async workspaceId => { installed.push(workspaceId) },
+    })
+
+    await expect(runtime.receive([
+      { workspaceId: "first", ownerPersonId: "owner", peers: [] },
+      { workspaceId: "second", ownerPersonId: "owner", peers: [] },
+    ], ["first", "second"], undefined, [], grant => grant)).rejects.toThrow("Invalid grant")
+    expect(installed).toEqual([])
+  })
 })
