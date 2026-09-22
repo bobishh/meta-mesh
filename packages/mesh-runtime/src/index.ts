@@ -15,6 +15,7 @@ export { BrowserMeshCredentials, type BrowserMeshCredentialsHost, type BrowserMe
 export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type BrowserMeshInvitationEnvelope, type BrowserMeshInvitationsHost } from "./browserInvitations"
 export { BrowserMeshAuthority, BrowserMeshRecovery, BrowserMeshSuccession, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile, type BrowserMeshRecoveryGrant, type BrowserMeshRecoveryHost, type BrowserMeshRecoveryPolicy, type BrowserMeshRecoveryVote, type BrowserMeshSuccessionHost } from "./browserAuthority"
 export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
+export { BrowserMeshOwnershipTransfer, type BrowserMeshTransferCredential, type BrowserMeshTransferHost, type BrowserMeshTransferPeer, type BrowserMeshTransferProfile, type BrowserMeshTransferRecord } from "./browserOwnership"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
