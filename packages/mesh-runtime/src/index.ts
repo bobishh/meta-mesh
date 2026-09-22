@@ -16,6 +16,7 @@ export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type Brow
 export { BrowserMeshAuthority, BrowserMeshRecovery, BrowserMeshSuccession, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile, type BrowserMeshRecoveryGrant, type BrowserMeshRecoveryHost, type BrowserMeshRecoveryPolicy, type BrowserMeshRecoveryVote, type BrowserMeshSuccessionHost } from "./browserAuthority"
 export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
 export { BrowserMeshOwnershipTransfer, type BrowserMeshTransferCredential, type BrowserMeshTransferHost, type BrowserMeshTransferPeer, type BrowserMeshTransferProfile, type BrowserMeshTransferRecord } from "./browserOwnership"
+export { BrowserMeshBreakGlass, type BrowserMeshBreakGlassHost } from "./browserBreakGlass"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 
