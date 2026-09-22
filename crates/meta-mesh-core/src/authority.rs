@@ -43,6 +43,7 @@ pub struct WorkspaceRevocationPayload {
     pub owner_person_id: String,
     pub person_id: String,
     pub epoch: u64,
+    pub workspace_heads: Vec<String>,
     pub revoked_at: String,
 }
 
@@ -52,7 +53,7 @@ pub type WorkspaceRevocation = SignedEnvelope<WorkspaceRevocationPayload>;
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDeparturePayload {
     pub kind: String, pub version: u8, pub workspace_id: String, pub person_id: String,
-    pub access_epoch: u64, pub left_at: String,
+    pub access_epoch: u64, pub workspace_heads: Vec<String>, pub left_at: String,
 }
 pub type WorkspaceDeparture = SignedEnvelope<WorkspaceDeparturePayload>;
 
@@ -62,6 +63,7 @@ pub fn verify_workspace_departure(record: &WorkspaceDeparture, workspace_id: &st
     let p = &record.payload;
     if p.kind != "workspace-departure" || p.version != 1 || p.workspace_id != workspace_id
         || p.person_id != authority.person_id || p.access_epoch < 1
+        || !valid_heads(&p.workspace_heads)
         || public_key_id(&authority.public_key)? != authority.person_id || !valid_time(&p.left_at, now_ms)? {
         return Err("Invalid workspace departure".into());
     }
@@ -77,6 +79,7 @@ pub struct WorkspaceDeviceRevocationPayload {
     pub workspace_id: String,
     pub person_id: String,
     pub device_id: String,
+    pub workspace_heads: Vec<String>,
     pub revoked_at: String,
 }
 pub type WorkspaceDeviceRevocation = SignedEnvelope<WorkspaceDeviceRevocationPayload>;
@@ -87,6 +90,7 @@ pub fn verify_workspace_device_revocation(record: &WorkspaceDeviceRevocation, wo
     let p = &record.payload;
     if p.kind != "workspace-device-revocation" || p.version != 1 || p.workspace_id != workspace_id
         || p.person_id.is_empty() || p.device_id.is_empty()
+        || !valid_heads(&p.workspace_heads)
         || (authority.person_id != owner_person_id && authority.person_id != p.person_id)
         || public_key_id(&authority.public_key)? != authority.person_id
         || !valid_time(&p.revoked_at, now_ms)? {
@@ -343,17 +347,20 @@ pub fn eligible_editor_person_ids(peers: &[Value]) -> Vec<String> {
 }
 
 pub fn canonical_revocations(records: &[Value]) -> Vec<Value> {
-    let mut latest: HashMap<&str, (&Value, u64)> = HashMap::new();
+    let mut unique: HashMap<String, Value> = HashMap::new();
     for record in records {
-        let Some(person_id) = record.pointer("/payload/personId").and_then(Value::as_str).filter(|value| !value.is_empty()) else { continue; };
-        let Some(epoch) = record.pointer("/payload/epoch").and_then(Value::as_u64) else { continue; };
-        if latest.get(person_id).is_none_or(|(_, prior_epoch)| epoch > *prior_epoch) {
-            latest.insert(person_id, (record, epoch));
-        }
+        let Some(_) = record.pointer("/payload/personId").and_then(Value::as_str).filter(|value| !value.is_empty()) else { continue; };
+        if record.pointer("/payload/epoch").and_then(Value::as_u64).is_none() { continue; }
+        unique.insert(serde_json::to_string(record).expect("JSON value serializes"), record.clone());
     }
-    let mut result = latest.into_values().map(|(record, _)| record.clone()).collect::<Vec<_>>();
-    result.sort_by(|left, right| left.pointer("/payload/personId").and_then(Value::as_str)
-        .cmp(&right.pointer("/payload/personId").and_then(Value::as_str)));
+    let mut result = unique.into_values().collect::<Vec<_>>();
+    result.sort_by(|left, right| {
+        left.pointer("/payload/personId").and_then(Value::as_str)
+            .cmp(&right.pointer("/payload/personId").and_then(Value::as_str))
+            .then_with(|| left.pointer("/payload/epoch").and_then(Value::as_u64)
+                .cmp(&right.pointer("/payload/epoch").and_then(Value::as_u64)))
+            .then_with(|| serde_json::to_string(left).ok().cmp(&serde_json::to_string(right).ok()))
+    });
     result
 }
 
@@ -372,6 +379,7 @@ pub fn verify_workspace_revocation(
         || payload.person_id.is_empty()
         || payload.person_id == authority.person_id
         || payload.epoch < 2
+        || !valid_heads(&payload.workspace_heads)
         || !valid_time(&payload.revoked_at, now_ms)?
         || public_key_id(&authority.public_key)? != authority.person_id
     {
@@ -743,16 +751,17 @@ mod tests {
     }
 
     #[test]
-    fn canonical_revocations_keep_highest_epoch_per_person() {
+    fn canonical_revocations_preserve_distinct_boundaries_per_person() {
         let records = vec![
             json!({ "payload": { "personId": "bob", "epoch": 2 } }),
             json!({ "payload": { "personId": "alice", "epoch": 4 } }),
             json!({ "payload": { "personId": "bob", "epoch": 3 } }),
         ];
         let canonical = super::canonical_revocations(&records);
-        assert_eq!(canonical.len(), 2);
+        assert_eq!(canonical.len(), 3);
         assert_eq!(canonical[0].pointer("/payload/personId").unwrap(), "alice");
-        assert_eq!(canonical[1].pointer("/payload/epoch").unwrap(), 3);
+        assert_eq!(canonical[1].pointer("/payload/epoch").unwrap(), 2);
+        assert_eq!(canonical[2].pointer("/payload/epoch").unwrap(), 3);
     }
 
     #[test]

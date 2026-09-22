@@ -200,9 +200,7 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
     it("verifies single root device certificate chain and returns device public key", async () => {
       const owner = await createProfile("Alice Root")
       const devKey = await verifyDeviceChain(
-        owner.identity.publicKey,
-        owner.device.deviceId,
-        [owner.certificate]
+        { publicKey: owner.identity.publicKey, deviceId: owner.device.deviceId, certificates: [owner.certificate] }
       )
       expect(devKey).toBe(owner.device.publicKey)
     })
@@ -212,9 +210,8 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       const secondary = await createSecondaryDevice(owner, "Alice Laptop")
 
       const devKey = await verifyDeviceChain(
-        owner.identity.publicKey,
-        secondary.deviceId,
-        [owner.certificate, secondary.certificate]
+        { personId: owner.identity.personId, publicKey: owner.identity.publicKey, deviceId: secondary.deviceId,
+          certificates: [owner.certificate, secondary.certificate] }
       )
       expect(devKey).toBe(secondary.publicKey)
     })
@@ -229,9 +226,8 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       })
 
       const devKey = await verifyDeviceChain(
-        owner.identity.publicKey,
-        dev2.deviceId,
-        [owner.certificate, dev1.certificate, dev2.certificate]
+        { personId: owner.identity.personId, publicKey: owner.identity.publicKey, deviceId: dev2.deviceId,
+          certificates: [owner.certificate, dev1.certificate, dev2.certificate] }
       )
       expect(devKey).toBe(dev2.publicKey)
     })
@@ -247,31 +243,10 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       expect(devKey).toBe(owner.device.publicKey)
     })
 
-    it("supports 4 positional arguments (personId, publicKey, deviceId, certificates)", async () => {
-      const owner = await createProfile("Alice Positional 4")
-      const devKey = await verifyDeviceChain(
-        owner.identity.personId,
-        owner.identity.publicKey,
-        owner.device.deviceId,
-        [owner.certificate]
-      )
-      expect(devKey).toBe(owner.device.publicKey)
-    })
-
-    it("supports array-first argument signature (certificates, publicKey, deviceId)", async () => {
-      const owner = await createProfile("Alice Array First")
-      const devKey = await verifyDeviceChain(
-        [owner.certificate],
-        owner.identity.publicKey,
-        owner.device.deviceId
-      )
-      expect(devKey).toBe(owner.device.publicKey)
-    })
-
     it("rejects when target device certificate is missing", async () => {
       const owner = await createProfile("Alice Missing")
       await expect(
-        verifyDeviceChain(owner.identity.publicKey, "non_existent_device", [owner.certificate])
+        verifyDeviceChain({ publicKey: owner.identity.publicKey, deviceId: "non_existent_device", certificates: [owner.certificate] })
       ).rejects.toThrow(/missing/i)
     })
 
@@ -280,8 +255,8 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       const secondary = await createSecondaryDevice(owner, "Alice Laptop")
 
       await expect(
-        verifyDeviceChain(owner.identity.publicKey, secondary.deviceId, [secondary.certificate])
-      ).rejects.toThrow(/missing/i)
+        verifyDeviceChain({ publicKey: owner.identity.publicKey, deviceId: secondary.deviceId, certificates: [secondary.certificate] })
+      ).rejects.toThrow(/certificate chain/i)
     })
 
     it("rejects when root signature is tampered", async () => {
@@ -292,8 +267,8 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       }
 
       await expect(
-        verifyDeviceChain(owner.identity.publicKey, owner.device.deviceId, [tamperedRoot])
-      ).rejects.toThrow(/signature/i)
+        verifyDeviceChain({ publicKey: owner.identity.publicKey, deviceId: owner.device.deviceId, certificates: [tamperedRoot] })
+      ).rejects.toThrow(/root certificate/i)
     })
 
     it("rejects when delegated certificate signature is tampered", async () => {
@@ -306,11 +281,10 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
 
       await expect(
         verifyDeviceChain(
-          owner.identity.publicKey,
-          secondary.deviceId,
-          [owner.certificate, tamperedDelegated]
+          { publicKey: owner.identity.publicKey, deviceId: secondary.deviceId,
+            certificates: [owner.certificate, tamperedDelegated] }
         )
-      ).rejects.toThrow(/signature/i)
+      ).rejects.toThrow(/certificate chain/i)
     })
 
     it("rejects when identity public key does not match personId", async () => {
@@ -318,12 +292,8 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       const bob = await createProfile("Bob Two")
 
       await expect(
-        verifyDeviceChain({
-          personId: alice.identity.personId,
-          publicKey: bob.identity.publicKey,
-          deviceId: alice.device.deviceId,
-          certificates: [alice.certificate],
-        })
+        verifyDeviceChain({ personId: alice.identity.personId, publicKey: bob.identity.publicKey,
+          deviceId: alice.device.deviceId, certificates: [alice.certificate] })
       ).rejects.toThrow(/match/i)
     })
 
@@ -340,18 +310,18 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
       cyclicCert.payload.issuerCertificateHash = selfHash
 
       await expect(
-        verifyDeviceChain(owner.identity.publicKey, owner.device.deviceId, [cyclicCert])
+        verifyDeviceChain({ publicKey: owner.identity.publicKey, deviceId: owner.device.deviceId, certificates: [cyclicCert] })
       ).rejects.toThrow()
     })
 
-    it("accepts an acyclic certificate renewal issued to the same device key", async () => {
+    it("rejects a certificate chain that revisits the same device", async () => {
       const owner = await createProfile("Alice Renewal")
       const rootHash = await certHashDefault(owner.certificate)
       const renewed = await createDelegatedCertificate(owner.privateKeys.devicePrivateKey, owner.device.deviceId,
         owner.identity.personId, owner.device.deviceId, owner.device.publicKey, rootHash)
 
-      await expect(verifyDeviceChain(owner.identity.publicKey, owner.device.deviceId, [renewed, owner.certificate]))
-        .resolves.toBe(owner.device.publicKey)
+      await expect(verifyDeviceChain({ publicKey: owner.identity.publicKey, deviceId: owner.device.deviceId,
+        certificates: [renewed, owner.certificate] })).rejects.toThrow(/device certificate/i)
     })
 
     it("rejects when issuer certificate lacks canEnrollDevices capability", async () => {
@@ -385,11 +355,10 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
 
       await expect(
         verifyDeviceChain(
-          owner.identity.publicKey,
-          secondaryDeviceId,
-          [noEnrollCert, secondaryCert]
+          { publicKey: owner.identity.publicKey, deviceId: secondaryDeviceId,
+            certificates: [noEnrollCert, secondaryCert] }
         )
-      ).rejects.toThrow(/canEnrollDevices/i)
+      ).rejects.toThrow(/certificate chain/i)
     })
 
     it("rejects when delegated certificate signerKeyId does not match issuer deviceId", async () => {
@@ -403,11 +372,10 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
 
       await expect(
         verifyDeviceChain(
-          owner.identity.publicKey,
-          secondary.deviceId,
-          [owner.certificate, mismatchedSigner]
+          { publicKey: owner.identity.publicKey, deviceId: secondary.deviceId,
+            certificates: [owner.certificate, mismatchedSigner] }
         )
-      ).rejects.toThrow(/signerKeyId/i)
+      ).rejects.toThrow(/certificate chain/i)
     })
   })
 
@@ -993,7 +961,7 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
   describe("9. owner-authoritative revocation", () => {
     it("accepts an owner-signed monotonic tombstone", async () => {
       const owner = await createProfile("Owner")
-      const record = await createWorkspaceRevocation(owner, workspaceId, "person_removed", 2)
+      const record = await createWorkspaceRevocation(owner, workspaceId, "person_removed", 2, ["head"])
       await expect(verifyWorkspaceRevocation(record, workspaceId, owner.identity.personId,
         owner.identity.publicKey, [owner.certificate])).resolves.toEqual(record)
     })
@@ -1001,7 +969,7 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
     it("rejects a tombstone signed by another identity", async () => {
       const owner = await createProfile("Owner")
       const attacker = await createProfile("Attacker")
-      const record = await createWorkspaceRevocation(attacker, workspaceId, "person_removed", 2)
+      const record = await createWorkspaceRevocation(attacker, workspaceId, "person_removed", 2, ["head"])
       await expect(verifyWorkspaceRevocation(record, workspaceId, owner.identity.personId,
         owner.identity.publicKey, [owner.certificate])).rejects.toThrow()
     })

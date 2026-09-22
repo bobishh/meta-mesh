@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
   validateMeshCatalog(raw: unknown): unknown
   validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
   meshCapabilities(): string[]

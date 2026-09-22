@@ -17,7 +17,7 @@ pub mod state;
 pub use blobs::{BlobDescriptor, BlobEngine, ParsedTicket, WasmBlobEngine};
 pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
-pub use pairing::WasmPairingCodec;
+pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandshake, WasmWorkspaceJoinHandoff};
 pub use runtime::WasmMeshRuntimeState;
 
 #[cfg(target_family = "wasm")]

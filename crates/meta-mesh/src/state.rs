@@ -5,7 +5,7 @@ use meta_mesh_core::{
     WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
     WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
     VerifyWorkspaceMemberOptions, IncomingWorkspaceChangeAuthorization,
-    WorkspaceWriteAuthorizationSnapshot,
+    WorkspaceWriteAuthorizationSnapshot, WorkspaceAccessDecisionInput,
 };
 use wasm_bindgen::prelude::*;
 
@@ -14,6 +14,17 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = decideWorkspaceAccess)]
+    pub fn decide_workspace_access(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: WorkspaceAccessDecisionInput = from_value(raw)?;
+        let role = meta_mesh_core::decide_workspace_access(
+            &input,
+            i128::from(integer(now_ms, "Invalid access decision timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&role)
+    }
+
     #[wasm_bindgen(js_name = validateMeshCatalog)]
     pub fn validate_mesh_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;

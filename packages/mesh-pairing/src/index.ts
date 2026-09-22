@@ -47,7 +47,7 @@ export type ScopedInvitation = DeviceEnrollmentInvitation | WorkspaceJoinInvitat
 const pairingFrameTypes = [
   "sync-request", "sync-response", "sync-ack", "sync-update", "sync-heartbeat", "sync-heartbeat-ack",
   "enroll-request", "enroll-approved", "enroll-rejected", "enroll-rejected-ack", "enroll-ack", "enroll-complete",
-  "workspace-join-request", "workspace-join-response",
+  "workspace-join-request", "workspace-join-response", "workspace-join-rejected-ack",
   "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready", "mesh-handoff-confirmed",
   "mesh-automerge-sync", "mesh-control-sync", "mesh-owner-workspace-offer", "mesh-iroh-gossip", "mesh-durable-batch", "mesh-durable-ack",
   "mesh-blob-request-v1", "mesh-blob-response-v1", "mesh-blob-error-v1",

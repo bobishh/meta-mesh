@@ -5,6 +5,10 @@ export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionH
 export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
+export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJoinHandoffGuest,
+  BrowserWorkspaceJoinHandoffHost, WorkspaceJoinHandoffRollbackError, WorkspaceJoinRejectedError,
+  type WorkspaceJoinConnection, type WorkspaceJoinHandoffMachine, type WorkspaceJoinHandoffOutcome,
+  type WorkspaceJoinMachine, type WorkspaceJoinResponse, type WorkspaceJoinStream } from "./browserWorkspaceJoin"
 export { BrowserMeshDocumentSessions, type BrowserDocumentSessionInput, type BrowserDocumentSyncEngine, type BrowserIncrementalDocumentSessionInput, type BrowserMeshDocumentSessionHost } from "./browserDocumentSessions"
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"

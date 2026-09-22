@@ -27,6 +27,29 @@ export type IrohModule = {
     inspect(frame: Uint8Array): unknown
     decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
   } }
+  WasmWorkspaceJoinHandshake?: { new(secret: string, side: "host" | "guest"): {
+    sendRequest(payload: Uint8Array): Uint8Array
+    receiveRequest(frame: Uint8Array): Uint8Array
+    respond(payload: Uint8Array): Uint8Array
+    reject(message: string): Uint8Array
+    receiveResponse(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
+    acknowledgeRejection(): Uint8Array
+    acknowledgeSuccess(payload: Uint8Array): Uint8Array
+    rejectAcceptedResponse(message: string): Uint8Array
+    receiveAck(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
+  } }
+  WasmWorkspaceJoinHandoff?: { new(secret: string, side: "host" | "guest"): {
+    guestRequest(): Uint8Array
+    hostReceiveRequest(frame: Uint8Array): Uint8Array
+    guestReceiveReady(frame: Uint8Array): void
+    guestTransportFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
+    guestResumeSucceeded(): void
+    guestResumeFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
+    guestBeginConfirmation(): Uint8Array
+    guestConfirmationSent(): "retry" | "failed" | "adopted" | "complete"
+    guestConfirmationFailed(): "retry" | "failed" | "adopted" | "complete"
+    hostReceiveConfirmation(frame: Uint8Array): void
+  } }
   WasmStateCore?: {
     validateMeshCatalog(raw: unknown): unknown
     validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
@@ -88,6 +111,7 @@ export type DialNode<TConnection extends MeshConnection = MeshConnection> = {
 }
 
 export class MeshNetworkError extends Error {}
+export class MeshTerminalError extends Error {}
 
 export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   try { return await operation }
@@ -109,6 +133,7 @@ export function meshNetworkConnection<TConnection extends MeshConnection>(connec
 }
 
 export function isMeshNetworkFailure(error: unknown): boolean {
+  if (error instanceof MeshTerminalError) return false
   if (error instanceof AggregateError) {
     return error.errors.length > 0 && error.errors.every(isMeshNetworkFailure)
   }

@@ -6,9 +6,13 @@ describe("BrowserMeshSessions", () => {
     vi.useFakeTimers()
     const stableSession = vi.fn()
     const done = new Promise<never>(() => {})
-    const connection = { close: vi.fn(async () => {}) }
+    const connection = {
+      close: vi.fn(async () => {}),
+      openStream: vi.fn(async () => { throw new Error("Unexpected stream open") }),
+      acceptStream: vi.fn(async () => { throw new Error("Unexpected stream accept") }),
+    }
     const session = { publish: vi.fn(async () => {}), close: vi.fn(async () => {}), done }
-    const runtime = { admitSession: vi.fn(() => ({ decision: "accepted", generation: 1 })), removeSession: vi.fn(() => "connection") }
+    const runtime = { admitSession: vi.fn(() => ({ decision: "accepted" as const, generation: 1 })), removeSession: vi.fn(() => "connection") }
     const sessions = new BrowserMeshSessions({
       profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId,
       credential: async () => ({}), create: () => ({ session }), runtime: () => runtime,

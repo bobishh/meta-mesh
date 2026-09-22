@@ -73,6 +73,13 @@ pub struct WorkspaceDeviceRevocationEvidence {
     pub signer: WorkspaceAuthority,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDepartureEvidence {
+    pub record: crate::authority::WorkspaceDeparture,
+    pub authority: WorkspaceAuthority,
+}
+
 /// Raw, explicit authority evidence for a document. `admit_workspace_change_authorization`
 /// verifies this snapshot before it uses it; callers cannot supply a claimed
 /// current owner or historical hash set.
@@ -92,6 +99,8 @@ pub struct WorkspaceWriteAuthorizationSnapshot {
     pub revocations: Vec<crate::WorkspaceRevocation>,
     #[serde(default)]
     pub device_revocations: Vec<WorkspaceDeviceRevocationEvidence>,
+    #[serde(default)]
+    pub departures: Vec<WorkspaceDepartureEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,11 +179,13 @@ fn admit_with_context(
         &incoming.signed,
         DEFAULT_SIGNATURE_DOMAIN,
     )?;
-    let role = context.role_for(&payload.person_id, &payload.device_id, incoming.grant.as_ref())?;
+    let (role, grant_epoch) = context.role_for(&payload.person_id, &payload.device_id, incoming.grant.as_ref())?;
     Ok(payload.hashes.iter().filter(|hash| needed.contains(hash)).filter_map(|hash| {
-        if role == WorkspaceRole::Owner
+        if !context.revocation_allows(&payload.person_id, grant_epoch, hash)
+            || !context.device_revocation_allows(&payload.person_id, &payload.device_id, hash)
+            || (role == WorkspaceRole::Owner
             && payload.person_id != context.current_owner.person_id
-            && !context.historical_hashes.get(&payload.person_id).is_some_and(|hashes| hashes.contains(hash))
+            && !context.historical_hashes.get(&payload.person_id).is_some_and(|hashes| hashes.contains(hash)))
         {
             None
         } else {
@@ -183,19 +194,27 @@ fn admit_with_context(
     }).collect())
 }
 
-struct ValidatedWorkspaceWriteAuthorizationContext {
-    workspace_id: String,
-    current_owner: WorkspaceAuthority,
-    historical_owners: Vec<WorkspaceAuthority>,
-    historical_hashes: std::collections::HashMap<String, std::collections::HashSet<String>>,
-    revoked_devices: std::collections::HashSet<(String, String)>,
+pub(crate) struct ValidatedWorkspaceWriteAuthorizationContext {
+    pub(crate) workspace_id: String,
+    pub(crate) current_owner: WorkspaceAuthority,
+    pub(crate) historical_owners: Vec<WorkspaceAuthority>,
+    pub(crate) historical_hashes: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    revoked_devices: std::collections::HashMap<(String, String), Vec<std::collections::HashSet<String>>>,
+    revocation_boundaries: std::collections::HashMap<String, Vec<RevocationBoundary>>,
+    departure_boundaries: std::collections::HashMap<String, Vec<RevocationBoundary>>,
+}
+
+struct RevocationBoundary {
+    epoch: u64,
+    hashes: std::collections::HashSet<String>,
 }
 
 impl ValidatedWorkspaceWriteAuthorizationContext {
-    fn from_snapshot(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128) -> Result<Self, String> {
+    pub(crate) fn from_snapshot(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128) -> Result<Self, String> {
         if raw.workspace_id.is_empty() || raw.document.is_empty()
             || raw.ownership_transfers.len() > 32 || raw.succession_claims.len() > 32
-            || raw.revocations.len() > 512 || raw.device_revocations.len() > MAX_WORKSPACE_DEVICE_REVOCATIONS
+            || raw.revocations.len() > 512 || raw.departures.len() > 512
+            || raw.device_revocations.len() > MAX_WORKSPACE_DEVICE_REVOCATIONS
         {
             return Err("Invalid workspace write authority context".to_string());
         }
@@ -209,9 +228,11 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         }
         let mut authorities = historical_owners.clone();
         authorities.push(current_owner.clone());
-        let revoked_people = verified_revocations(raw, &authorities, now_ms)?;
+        let revocation_boundaries = verified_revocation_boundaries(raw, &authorities, now_ms)?;
+        let revoked_people = revocation_boundaries.keys().cloned().collect::<std::collections::HashSet<_>>();
         let (current_owner, historical_owners, historical_hashes) = verified_ownership_chain(raw, now_ms, &revoked_people)?;
-        let mut revoked_devices = std::collections::HashSet::new();
+        let mut revoked_devices = std::collections::HashMap::<(String, String), Vec<std::collections::HashSet<String>>>::new();
+        let by_hash = document_hashes(&raw.document)?;
         for evidence in &raw.device_revocations {
             validate_authority(&evidence.signer)?;
             let signed_by_owner = crate::authority::verify_workspace_device_revocation(&evidence.record, &raw.workspace_id,
@@ -222,28 +243,30 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
                 return Err("Invalid workspace device revocation".to_string());
             }
             let payload = &evidence.record.payload;
-            revoked_devices.insert((payload.person_id.clone(), payload.device_id.clone()));
+            let hashes = ancestry(&payload.workspace_heads, &by_hash)?;
+            let key = (payload.person_id.clone(), payload.device_id.clone());
+            revoked_devices.entry(key).or_default().push(hashes);
         }
+        let departure_boundaries = verified_departure_boundaries(raw, now_ms)?;
         Ok(Self { workspace_id: raw.workspace_id.clone(), current_owner,
-            historical_owners, historical_hashes, revoked_devices })
+            historical_owners, historical_hashes, revoked_devices, revocation_boundaries, departure_boundaries })
     }
 
-    fn role_for(&self, person_id: &str, device_id: &str, grant: Option<&WorkspaceGrant>) -> Result<WorkspaceRole, String> {
-        if self.revoked_devices.contains(&(person_id.to_string(), device_id.to_string())) {
-            return Err("Workspace device access revoked".to_string());
-        }
+    fn role_for(&self, person_id: &str, _device_id: &str, grant: Option<&WorkspaceGrant>) -> Result<(WorkspaceRole, Option<u64>), String> {
         if person_id == self.current_owner.person_id {
-            return Ok(WorkspaceRole::Owner);
+            return Ok((WorkspaceRole::Owner, None));
         }
-        let grant_role = self.current_owner_and_history().into_iter().find_map(|authority| {
-            verify_workspace_grant(grant?, &self.workspace_id, person_id,
+        let verified_grant = self.current_owner_and_history().into_iter().find_map(|authority| {
+            let grant = grant?;
+            let role = verify_workspace_grant(grant, &self.workspace_id, person_id,
                 &PublicIdentity { person_id: authority.person_id, public_key: authority.public_key, display_name: String::new() },
-                &authority.certificates).ok()
+                &authority.certificates).ok()?;
+            Some((role, grant.payload.effective_access_epoch()))
         });
-        if grant_role == Some(WorkspaceRole::Editor) {
-            Ok(WorkspaceRole::Editor)
+        if let Some((WorkspaceRole::Editor, epoch)) = verified_grant {
+            Ok((WorkspaceRole::Editor, Some(epoch)))
         } else if self.historical_hashes.contains_key(person_id) {
-            Ok(WorkspaceRole::Owner)
+            Ok((WorkspaceRole::Owner, None))
         } else {
             Err("Visitors cannot write workspace changes".to_string())
         }
@@ -254,6 +277,25 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         authorities.push(self.current_owner.clone());
         authorities.extend(self.historical_owners.clone());
         authorities
+    }
+
+    fn revocation_allows(&self, person_id: &str, grant_epoch: Option<u64>, hash: &str) -> bool {
+        self.boundaries_allow(self.revocation_boundaries.get(person_id), grant_epoch, hash)
+            && self.boundaries_allow(self.departure_boundaries.get(person_id), grant_epoch, hash)
+    }
+
+    fn boundaries_allow(&self, boundaries: Option<&Vec<RevocationBoundary>>, grant_epoch: Option<u64>, hash: &str) -> bool {
+        boundaries.is_none_or(|boundaries| boundaries.iter().all(|boundary|
+            grant_epoch.is_some_and(|epoch| epoch > boundary.epoch) || boundary.hashes.contains(hash)))
+    }
+
+    fn device_revocation_allows(&self, person_id: &str, device_id: &str, hash: &str) -> bool {
+        self.revoked_devices.get(&(person_id.to_string(), device_id.to_string()))
+            .is_none_or(|boundaries| boundaries.iter().all(|hashes| hashes.contains(hash)))
+    }
+
+    pub(crate) fn device_was_revoked(&self, person_id: &str, device_id: &str) -> bool {
+        self.revoked_devices.contains_key(&(person_id.to_string(), device_id.to_string()))
     }
 }
 
@@ -339,15 +381,41 @@ fn ancestry(heads: &[String], by_hash: &std::collections::HashMap<String, Vec<St
     Ok(allowed)
 }
 
-fn verified_revocations(raw: &WorkspaceWriteAuthorizationSnapshot, authorities: &[WorkspaceAuthority], now_ms: i128) -> Result<std::collections::HashSet<String>, String> {
-    let mut revoked = std::collections::HashSet::new();
+fn document_hashes(document_bytes: &[u8]) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    let mut document = automerge::AutoCommit::load(document_bytes)
+        .map_err(|_| "Invalid workspace authority document".to_string())?;
+    Ok(document.get_changes(&[]).iter().map(|change| (change.hash().to_string(),
+        change.deps().iter().map(ToString::to_string).collect())).collect())
+}
+
+fn verified_revocation_boundaries(raw: &WorkspaceWriteAuthorizationSnapshot, authorities: &[WorkspaceAuthority], now_ms: i128)
+    -> Result<std::collections::HashMap<String, Vec<RevocationBoundary>>, String> {
+    let by_hash = document_hashes(&raw.document)?;
+    let mut boundaries = std::collections::HashMap::<String, Vec<RevocationBoundary>>::new();
     for record in &raw.revocations {
         let authority = authorities.iter().find(|authority| authority.person_id == record.payload.owner_person_id)
             .ok_or_else(|| "Workspace revocation has an unknown owner".to_string())?;
         crate::authority::verify_workspace_revocation(record, &raw.workspace_id, authority, now_ms)?;
-        revoked.insert(record.payload.person_id.clone());
+        let hashes = ancestry(&record.payload.workspace_heads, &by_hash)?;
+        boundaries.entry(record.payload.person_id.clone()).or_default()
+            .push(RevocationBoundary { epoch: record.payload.epoch, hashes });
     }
-    Ok(revoked)
+    Ok(boundaries)
+}
+
+fn verified_departure_boundaries(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128)
+    -> Result<std::collections::HashMap<String, Vec<RevocationBoundary>>, String> {
+    let by_hash = document_hashes(&raw.document)?;
+    let mut boundaries = std::collections::HashMap::<String, Vec<RevocationBoundary>>::new();
+    for evidence in &raw.departures {
+        validate_authority(&evidence.authority)?;
+        crate::authority::verify_workspace_departure(&evidence.record, &raw.workspace_id, &evidence.authority, now_ms)?;
+        let hashes = ancestry(&evidence.record.payload.workspace_heads, &by_hash)?;
+        let person_id = &evidence.record.payload.person_id;
+        let epoch = evidence.record.payload.access_epoch;
+        boundaries.entry(person_id.clone()).or_default().push(RevocationBoundary { epoch, hashes });
+    }
+    Ok(boundaries)
 }
 
 pub fn verify_device_signed_envelope<T: Serialize>(
@@ -468,7 +536,7 @@ mod tests {
     fn snapshot(owner: WorkspaceAuthority) -> WorkspaceWriteAuthorizationSnapshot {
         WorkspaceWriteAuthorizationSnapshot { workspace_id: "workspace".into(), genesis_owner: owner.clone(), genesis_epoch: 1, expected_current_owner: owner,
             document: automerge::AutoCommit::new().save(), ownership_transfers: vec![], succession_claims: vec![],
-            revocations: vec![], device_revocations: vec![] }
+            revocations: vec![], device_revocations: vec![], departures: vec![] }
     }
 
     fn transfer(owner: &WorkspaceAuthority, owner_seed: &[u8; 32], owner_device_seed: &[u8; 32], owner_device_id: &str,
@@ -488,6 +556,38 @@ mod tests {
             workspace_heads: heads, epoch, transferred_at: "1970-01-01T00:00:00.000Z".into() };
         let signed = sign_json_envelope(owner_device_seed, serde_json::to_value(&payload).unwrap(), owner_device_id, DEFAULT_SIGNATURE_DOMAIN).unwrap();
         crate::WorkspaceOwnershipTransfer { payload, signer_key_id: signed.signer_key_id, signature: signed.signature }
+    }
+
+    fn revocation(owner: &WorkspaceAuthority, owner_seed: &[u8; 32], person_id: &str,
+        heads: Vec<String>, epoch: u64) -> crate::WorkspaceRevocation {
+        let payload = crate::WorkspaceRevocationPayload { kind: "workspace-revocation".into(), version: 1,
+            workspace_id: "workspace".into(), owner_person_id: owner.person_id.clone(), person_id: person_id.into(),
+            epoch, workspace_heads: heads, revoked_at: "1970-01-01T00:00:00.000Z".into() };
+        let signed = sign_json_envelope(owner_seed, serde_json::to_value(&payload).unwrap(), &owner.person_id,
+            DEFAULT_SIGNATURE_DOMAIN).unwrap();
+        crate::WorkspaceRevocation { payload, signer_key_id: signed.signer_key_id, signature: signed.signature }
+    }
+
+    fn device_revocation(owner: &WorkspaceAuthority, owner_device_seed: &[u8; 32], owner_device_id: &str,
+        person_id: &str, device_id: &str, heads: Vec<String>) -> WorkspaceDeviceRevocationEvidence {
+        let payload = crate::WorkspaceDeviceRevocationPayload { kind: "workspace-device-revocation".into(), version: 1,
+            workspace_id: "workspace".into(), person_id: person_id.into(), device_id: device_id.into(),
+            workspace_heads: heads, revoked_at: "1970-01-01T00:00:00.000Z".into() };
+        let signed = sign_json_envelope(owner_device_seed, serde_json::to_value(&payload).unwrap(), owner_device_id,
+            DEFAULT_SIGNATURE_DOMAIN).unwrap();
+        WorkspaceDeviceRevocationEvidence { record: WorkspaceDeviceRevocation { payload,
+            signer_key_id: signed.signer_key_id, signature: signed.signature }, signer: owner.clone() }
+    }
+
+    fn departure(person: &WorkspaceAuthority, device_seed: &[u8; 32], device_id: &str,
+        heads: Vec<String>, epoch: u64) -> WorkspaceDepartureEvidence {
+        let payload = crate::authority::WorkspaceDeparturePayload { kind: "workspace-departure".into(), version: 1,
+            workspace_id: "workspace".into(), person_id: person.person_id.clone(), access_epoch: epoch,
+            workspace_heads: heads, left_at: "1970-01-01T00:00:00.000Z".into() };
+        let signed = sign_json_envelope(device_seed, serde_json::to_value(&payload).unwrap(), device_id,
+            DEFAULT_SIGNATURE_DOMAIN).unwrap();
+        WorkspaceDepartureEvidence { record: crate::authority::WorkspaceDeparture { payload,
+            signer_key_id: signed.signer_key_id, signature: signed.signature }, authority: person.clone() }
     }
 
     #[test]
@@ -523,6 +623,119 @@ mod tests {
         incoming.grant = Some(signed_grant(&[3; 32], &owner.person_id, &grant_payload));
         assert_eq!(admit_workspace_change_authorization(&incoming, &snapshot(owner), &["editor-change".into()], 0).unwrap()[0].role,
             WorkspaceRole::Editor);
+    }
+
+    #[test]
+    fn revocation_boundary_keeps_old_history_denies_new_hashes_and_allows_newer_grant() {
+        use automerge::transaction::Transactable;
+        let (owner, _, _, _) = authority([31; 32], [32; 32]);
+        let (editor, device_seed, device_id, certificates) = authority([33; 32], [34; 32]);
+        let mut document = automerge::AutoCommit::new();
+        document.put(automerge::ROOT, "before", "value").unwrap();
+        document.commit();
+        let before = document.get_heads()[0].to_string();
+        let heads = document.get_heads().iter().map(ToString::to_string).collect();
+        document.put(automerge::ROOT, "after", "value").unwrap();
+        document.commit();
+        let after = document.get_heads()[0].to_string();
+
+        let make_incoming = |access_epoch| {
+            let grant_payload = WorkspaceGrantPayload { kind: "workspace-grant".into(), version: 1,
+                grant_id: format!("editor-{access_epoch}"), workspace_id: "workspace".into(),
+                person_id: editor.person_id.clone(), role: WorkspaceRole::Editor, access_epoch: Some(access_epoch) };
+            let mut incoming = change_authorization(&editor, &device_seed, &device_id, certificates.clone(),
+                vec![&before, &after]);
+            incoming.grant = Some(signed_grant(&[31; 32], &owner.person_id, &grant_payload));
+            incoming
+        };
+        let mut context = snapshot(owner.clone());
+        context.document = document.save();
+        context.revocations.push(revocation(&owner, &[31; 32], &editor.person_id, heads, 2));
+
+        let stale = admit_workspace_change_authorization(&make_incoming(1), &context,
+            &[before.clone(), after.clone()], 0).unwrap();
+        assert_eq!(stale, vec![AuthorizedWorkspaceChange { hash: before.clone(), role: WorkspaceRole::Editor }]);
+
+        let renewed = admit_workspace_change_authorization(&make_incoming(3), &context,
+            &[before.clone(), after.clone()], 0).unwrap();
+        assert_eq!(renewed, vec![
+            AuthorizedWorkspaceChange { hash: before.clone(), role: WorkspaceRole::Editor },
+            AuthorizedWorkspaceChange { hash: after.clone(), role: WorkspaceRole::Editor },
+        ]);
+
+        let mut forged = make_incoming(99);
+        forged.grant = Some(signed_grant(&[99; 32], &owner.person_id, &forged.grant.unwrap().payload));
+        assert!(admit_workspace_change_authorization(&forged, &context, &[after], 0).is_err());
+    }
+
+    #[test]
+    fn departure_boundary_preserves_old_history_and_denies_new_changes() {
+        use automerge::transaction::Transactable;
+        let (owner, _, _, _) = authority([43; 32], [44; 32]);
+        let (editor, device_seed, device_id, certificates) = authority([45; 32], [46; 32]);
+        let mut document = automerge::AutoCommit::new();
+        document.put(automerge::ROOT, "before", "value").unwrap();
+        document.commit();
+        let before = document.get_heads()[0].to_string();
+        let heads = document.get_heads().iter().map(ToString::to_string).collect();
+        document.put(automerge::ROOT, "after", "value").unwrap();
+        document.commit();
+        let after = document.get_heads()[0].to_string();
+        let grant_payload = WorkspaceGrantPayload { kind: "workspace-grant".into(), version: 1, grant_id: "editor".into(),
+            workspace_id: "workspace".into(), person_id: editor.person_id.clone(), role: WorkspaceRole::Editor, access_epoch: Some(1) };
+        let mut incoming = change_authorization(&editor, &device_seed, &device_id, certificates, vec![&before, &after]);
+        incoming.grant = Some(signed_grant(&[43; 32], &owner.person_id, &grant_payload));
+        let mut context = snapshot(owner);
+        context.document = document.save();
+        context.departures.push(departure(&editor, &device_seed, &device_id, heads, 1));
+        assert_eq!(admit_workspace_change_authorization(&incoming, &context, &[before.clone(), after], 0).unwrap(),
+            vec![AuthorizedWorkspaceChange { hash: before, role: WorkspaceRole::Editor }]);
+    }
+
+    #[test]
+    fn device_revocation_preserves_boundary_history_and_denies_later_device_changes() {
+        use automerge::transaction::Transactable;
+        let (owner, owner_device_seed, owner_device_id, _) = authority([47; 32], [48; 32]);
+        let (editor, editor_device_seed, editor_device_id, certificates) = authority([49; 32], [50; 32]);
+        let mut document = automerge::AutoCommit::new();
+        document.put(automerge::ROOT, "before", "value").unwrap();
+        document.commit();
+        let before = document.get_heads()[0].to_string();
+        let heads = document.get_heads().iter().map(ToString::to_string).collect();
+        document.put(automerge::ROOT, "after", "value").unwrap();
+        document.commit();
+        let after = document.get_heads()[0].to_string();
+        let grant_payload = WorkspaceGrantPayload { kind: "workspace-grant".into(), version: 1, grant_id: "editor".into(),
+            workspace_id: "workspace".into(), person_id: editor.person_id.clone(), role: WorkspaceRole::Editor, access_epoch: Some(1) };
+        let mut incoming = change_authorization(&editor, &editor_device_seed, &editor_device_id, certificates, vec![&before, &after]);
+        incoming.grant = Some(signed_grant(&[47; 32], &owner.person_id, &grant_payload));
+        let mut context = snapshot(owner.clone());
+        context.document = document.save();
+        context.device_revocations.push(device_revocation(&owner, &owner_device_seed, &owner_device_id,
+            &editor.person_id, &editor_device_id, heads));
+        assert_eq!(admit_workspace_change_authorization(&incoming, &context, &[before.clone(), after], 0).unwrap(),
+            vec![AuthorizedWorkspaceChange { hash: before, role: WorkspaceRole::Editor }]);
+    }
+
+    #[test]
+    fn rejects_revocation_boundary_missing_from_document() {
+        use automerge::transaction::Transactable;
+        let (owner, _, _, _) = authority([35; 32], [36; 32]);
+        let (editor, device_seed, device_id, certificates) = authority([37; 32], [38; 32]);
+        let mut document = automerge::AutoCommit::new();
+        document.put(automerge::ROOT, "before", "value").unwrap();
+        document.commit();
+        let hash = document.get_heads()[0].to_string();
+        let grant_payload = WorkspaceGrantPayload { kind: "workspace-grant".into(), version: 1,
+            grant_id: "editor".into(), workspace_id: "workspace".into(), person_id: editor.person_id.clone(),
+            role: WorkspaceRole::Editor, access_epoch: Some(1) };
+        let mut incoming = change_authorization(&editor, &device_seed, &device_id, certificates, vec![&hash]);
+        incoming.grant = Some(signed_grant(&[35; 32], &owner.person_id, &grant_payload));
+        let mut context = snapshot(owner.clone());
+        context.document = document.save();
+        context.revocations.push(revocation(&owner, &[35; 32], &editor.person_id, vec!["missing-head".into()], 2));
+        assert_eq!(admit_workspace_change_authorization(&incoming, &context, &[hash], 0).unwrap_err(),
+            "Workspace ownership boundary is missing from the document");
     }
 
     #[test]
@@ -600,7 +813,7 @@ mod tests {
         let incoming = change_authorization(&owner, &device_seed, &device_id, certificates, vec!["change"]);
         let context = WorkspaceWriteAuthorizationSnapshot { workspace_id: String::new(), genesis_owner: owner.clone(), genesis_epoch: 1, expected_current_owner: owner,
             document: automerge::AutoCommit::new().save(), ownership_transfers: vec![], succession_claims: vec![],
-            revocations: vec![], device_revocations: vec![] };
+            revocations: vec![], device_revocations: vec![], departures: vec![] };
         assert_eq!(admit_workspace_change_authorization(&incoming, &context, &["change".into()], 0).unwrap_err(),
             "Invalid workspace write authority context");
     }
