@@ -1,7 +1,7 @@
 import Foundation
 
-func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
-    if !condition() {
+func expect(_ condition: Bool, _ message: String) {
+    if !condition {
         fputs("Swift interop failure: \(message)\n", stderr)
         exit(1)
     }
@@ -27,6 +27,35 @@ do {
         try? swift.shutdown()
         try? native.shutdown()
     }
+
+    let runtime = MobileMeshRuntime()
+    try runtime.start()
+    let handshake = try MobileMeshHandshakeFlow(direction: "incoming")
+    expect(try handshake.step() == "readRequest", "Swift handshake did not start inbound")
+    expect(try handshake.advance(completed: "readRequest", decision: nil) == "mergeAuthority", "Swift handshake lost authority stage")
+    expect(try handshake.advance(completed: "mergeAuthority", decision: nil) == "verifyPeer", "Swift handshake lost peer verification")
+    expect(try handshake.advance(completed: "verifyPeer", decision: nil) == "checkRevocation", "Swift handshake lost revocation check")
+    expect(try handshake.advance(completed: "checkRevocation", decision: true) == "sendRevocation", "Swift handshake admitted revoked peer")
+    let running = try runtime.isRunning()
+    expect(running, "Swift runtime did not start")
+    let attempt = try runtime.beginRouteAttemptJson(routeKey: "peer-1", nowMs: 100)
+    expect(attempt.contains("\"routeKey\":\"peer-1\""), "Swift route attempt lost peer key")
+    let active = try runtime.routeAttemptActive(routeKey: "peer-1")
+    expect(active, "Swift route attempt was not retained")
+    _ = try runtime.scheduleReconnectJson(routeKey: "peer-1", nowMs: 100, baseDelayMs: 50, maximumDelayMs: 500)
+    let earlyReconnects = try runtime.dueReconnects(nowMs: 149)
+    expect(earlyReconnects.isEmpty, "Swift reconnect fired early")
+    let dueReconnects = try runtime.dueReconnects(nowMs: 150)
+    expect(dueReconnects == ["peer-1"], "Swift reconnect did not fire")
+    let firstDial = try runtime.planDialJson(peerKey: "peer-1", relayAvailable: true, nowMs: 100)
+    expect(firstDial.contains("\"mode\":\"direct\""), "Swift first dial did not prefer direct")
+    try runtime.recordNetworkFailure(peerKey: "peer-1", nowMs: 100)
+    let retryDial = try runtime.planDialJson(peerKey: "peer-1", relayAvailable: true, nowMs: 101)
+    expect(retryDial.contains("\"mode\":\"relay\""), "Swift retry did not choose relay")
+    try runtime.recordDialSuccess(peerKey: "peer-1", mode: "direct", nowMs: 102)
+    let recoveredDial = try runtime.planDialJson(peerKey: "peer-1", relayAvailable: true, nowMs: 103)
+    expect(recoveredDial.contains("\"mode\":\"direct\""), "Swift direct success did not reset dial policy")
+    _ = try runtime.stop()
 
     let deniedTicket = try native.addBlob(data: Data("denied".utf8))
     do {

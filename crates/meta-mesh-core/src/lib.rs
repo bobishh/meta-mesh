@@ -4,6 +4,7 @@ pub mod authorization;
 pub mod automerge;
 pub mod catalog;
 pub mod handshake;
+pub mod handshake_flow;
 pub mod identity;
 pub mod invitation;
 pub mod member;
@@ -39,6 +40,7 @@ pub use automerge::{
 };
 pub use catalog::{MeshCatalog, validate_mesh_catalog};
 pub use handshake::{MeshHandshake, validate_mesh_handshake};
+pub use handshake_flow::{HandshakeStep, MeshHandshakeFlow};
 pub use identity::{
     DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
     MAX_CERTIFICATE_CHAIN_LENGTH, PublicIdentity, SignedEnvelope, canonicalize_json,
@@ -77,7 +79,7 @@ pub use replication::{
     verify_device_route, verify_durable_batch_ack,
 };
 pub use runtime::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan, GossipTopology,
     MAX_CONTROL_FRAME_BYTES, MAX_CONTROL_SNAPSHOT_BYTES, MESH_CAPABILITIES, MeshRuntimeState,
     ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames, validate_mesh_capabilities,

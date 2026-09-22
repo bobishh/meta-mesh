@@ -1,4 +1,5 @@
 import { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import type { WorkspaceMemberBundle } from "@meta-uber/mesh-workspace"
 
 export type BrowserMeshHandshakeStream = {
@@ -40,65 +41,88 @@ export type BrowserMeshHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
   failed(stage: string, error: unknown): void
 }
 
-/**
- * Runs the authenticated inbound protocol. Transport streams and product document
- * installation are callbacks, so native and browser hosts use identical framing,
- * authority merge and revocation ordering.
- */
+/** Executes host I/O in the order required by the shared Rust handshake flow. */
 export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
   constructor(private readonly host: BrowserMeshHandshakeHost<C, P>, private readonly codec = new MeshHandshakeCodec()) {}
 
   async accept<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshHandshakeConnection<S>,
     initial: { stream: S; frame: Uint8Array } | undefined, connectionId: string, signal?: AbortSignal): Promise<boolean> {
+    const flow = meshRustRuntime().createMeshHandshakeFlow("incoming")
     try {
-      const handshake = await this.read(connection, initial, connectionId)
-      if (await this.rejectRevoked(connection, handshake)) return false
-      await this.host.putVerifiedBundle(handshake.credential, handshake.request.peer)
-      if (signal?.aborted) { await connection.close(); return false }
-      const features = this.codec.features(handshake.request.capabilities)
-      const installed = await this.host.install({ credential: handshake.credential, remote: handshake.remote, connection, features, connectionId })
-      if (!installed) return false
-      await handshake.stream.send(this.codec.encodeResponse(this.host.secret(handshake.credential),
-        await this.host.response(handshake.credential, handshake.remote.personId)))
-      await handshake.stream.closeSend()
-      await this.host.afterInstalled({ credential: handshake.credential, remote: handshake.remote, request: handshake.request, connection, features })
-      return true
+      let stream!: S
+      let credential!: C
+      let request!: MeshHandshakePayload
+      let remote!: P
+      let features!: MeshHandshakeFeatures
+      for (;;) {
+        const step = flow.step()
+        switch (step) {
+          case "readRequest": {
+            this.host.trace("handshake.incoming.started", { connectionId })
+            stream = initial?.stream ?? await connection.acceptStream()
+            const frame = initial?.frame ?? await stream.read()
+            const header = this.codec.inspect(frame)
+            if (header.type !== "mesh-handshake-request") throw new Error("Unsupported mesh handshake")
+            const found = (await this.host.credentials()).find(item => this.host.secret(item) === header.secret)
+            if (!found) throw new Error("Unknown mesh credential")
+            credential = found
+            request = this.codec.readRequest(frame, this.host.secret(credential), this.host.workspaceId(credential))
+            break
+          }
+          case "mergeAuthority":
+            credential = await this.host.mergeAuthority(credential, request)
+            break
+          case "verifyPeer":
+            remote = await this.host.verifyPeer(credential, request.peer)
+            this.host.trace("handshake.incoming.verified", { connectionId, peerId: remote.deviceId.slice(0, 8),
+              workspaceId: this.host.workspaceId(credential).slice(0, 8) })
+            break
+          case "checkRevocation":
+            flow.advance(step, this.host.revoked(credential, remote.personId, request.peer?.grant, remote.deviceId))
+            continue
+          case "sendRevocation": {
+            await stream.send(this.codec.encodeResponse(this.host.secret(credential), {
+              ...await this.host.response(credential, remote.personId),
+              revocations: this.host.revocations(credential),
+            }))
+            await stream.closeSend()
+            const timeout = setTimeout(() => { void connection.close() }, 10_000)
+            try { await connection.acceptStream() } finally { clearTimeout(timeout); await connection.close() }
+            break
+          }
+          case "persistPeer":
+            await this.host.putVerifiedBundle(credential, request.peer)
+            break
+          case "installSession": {
+            if (signal?.aborted) { await connection.close(); return false }
+            features = this.codec.features(request.capabilities)
+            const installed = await this.host.install({ credential, remote, connection, features, connectionId })
+            flow.advance(step, installed)
+            continue
+          }
+          case "sendResponse":
+            await stream.send(this.codec.encodeResponse(this.host.secret(credential),
+              await this.host.response(credential, remote.personId)))
+            await stream.closeSend()
+            break
+          case "afterInstalled":
+            await this.host.afterInstalled({ credential, remote, request, connection, features })
+            break
+          case "complete": return true
+          case "revoked":
+          case "sessionRejected": return false
+          default: throw new Error(`Unexpected incoming mesh handshake step: ${step}`)
+        }
+        flow.advance(step)
+      }
     } catch (error) {
       this.host.trace("handshake.incoming.failed", { connectionId, reason: message(error) }, "warn")
       this.host.failed("Incoming handshake", error)
       await connection.close()
       return false
+    } finally {
+      flow.free?.()
     }
-  }
-
-  private async read<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshHandshakeConnection<S>,
-    initial: { stream: S; frame: Uint8Array } | undefined, connectionId: string) {
-    this.host.trace("handshake.incoming.started", { connectionId })
-    const stream = initial?.stream ?? await connection.acceptStream()
-    const frame = initial?.frame ?? await stream.read()
-    const header = this.codec.inspect(frame)
-    if (header.type !== "mesh-handshake-request") throw new Error("Unsupported mesh handshake")
-    let credential = (await this.host.credentials()).find(item => this.host.secret(item) === header.secret)
-    if (!credential) throw new Error("Unknown mesh credential")
-    const request = this.codec.readRequest(frame, this.host.secret(credential), this.host.workspaceId(credential))
-    credential = await this.host.mergeAuthority(credential, request)
-    const remote = await this.host.verifyPeer(credential, request.peer)
-    this.host.trace("handshake.incoming.verified", { connectionId, peerId: remote.deviceId.slice(0, 8),
-      workspaceId: this.host.workspaceId(credential).slice(0, 8) })
-    return { stream, credential, request, remote }
-  }
-
-  private async rejectRevoked<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshHandshakeConnection<S>,
-    handshake: { stream: S; credential: C; request: MeshHandshakePayload; remote: P }): Promise<boolean> {
-    if (!this.host.revoked(handshake.credential, handshake.remote.personId, handshake.request.peer?.grant, handshake.remote.deviceId)) return false
-    await handshake.stream.send(this.codec.encodeResponse(this.host.secret(handshake.credential), {
-      ...await this.host.response(handshake.credential, handshake.remote.personId),
-      revocations: this.host.revocations(handshake.credential),
-    }))
-    await handshake.stream.closeSend()
-    const timeout = setTimeout(() => { void connection.close() }, 10_000)
-    try { await connection.acceptStream() } finally { clearTimeout(timeout); await connection.close() }
-    return true
   }
 }
 
@@ -124,16 +148,43 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
 
   async exchange<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshOutgoingConnection<S>, credential: C,
     connectionId: string, peerId: string, context: Q = undefined as Q): Promise<{ credential: C; response: MeshHandshakePayload; remote: P; features: MeshHandshakeFeatures }> {
-    const stream = await connection.openStream()
-    this.host.trace("handshake.outgoing.started", { connectionId, peerId: peerId.slice(0, 8) })
-    await stream.send(this.codec.encodeRequest(this.host.secret(credential), await this.host.request(credential, context)))
-    await stream.closeSend()
-    const response = this.codec.readResponse(await stream.read(), this.host.secret(credential), this.host.workspaceId(credential))
-    credential = await this.host.mergeAuthority(credential, response)
-    const remote = await this.host.verifyPeer(credential, response.peer)
-    if (remote.deviceId !== peerId) throw new Error("Unexpected mesh peer")
-    await this.host.putVerifiedBundle(credential, response.peer)
-    this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
-    return { credential, response, remote, features: this.codec.features(response.capabilities) }
+    const flow = meshRustRuntime().createMeshHandshakeFlow("outgoing")
+    try {
+      const stream = await connection.openStream()
+      let response!: MeshHandshakePayload
+      let remote!: P
+      for (;;) {
+        const step = flow.step()
+        switch (step) {
+          case "sendRequest":
+            this.host.trace("handshake.outgoing.started", { connectionId, peerId: peerId.slice(0, 8) })
+            await stream.send(this.codec.encodeRequest(this.host.secret(credential), await this.host.request(credential, context)))
+            await stream.closeSend()
+            break
+          case "readResponse":
+            response = this.codec.readResponse(await stream.read(), this.host.secret(credential), this.host.workspaceId(credential))
+            break
+          case "mergeAuthority":
+            credential = await this.host.mergeAuthority(credential, response)
+            break
+          case "verifyPeer":
+            remote = await this.host.verifyPeer(credential, response.peer)
+            break
+          case "checkExpectedPeer":
+            flow.advance(step, remote.deviceId === peerId)
+            continue
+          case "persistPeer":
+            await this.host.putVerifiedBundle(credential, response.peer)
+            this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
+            break
+          case "peerMismatch": throw new Error("Unexpected mesh peer")
+          case "complete": return { credential, response, remote, features: this.codec.features(response.capabilities) }
+          default: throw new Error(`Unexpected outgoing mesh handshake step: ${step}`)
+        }
+        flow.advance(step)
+      }
+    } finally {
+      flow.free?.()
+    }
   }
 }

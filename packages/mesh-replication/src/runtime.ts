@@ -97,11 +97,18 @@ export type RustMeshRuntimeState = {
   free?(): void
 }
 
+export type RustMeshHandshakeFlow = {
+  step(): string
+  advance(completed: string, decision?: boolean): string
+  free?(): void
+}
+
 export type MeshRustRuntime = {
   state: RustStateCore
   createDeviceRouteCatalog(): RustDeviceRouteCatalog
   createAutomergeSyncEngine(localDeviceId: string, maximumFrameBytes?: number): RustAutomergeSyncEngine
   createMeshRuntimeState(): RustMeshRuntimeState
+  createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow
 }
 
 let installed: MeshRustRuntime | undefined

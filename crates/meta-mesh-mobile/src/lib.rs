@@ -13,7 +13,8 @@ use meta_mesh_core::{
     DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, IncomingDocumentChange,
-    MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, ReplicaSet, RouteHealth,
+    DialMode, MeshHandshakeFlow, MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, RelayDialPolicy,
+    ReplicaSet, RouteHealth,
     SessionCandidate, SessionDirection, SessionKey, SignedDeviceRoute,
     SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
     WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation, WorkspaceSuccessionClaim,
@@ -512,8 +513,35 @@ pub fn mesh_transition_outbox_claim_json(
 }
 
 #[derive(uniffi::Object)]
+pub struct MobileMeshHandshakeFlow {
+    flow: Mutex<MeshHandshakeFlow>,
+}
+
+#[uniffi::export]
+impl MobileMeshHandshakeFlow {
+    #[uniffi::constructor]
+    pub fn new(direction: String) -> Result<Arc<Self>, MobileMeshError> {
+        Ok(Arc::new(Self { flow: Mutex::new(MeshHandshakeFlow::new(mobile_direction(&direction)?)) }))
+    }
+
+    pub fn step(&self) -> Result<String, MobileMeshError> {
+        let flow = self.flow.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile handshake lock poisoned"))?;
+        Ok(flow.step().as_str().to_string())
+    }
+
+    pub fn advance(&self, completed: String, decision: Option<bool>) -> Result<String, MobileMeshError> {
+        let mut flow = self.flow.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile handshake lock poisoned"))?;
+        flow.advance(&completed, decision).map(|step| step.as_str().to_string())
+            .map_err(MobileMeshError::from_display)
+    }
+}
+
+#[derive(uniffi::Object)]
 pub struct MobileMeshRuntime {
     state: Mutex<MeshRuntimeState>,
+    relay_policy: Mutex<RelayDialPolicy>,
     control_receivers: Mutex<BTreeMap<String, ControlFrameReceiver>>,
     transfer_sequence: Mutex<u64>,
 }
@@ -524,6 +552,7 @@ impl MobileMeshRuntime {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(MeshRuntimeState::default()),
+            relay_policy: Mutex::new(RelayDialPolicy::default()),
             control_receivers: Mutex::new(BTreeMap::new()),
             transfer_sequence: Mutex::new(0),
         })
@@ -535,6 +564,36 @@ impl MobileMeshRuntime {
 
     pub fn stop(&self) -> Result<Vec<String>, MobileMeshError> {
         self.with_state(|state| Ok(state.stop()))
+    }
+
+    pub fn is_running(&self) -> Result<bool, MobileMeshError> {
+        self.with_state(|state| Ok(state.is_running()))
+    }
+
+    pub fn sessions_json(&self) -> Result<String, MobileMeshError> {
+        let sessions = self.with_state(|state| Ok(state.sessions().cloned().collect::<Vec<_>>()))?;
+        to_json(&sessions)
+    }
+
+    pub fn begin_route_attempt_json(
+        &self,
+        route_key: String,
+        now_ms: u64,
+    ) -> Result<String, MobileMeshError> {
+        let attempt = self.with_state(|state| Ok(state.begin_route_attempt(route_key, now_ms)))?;
+        to_json(&attempt)
+    }
+
+    pub fn route_attempt_active(&self, route_key: String) -> Result<bool, MobileMeshError> {
+        self.with_state(|state| Ok(state.route_attempt_active(&route_key)))
+    }
+
+    pub fn clear_route_attempt(&self, route_key: String) -> Result<(), MobileMeshError> {
+        self.with_state(|state| { state.clear_route_attempt(&route_key); Ok(()) })
+    }
+
+    pub fn finish_route_attempt(&self, route_key: String, token: u64) -> Result<bool, MobileMeshError> {
+        self.with_state(|state| Ok(state.finish_route_attempt(&route_key, token)))
     }
 
     pub fn admit_session_json(
@@ -572,6 +631,71 @@ impl MobileMeshRuntime {
 
     pub fn due_reconnects(&self, now_ms: u64) -> Result<Vec<String>, MobileMeshError> {
         self.with_state(|state| Ok(state.due_reconnects(now_ms)))
+    }
+
+    pub fn reconnect_state_json(&self, route_key: String) -> Result<Option<String>, MobileMeshError> {
+        self.with_state(|state| Ok(state.reconnect_state(&route_key)))?
+            .map(|value| to_json(&value)).transpose()
+    }
+
+    pub fn clear_reconnect(&self, route_key: String) -> Result<(), MobileMeshError> {
+        self.with_state(|state| { state.clear_reconnect(&route_key); Ok(()) })
+    }
+
+    pub fn clear_reconnects_with_prefix(&self, prefix: String) -> Result<(), MobileMeshError> {
+        self.with_state(|state| { state.clear_reconnects_with_prefix(&prefix); Ok(()) })
+    }
+
+    pub fn connected_devices(&self, workspace_id: String) -> Result<Vec<String>, MobileMeshError> {
+        self.with_state(|state| Ok(state.connected_devices(&workspace_id).into_iter().collect()))
+    }
+
+    pub fn set_gossip_endpoints_json(
+        &self,
+        workspace_id: String,
+        endpoints: Vec<String>,
+    ) -> Result<String, MobileMeshError> {
+        let topology = self.with_state(|state| Ok(state.set_gossip_endpoints(workspace_id, endpoints)))?;
+        to_json(&topology)
+    }
+
+    pub fn clear_gossip(&self, workspace_id: String) -> Result<(), MobileMeshError> {
+        self.with_state(|state| { state.clear_gossip(&workspace_id); Ok(()) })
+    }
+
+    pub fn plan_dial_json(
+        &self,
+        peer_key: String,
+        relay_available: bool,
+        now_ms: u64,
+    ) -> Result<String, MobileMeshError> {
+        let mut policy = self.relay_policy.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile dial policy lock poisoned"))?;
+        to_json(&policy.plan(&peer_key, relay_available, now_ms))
+    }
+
+    pub fn record_network_failure(&self, peer_key: String, now_ms: u64) -> Result<(), MobileMeshError> {
+        let mut policy = self.relay_policy.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile dial policy lock poisoned"))?;
+        policy.record_network_failure(peer_key, now_ms);
+        Ok(())
+    }
+
+    pub fn record_dial_success(
+        &self,
+        peer_key: String,
+        mode: String,
+        now_ms: u64,
+    ) -> Result<(), MobileMeshError> {
+        let mode = match mode.as_str() {
+            "direct" => DialMode::Direct,
+            "relay" => DialMode::Relay,
+            _ => return Err(MobileMeshError::from_display("Invalid dial mode")),
+        };
+        let mut policy = self.relay_policy.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile dial policy lock poisoned"))?;
+        policy.record_success(&peer_key, mode, now_ms);
+        Ok(())
     }
 
     pub fn control_frames(
@@ -1246,6 +1370,7 @@ mod tests {
     fn mobile_runtime_uses_shared_session_and_control_state_machine() {
         let runtime = MobileMeshRuntime::new();
         runtime.start().unwrap();
+        assert!(runtime.is_running().unwrap());
         let candidate = |connection: &str, sequence: u64| {
             serde_json::json!({
                 "key": { "workspaceId": "workspace", "deviceId": "device", "instanceId": "instance" },
@@ -1263,6 +1388,10 @@ mod tests {
         assert!(matches!(replacement, meta_mesh_core::SessionAdmission::Accepted {
             replaced_connection_id: Some(value), ..
         } if value == "first"));
+        assert_eq!(runtime.connected_devices("workspace".into()).unwrap(), vec!["device"]);
+        let sessions: Vec<meta_mesh_core::RuntimeSession> = from_json(&runtime.sessions_json().unwrap()).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].connection_id, "replacement");
 
         let bytes = vec![3_u8; meta_mesh_core::MAX_CONTROL_FRAME_BYTES + 1];
         let frames = runtime.control_frames("workspace".into(), bytes.clone()).unwrap();
@@ -1273,5 +1402,47 @@ mod tests {
             ).unwrap() { result = Some(value); }
         }
         assert_eq!(result, Some(bytes));
+        assert_eq!(runtime.stop().unwrap(), vec!["replacement"]);
+        assert!(!runtime.is_running().unwrap());
+    }
+
+    #[test]
+    fn mobile_runtime_matches_browser_route_reconnect_gossip_and_relay_decisions() {
+        let runtime = MobileMeshRuntime::new();
+        let first: meta_mesh_core::RouteAttempt = from_json(&runtime.begin_route_attempt_json("peer".into(), 10).unwrap()).unwrap();
+        let second: meta_mesh_core::RouteAttempt = from_json(&runtime.begin_route_attempt_json("peer".into(), 11).unwrap()).unwrap();
+        assert!(runtime.route_attempt_active("peer".into()).unwrap());
+        assert!(!runtime.finish_route_attempt("peer".into(), first.token).unwrap());
+        assert!(runtime.finish_route_attempt("peer".into(), second.token).unwrap());
+
+        let reconnect: meta_mesh_core::ReconnectState = from_json(&runtime.schedule_reconnect_json(
+            "peer".into(), 100, 50, 1_000,
+        ).unwrap()).unwrap();
+        assert_eq!(reconnect.retry_at_ms, 150);
+        assert_eq!(runtime.due_reconnects(149).unwrap(), Vec::<String>::new());
+        assert_eq!(runtime.due_reconnects(150).unwrap(), vec!["peer"]);
+        assert!(runtime.reconnect_state_json("peer".into()).unwrap().is_some());
+        runtime.clear_reconnects_with_prefix("pe".into()).unwrap();
+        assert!(runtime.reconnect_state_json("peer".into()).unwrap().is_none());
+
+        let topology: meta_mesh_core::GossipTopology = from_json(&runtime.set_gossip_endpoints_json(
+            "workspace".into(), vec!["b".into(), "a".into(), "a".into()],
+        ).unwrap()).unwrap();
+        assert_eq!(topology.endpoints, vec!["a", "b"]);
+        assert!(topology.changed);
+        let unchanged: meta_mesh_core::GossipTopology = from_json(&runtime.set_gossip_endpoints_json(
+            "workspace".into(), vec!["a".into(), "b".into()],
+        ).unwrap()).unwrap();
+        assert!(!unchanged.changed);
+
+        let direct: meta_mesh_core::DialPlan = from_json(&runtime.plan_dial_json("peer".into(), true, 100).unwrap()).unwrap();
+        assert_eq!(direct.mode, DialMode::Direct);
+        assert_eq!(direct.relay_fallback_at_ms, Some(1_600));
+        runtime.record_network_failure("peer".into(), 200).unwrap();
+        let relay: meta_mesh_core::DialPlan = from_json(&runtime.plan_dial_json("peer".into(), true, 201).unwrap()).unwrap();
+        assert_eq!(relay.mode, DialMode::Relay);
+        runtime.record_dial_success("peer".into(), "direct".into(), 202).unwrap();
+        let recovered: meta_mesh_core::DialPlan = from_json(&runtime.plan_dial_json("peer".into(), true, 203).unwrap()).unwrap();
+        assert_eq!(recovered.mode, DialMode::Direct);
     }
 }

@@ -1,6 +1,8 @@
 package interop
 
 import uniffi.meta_mesh_mobile.MobileMeshNode
+import uniffi.meta_mesh_mobile.MobileMeshRuntime
+import uniffi.meta_mesh_mobile.MobileMeshHandshakeFlow
 
 private fun expect(condition: Boolean, message: String) {
     check(condition) { "Kotlin interop failure: $message" }
@@ -10,6 +12,28 @@ fun main() {
     val native = MobileMeshNode.start(ByteArray(32) { 41 }, emptyList(), false, null)
     val kotlin = MobileMeshNode.start(ByteArray(32) { 42 }, listOf(native.endpointId()), false, null)
     try {
+        val runtime = MobileMeshRuntime()
+        runtime.start()
+        val handshake = MobileMeshHandshakeFlow("outgoing")
+        expect(handshake.step() == "sendRequest", "Kotlin handshake did not start outbound")
+        expect(handshake.advance("sendRequest", null) == "readResponse", "Kotlin handshake lost response stage")
+        expect(handshake.advance("readResponse", null) == "mergeAuthority", "Kotlin handshake lost authority stage")
+        expect(handshake.advance("mergeAuthority", null) == "verifyPeer", "Kotlin handshake lost peer verification")
+        expect(handshake.advance("verifyPeer", null) == "checkExpectedPeer", "Kotlin handshake lost peer identity check")
+        expect(handshake.advance("checkExpectedPeer", false) == "peerMismatch", "Kotlin handshake accepted wrong peer")
+        expect(runtime.isRunning(), "Kotlin runtime did not start")
+        expect(runtime.beginRouteAttemptJson("peer-1", 100UL).contains("\"routeKey\":\"peer-1\""), "Kotlin route attempt lost peer key")
+        expect(runtime.routeAttemptActive("peer-1"), "Kotlin route attempt was not retained")
+        runtime.scheduleReconnectJson("peer-1", 100UL, 50UL, 500UL)
+        expect(runtime.dueReconnects(149UL).isEmpty(), "Kotlin reconnect fired early")
+        expect(runtime.dueReconnects(150UL) == listOf("peer-1"), "Kotlin reconnect did not fire")
+        expect(runtime.planDialJson("peer-1", true, 100UL).contains("\"mode\":\"direct\""), "Kotlin first dial did not prefer direct")
+        runtime.recordNetworkFailure("peer-1", 100UL)
+        expect(runtime.planDialJson("peer-1", true, 101UL).contains("\"mode\":\"relay\""), "Kotlin retry did not choose relay")
+        runtime.recordDialSuccess("peer-1", "direct", 102UL)
+        expect(runtime.planDialJson("peer-1", true, 103UL).contains("\"mode\":\"direct\""), "Kotlin direct success did not reset dial policy")
+        runtime.stop()
+
         val deniedTicket = native.addBlob("denied".encodeToByteArray())
         expect(runCatching { kotlin.fetchBlob(deniedTicket) }.isFailure, "deny-by-default accepted an unauthorized Kotlin client")
 

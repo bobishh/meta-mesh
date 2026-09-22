@@ -1,11 +1,30 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    ControlFrameReceiver, DialMode, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
+    ControlFrameReceiver, DialMode, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
     control_frames,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub struct WasmMeshHandshakeFlow {
+    inner: MeshHandshakeFlow,
+}
+
+#[wasm_bindgen]
+impl WasmMeshHandshakeFlow {
+    #[wasm_bindgen(constructor)]
+    pub fn new(direction_name: &str) -> Result<Self, JsValue> {
+        Ok(Self { inner: MeshHandshakeFlow::new(direction(direction_name)?) })
+    }
+
+    pub fn step(&self) -> String { self.inner.step().as_str().to_string() }
+
+    pub fn advance(&mut self, completed: &str, decision: Option<bool>) -> Result<String, JsValue> {
+        self.inner.advance(completed, decision).map(|step| step.as_str().to_string()).map_err(js_error)
+    }
+}
 
 #[wasm_bindgen]
 pub struct WasmMeshRuntimeState {

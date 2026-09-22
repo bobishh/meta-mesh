@@ -172,6 +172,7 @@ impl MeshRuntimeState {
         self.running = false;
         self.attempts.clear();
         self.reconnects.clear();
+        self.gossip_peers.clear();
         let connections = self
             .sessions
             .values()
@@ -567,6 +568,10 @@ mod tests {
         runtime.clear_gossip("workspace");
         let restored = runtime.set_gossip_endpoints("workspace".into(), vec!["a".into(), "b".into()]);
         assert!(restored.changed);
+
+        runtime.stop();
+        let after_restart = runtime.set_gossip_endpoints("workspace".into(), vec!["a".into(), "b".into()]);
+        assert!(after_restart.changed);
     }
 
     #[test]

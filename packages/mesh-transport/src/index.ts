@@ -89,6 +89,7 @@ export type IrohModule = {
   WasmDeviceRouteCatalog?: { new(): any }
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
   WasmMeshRuntimeState?: { new(): any }
+  WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>

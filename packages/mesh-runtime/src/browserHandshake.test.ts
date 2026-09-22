@@ -52,6 +52,7 @@ describe("BrowserMeshHandshake", () => {
 
     expect(codec.encodeResponse).toHaveBeenCalledWith("secret", expect.objectContaining({ revocations: [{ payload: { personId: "revoked" } }] }))
     expect(host.install).not.toHaveBeenCalled()
+    expect(host.putVerifiedBundle).not.toHaveBeenCalled()
   })
 })
 
@@ -77,5 +78,23 @@ describe("BrowserMeshOutgoingHandshake", () => {
     expect(stream.send).toHaveBeenCalledWith(new Uint8Array([2]))
     expect(host.mergeAuthority).toHaveBeenCalledBefore(host.verifyPeer)
     expect(result.remote.deviceId).toBe("remote")
+  })
+
+  it("does not store a peer bundle when the response came from another device", async () => {
+    const { BrowserMeshOutgoingHandshake } = await import("./browserHandshake")
+    const stream = { read: vi.fn(async () => new Uint8Array([3])), send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
+    const credential = { secret: "secret", workspaceId: "workspace" }
+    const host = {
+      secret: () => "secret", workspaceId: () => "workspace", request: vi.fn(async () => request),
+      mergeAuthority: vi.fn(async () => credential),
+      verifyPeer: vi.fn(async () => ({ deviceId: "wrong-device", instanceId: "slot", issuedAt: "2026-01-01T00:00:00.000Z", personId: "person", endpoint: "endpoint" })),
+      putVerifiedBundle: vi.fn(async () => {}), trace: vi.fn(),
+    }
+    const codec = { encodeRequest: () => new Uint8Array([2]), readResponse: () => response, features: () => ({}) }
+    const handshake = new BrowserMeshOutgoingHandshake(host, codec as never)
+
+    await expect(handshake.exchange({ openStream: async () => stream }, credential, "out-2", "expected-device"))
+      .rejects.toThrow("Unexpected mesh peer")
+    expect(host.putVerifiedBundle).not.toHaveBeenCalled()
   })
 })
