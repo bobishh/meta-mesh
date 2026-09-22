@@ -86,6 +86,12 @@ export type IdentityStoreOptions = {
   storageKey: string
   signatureDomain?: string
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">
+  asyncStorage?: {
+    getItem(key: string): Promise<string | null>
+    setItem(key: string, value: string): Promise<void>
+    removeItem(key: string): Promise<void>
+  }
+  requirePersistence?: boolean
 }
 
 export function generateRecoveryPhrase(strengthBits: RecoveryStrengthBits = 128): string {
@@ -588,19 +594,26 @@ export class BrowserIdentityStore {
     }
   }
 
-  private get(key: string): string | null {
+  private async get(key: string): Promise<string | null> {
+    if (this.options.asyncStorage) return await this.options.asyncStorage.getItem(key)
     try { return this.storage()?.getItem(key) ?? this.memory.get(key) ?? null }
     catch { return this.memory.get(key) ?? null }
   }
 
-  private set(key: string, value: string, strict = false) {
+  private async set(key: string, value: string, strict = false) {
+    if (this.options.asyncStorage) {
+      await this.options.asyncStorage.setItem(key, value)
+      this.memory.set(key, value)
+      return
+    }
     try { this.storage()?.setItem(key, value) }
     catch (error) { if (strict) throw error }
     this.memory.set(key, value)
   }
 
-  private remove(key: string) {
-    try { this.storage()?.removeItem(key) } catch {}
+  private async remove(key: string) {
+    if (this.options.asyncStorage) await this.options.asyncStorage.removeItem(key)
+    else try { this.storage()?.removeItem(key) } catch {}
     this.memory.delete(key)
   }
 
@@ -611,7 +624,7 @@ export class BrowserIdentityStore {
 
   reset() {
     this.clearMemory()
-    this.remove(this.options.storageKey)
+    void this.remove(this.options.storageKey)
   }
 
   async createRecoverable(
@@ -665,7 +678,7 @@ export class BrowserIdentityStore {
 
   private async load(): Promise<LocalProfile | null> {
     try {
-      const raw = this.get(this.options.storageKey)
+      const raw = await this.get(this.options.storageKey)
       if (!raw) return null
       const saved = JSON.parse(raw) as SerializedProfile
       if (!saved.identity || !saved.device || !saved.privateKeys?.devicePrivateKeyPkcs8) return null
@@ -685,7 +698,8 @@ export class BrowserIdentityStore {
         certificate: saved.certificate,
         privateKeys: { identityPrivateKey, devicePrivateKey },
       }
-    } catch {
+    } catch (error) {
+      if (this.options.requirePersistence) throw error
       return null
     }
   }
@@ -705,9 +719,9 @@ export class BrowserIdentityStore {
           ),
         },
       }
-      this.set(this.options.storageKey, JSON.stringify(serialized), strict)
+      await this.set(this.options.storageKey, JSON.stringify(serialized), strict)
     } catch (error) {
-      if (strict) throw error
+      if (strict || this.options.requirePersistence) throw error
     }
   }
 
@@ -754,8 +768,8 @@ export class BrowserIdentityStore {
 
   async adopt(identity: PublicIdentity, certificate: DeviceCertificate): Promise<LocalProfile> {
     const current = await this.bootstrap()
-    const previous = this.get(this.options.storageKey)
-    if (previous) this.set(`${this.options.storageKey}.backup.${current.identity.personId}`, previous, true)
+    const previous = await this.get(this.options.storageKey)
+    if (previous) await this.set(`${this.options.storageKey}.backup.${current.identity.personId}`, previous, true)
     const profile: LocalProfile = {
       identity,
       certificate,
