@@ -13,6 +13,7 @@ export type BrowserDocumentSessionInput<C, Credential, Profile> = {
   connectionId: string
   remotePersonId: string
   ownerWorkspaceSupported: boolean
+  blobTransferSupported?: boolean
   remoteEndpoint: string
 }
 

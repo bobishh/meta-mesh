@@ -34,8 +34,9 @@ describe("Rust mesh runtime", () => {
 describe("MeshHandshakeCodec", () => {
   it("exposes negotiated features", () => {
     const codec = new MeshHandshakeCodec()
-    expect(codec.features(["heartbeat-v1", "automerge-sync-v1"])).toEqual({
+    expect(codec.features(["heartbeat-v1", "automerge-sync-v1", "blob-transfer-v1"])).toEqual({
       heartbeatSupported: true, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
+      blobTransferSupported: true,
     })
   })
 })

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MemoryMeshStore } from "../../mesh-browser-store/src/index"
 import { BrowserIdentityStore } from "../../mesh-identity/src/index"
+import { installPairingCodec } from "../../mesh-pairing/src/index"
 import {
   MAX_BLOB_BYTES,
   MeshBlobStore,
@@ -8,6 +9,8 @@ import {
   createBlobRequest,
   createBlobResponse,
   createIrohBlobDescriptor,
+  requestBlob,
+  respondToBlobRequest,
   verifyBlobBytes,
   verifyBlobRequest,
   verifyBlobResponse,
@@ -16,10 +19,32 @@ import {
 
 describe("mesh blob transfer", () => {
   let alice: Awaited<ReturnType<BrowserIdentityStore["bootstrap"]>>
+  let restoreCodec: (() => void) | undefined
 
   beforeEach(async () => {
+    restoreCodec = installPairingCodec({
+      encode(type, secret, bytes) {
+        const header = new TextEncoder().encode(`${JSON.stringify({ type, version: "0.0.1", secret })}\n`)
+        const frame = new Uint8Array(header.byteLength + bytes.byteLength)
+        frame.set(header)
+        frame.set(bytes, header.byteLength)
+        return frame
+      },
+      inspect(frame) {
+        const separator = frame.indexOf(10)
+        return JSON.parse(new TextDecoder().decode(frame.slice(0, separator)))
+      },
+      decode(frame, expectedType, expectedSecret) {
+        const separator = frame.indexOf(10)
+        const header = JSON.parse(new TextDecoder().decode(frame.slice(0, separator)))
+        if (header.type !== expectedType || header.secret !== expectedSecret) throw new Error("Pairing authorization failed")
+        return frame.slice(separator + 1)
+      },
+    })
     alice = await new BrowserIdentityStore({ storageKey: crypto.randomUUID() }).bootstrap("Alice")
   })
+
+  afterEach(() => restoreCodec?.())
 
   it("Given a room member and stored bytes, when ranges are requested, then signed access and content hash verify", async () => {
     const bytes = new TextEncoder().encode("hello across mesh")
@@ -113,6 +138,39 @@ describe("mesh blob transfer", () => {
     const blake3BlobId = "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     const request = await createBlobRequest(alice, "room-1", blake3BlobId, 0, 8)
     await expect(verifyBlobRequest(request, alice.identity, [alice.certificate], "room-1")).resolves.toEqual(request)
+  })
+
+  it("Given an authenticated mesh stream, when a multi-chunk blob is requested, then verified bytes arrive", async () => {
+    const bytes = new Uint8Array(256 * 1024 + 7).fill(23)
+    const descriptor = await createBlobDescriptor(bytes, "large.bin", "application/octet-stream")
+    const store = new MeshBlobStore(new MemoryMeshStore())
+    await store.put(descriptor, bytes)
+    const connection = {
+      async openStream() {
+        let response: Uint8Array | undefined
+        let release!: () => void
+        const ready = new Promise<void>(resolve => { release = resolve })
+        return {
+          async send(frame: Uint8Array) {
+            await respondToBlobRequest({
+              async send(value) { response = value },
+              async closeSend() { release() },
+            }, frame, {
+              secret: "workspace-secret",
+              scopeId: "workspace-1",
+              identity: alice.identity,
+              certificates: [alice.certificate],
+              descriptor: async blobId => blobId === descriptor.blobId ? descriptor : undefined,
+              bytes: value => store.getVerified(value),
+            })
+          },
+          async closeSend() {},
+          async read() { await ready; return response! },
+        }
+      },
+    }
+
+    await expect(requestBlob(connection, "workspace-secret", alice, "workspace-1", descriptor)).resolves.toEqual(bytes)
   })
 })
 

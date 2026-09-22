@@ -18,6 +18,7 @@ export type BrowserMeshSessionEntry<C extends MeshConnection, S extends BrowserM
   connection: C
   session: S
   ownershipReceiptSupported?: boolean
+  blobTransferSupported?: boolean
   runtimeGeneration?: number
   evict(cause: string): Promise<void>
 }
@@ -48,6 +49,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
     connectionId: string
     remotePersonId: string
     ownerWorkspaceSupported: boolean
+    blobTransferSupported: boolean
     remoteEndpoint: string
   }): { session: S; reset?(): void }
   runtime(): SessionRuntime
@@ -84,6 +86,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     ownershipReceiptSupported?: boolean
     remotePersonId?: string
     ownerWorkspaceSupported?: boolean
+    blobTransferSupported?: boolean
     remoteEndpoint?: string
   }): Promise<boolean> {
     const key = this.host.key(input.workspaceId, input.deviceId, input.instanceId)
@@ -106,6 +109,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       connection: input.connection, credential, workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId,
       profile, incrementalSupported: input.incrementalSupported ?? false, connectionId: input.connectionId,
       remotePersonId: input.remotePersonId ?? "", ownerWorkspaceSupported: input.ownerWorkspaceSupported ?? false,
+      blobTransferSupported: input.blobTransferSupported ?? false,
       remoteEndpoint: input.remoteEndpoint ?? "",
     })
     let evicted = false
@@ -114,6 +118,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId, endpoint: input.remoteEndpoint ?? "",
       remoteIssuedAt: input.remoteIssuedAt, remoteRouteSequence: input.remoteRouteSequence, direction: input.direction,
       connection: input.connection, session: created.session, ownershipReceiptSupported: input.ownershipReceiptSupported,
+      blobTransferSupported: input.blobTransferSupported,
       runtimeGeneration: admission.generation,
       evict: async cause => {
         if (evicted) return
@@ -137,6 +142,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       connectionId: input.connectionId, peerId: short(input.deviceId), instanceId: short(input.instanceId),
       workspaceId: short(input.workspaceId), direction: input.direction, heartbeat: Boolean(input.heartbeatSupported),
       incremental: Boolean(input.incrementalSupported), replaced: Boolean(previous),
+      blobTransfer: Boolean(input.blobTransferSupported),
     })
     this.host.diagnosticCleared()
     void previous?.evict("replaced")

@@ -1,5 +1,7 @@
 import { blake3 } from "@noble/hashes/blake3.js"
 import { bytesToHex } from "@noble/hashes/utils.js"
+import { decodePairingFrame, encodePairingFrame, inspectPairingFrame } from "@meta-uber/mesh-pairing"
+import type { MeshConnection, MeshStream } from "@meta-uber/mesh-transport"
 import type { MeshStore } from "../../mesh-browser-store/src/index"
 import {
   fromBase64Url,
@@ -17,6 +19,9 @@ export const BLOB_SIGNATURE_DOMAIN = "MESH-BLOB/1"
 export const MAX_BLOB_BYTES = 8 * 1024 * 1024
 export const BLOB_CHUNK_BYTES = 256 * 1024
 export const MAX_ATTACHMENTS = 4
+export const BLOB_REQUEST_FRAME = "mesh-blob-request-v1"
+export const BLOB_RESPONSE_FRAME = "mesh-blob-response-v1"
+export const BLOB_ERROR_FRAME = "mesh-blob-error-v1"
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -209,6 +214,75 @@ export function verifyBlobResponse(response: BlobResponse, request: BlobRequest,
     throw new Error("Invalid blob response")
   }
   return bytes
+}
+
+export async function requestBlob(
+  connection: Pick<MeshConnection, "openStream">,
+  secret: string,
+  profile: LocalProfile,
+  scopeId: string,
+  descriptor: BlobDescriptor,
+): Promise<Uint8Array> {
+  validateBlobDescriptor(descriptor)
+  const result = new Uint8Array(descriptor.size)
+  for (let offset = 0; offset < descriptor.size; offset += BLOB_CHUNK_BYTES) {
+    const request = await createBlobRequest(profile, scopeId, descriptor.blobId, offset)
+    const stream = await connection.openStream()
+    await stream.send(encodePairingFrame(BLOB_REQUEST_FRAME, secret, encodeJson(request)))
+    await stream.closeSend()
+    const frame = await stream.read()
+    const type = inspectPairingFrame(frame).type
+    if (type === BLOB_ERROR_FRAME) {
+      const failure = decodeJson(decodePairingFrame(frame, BLOB_ERROR_FRAME, secret)) as { message?: unknown }
+      throw new Error(typeof failure.message === "string" ? failure.message : "Blob transfer failed")
+    }
+    const response = decodeJson(decodePairingFrame(frame, BLOB_RESPONSE_FRAME, secret)) as BlobResponse
+    result.set(verifyBlobResponse(response, request, descriptor), offset)
+  }
+  return verifyBlobBytes(descriptor, result)
+}
+
+export async function respondToBlobRequest(
+  stream: Pick<MeshStream, "send" | "closeSend">,
+  frame: Uint8Array,
+  options: {
+    secret: string
+    scopeId: string
+    identity: PublicIdentity
+    certificates: DeviceCertificate[]
+    descriptor(blobId: string): Promise<BlobDescriptor | undefined>
+    bytes(descriptor: BlobDescriptor): Promise<Uint8Array | undefined>
+  },
+): Promise<void> {
+  let requestId = ""
+  try {
+    const request = decodeJson(decodePairingFrame(frame, BLOB_REQUEST_FRAME, options.secret)) as BlobRequest
+    requestId = request?.payload?.requestId ?? ""
+    await verifyBlobRequest(request, options.identity, options.certificates, options.scopeId)
+    const descriptor = await options.descriptor(request.payload.blobId)
+    if (!descriptor || descriptor.blobId !== request.payload.blobId) throw new Error("Blob is not referenced by this workspace")
+    const bytes = await options.bytes(descriptor)
+    if (!bytes) throw new Error("Blob is not available on this peer")
+    await verifyBlobBytes(descriptor, bytes)
+    const { offset, length } = request.payload
+    if (offset >= bytes.byteLength) throw new Error("Blob request range is outside the file")
+    const response = createBlobResponse(request, descriptor, bytes.slice(offset, Math.min(offset + length, bytes.byteLength)))
+    await stream.send(encodePairingFrame(BLOB_RESPONSE_FRAME, options.secret, encodeJson(response)))
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 240)
+    await stream.send(encodePairingFrame(BLOB_ERROR_FRAME, options.secret, encodeJson({ version: 1, requestId, message })))
+  } finally {
+    await stream.closeSend()
+  }
+}
+
+function encodeJson(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value))
+}
+
+function decodeJson(bytes: Uint8Array): unknown {
+  try { return JSON.parse(new TextDecoder().decode(bytes)) }
+  catch { throw new Error("Invalid blob transfer frame") }
 }
 
 export class MeshBlobStore {

@@ -26,6 +26,9 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
+    "mesh-blob-request-v1",
+    "mesh-blob-response-v1",
+    "mesh-blob-error-v1",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

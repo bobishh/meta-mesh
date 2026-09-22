@@ -7,6 +7,8 @@
   "dependencies": {
     "@meta-uber/mesh-browser-store": "*",
     "@meta-uber/mesh-identity": "*",
+    "@meta-uber/mesh-pairing": "*",
+    "@meta-uber/mesh-transport": "*",
     "@noble/hashes": "^2.4.0"
   }
 }

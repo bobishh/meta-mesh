@@ -23,6 +23,7 @@ export type MeshHandshakeFeatures = {
   incrementalSupported: boolean
   ownershipReceiptSupported: boolean
   ownerWorkspaceSupported: boolean
+  blobTransferSupported: boolean
 }
 
 /** Canonical authenticated wire framing for browser, native and mobile hosts. */
@@ -40,6 +41,7 @@ export class MeshHandshakeCodec {
       incrementalSupported: values.includes("automerge-sync-v1"),
       ownershipReceiptSupported: values.includes("ownership-receipt-v1"),
       ownerWorkspaceSupported: values.includes("owner-workspace-v1"),
+      blobTransferSupported: values.includes("blob-transfer-v1"),
     }
   }
 
