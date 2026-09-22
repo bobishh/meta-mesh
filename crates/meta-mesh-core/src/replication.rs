@@ -272,12 +272,13 @@ pub fn durable_ack_matches(
         .iter()
         .map(|change| change.hash.as_str())
         .collect::<std::collections::HashSet<_>>();
-    ack.payload.accepted_hashes.len() <= expected.len()
-        && ack
-            .payload
-            .accepted_hashes
-            .iter()
-            .all(|hash| expected.contains(hash.as_str()))
+    let accepted = ack
+        .payload
+        .accepted_hashes
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    accepted.len() == ack.payload.accepted_hashes.len() && accepted == expected
 }
 
 #[derive(Debug, Default)]
@@ -447,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn durable_ack_must_reference_only_batch_hashes() {
+    fn durable_ack_must_confirm_the_complete_batch() {
         let batch = DeviceBatch {
             protocol_version: 1,
             scope_id: "s".into(),
@@ -474,6 +475,22 @@ mod tests {
             signature: "signature".into(),
         };
         assert!(durable_ack_matches(&ack, &batch, "target"));
+        let empty = DurableBatchAck {
+            payload: DurableBatchAckPayload {
+                accepted_hashes: vec![],
+                ..ack.payload.clone()
+            },
+            ..ack.clone()
+        };
+        assert!(!durable_ack_matches(&empty, &batch, "target"));
+        let partial_batch = DeviceBatch {
+            changes: vec![
+                DeviceChange { hash: "h".into(), bytes: vec![1] },
+                DeviceChange { hash: "second".into(), bytes: vec![2] },
+            ],
+            ..batch.clone()
+        };
+        assert!(!durable_ack_matches(&ack, &partial_batch, "target"));
         let mut forged = ack;
         forged.payload.accepted_hashes.push("other".into());
         assert!(!durable_ack_matches(&forged, &batch, "target"));

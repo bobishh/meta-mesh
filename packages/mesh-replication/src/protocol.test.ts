@@ -70,6 +70,29 @@ describe("replica-aware delivery", () => {
     expect(store.hashes()).toEqual(["change-1"])
   })
 
+  it("Given a route acknowledges only part of a batch, when another route can confirm every hash, then delivery keeps trying routes", async () => {
+    const attempts: string[] = []
+    const batch = deviceBatch("batch-1", ["change-1", "change-2"])
+
+    const result = await deliverBatchToDevice({
+      targetDeviceId: "device-remote",
+      routes: [deviceRoute("partial"), deviceRoute("complete")],
+      batch,
+      fallbackDelayMs: 0,
+      send: async route => {
+        attempts.push(route.instanceId)
+        return durableAck(batch, "device-remote", route.instanceId === "partial"
+          ? ["change-1"]
+          : ["change-2", "change-1"])
+      },
+      verifyAck: async () => true,
+    })
+
+    expect(attempts).toEqual(["partial", "complete"])
+    expect(result.route.instanceId).toBe("complete")
+    expect(result.ack.acceptedHashes).toEqual(["change-2", "change-1"])
+  })
+
   it("Given one device has several live routes, when the preferred connection fails, then the device session uses an alternate route", async () => {
     const attempts: string[] = []
     const result = await connectToDevice({
