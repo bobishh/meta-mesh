@@ -17,6 +17,10 @@ pub struct MeshHandshake {
     pub peer: Value,
     #[serde(default)]
     pub revocations: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_revocations: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departures: Vec<Value>,
     #[serde(default)]
     pub ownership_transfers: Vec<Value>,
     #[serde(default)]
@@ -40,6 +44,8 @@ pub fn validate_mesh_handshake(raw: Value, expected_workspace_id: Option<&str>) 
         || expected_workspace_id.is_some_and(|workspace_id| workspace_id != handshake.workspace_id)
         || !handshake.peer.is_object()
         || handshake.revocations.len() > MAX_PEERS
+        || handshake.device_revocations.len() > MAX_PEERS
+        || handshake.departures.len() > MAX_PEERS
         || handshake.ownership_transfers.len() > MAX_AUTHORITY_RECORDS
         || handshake.break_glass_claims.len() > MAX_AUTHORITY_RECORDS
         || handshake.succession_votes.len() > MAX_AUTHORITY_RECORDS

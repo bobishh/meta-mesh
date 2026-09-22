@@ -138,6 +138,25 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::canonical_revocations(&records))
     }
 
+    #[wasm_bindgen(js_name = verifyWorkspaceDeparture)]
+    pub fn verify_workspace_departure(record: JsValue, workspace_id: &str, authority: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let record: meta_mesh_core::authority::WorkspaceDeparture = from_value(record)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        meta_mesh_core::authority::verify_workspace_departure(&record, workspace_id, &authority,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?)).map_err(js_error)?;
+        to_value(&record)
+    }
+
+    #[wasm_bindgen(js_name = verifyWorkspaceDeviceRevocation)]
+    pub fn verify_workspace_device_revocation(record: JsValue, workspace_id: &str,
+        owner_person_id: &str, authority: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let record: meta_mesh_core::authority::WorkspaceDeviceRevocation = from_value(record)?;
+        let authority: WorkspaceAuthority = from_value(authority)?;
+        meta_mesh_core::authority::verify_workspace_device_revocation(&record, workspace_id,
+            owner_person_id, &authority, i128::from(integer(now_ms, "Invalid authority timestamp")?)).map_err(js_error)?;
+        to_value(&record)
+    }
+
     #[wasm_bindgen(js_name = verifyWorkspaceRevocation)]
     pub fn verify_workspace_revocation(
         record: JsValue,

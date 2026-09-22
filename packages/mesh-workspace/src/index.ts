@@ -761,3 +761,40 @@ export async function verifyWorkspaceSuccessionClaim(raw: unknown, workspaceId: 
     raw, workspaceId, authority, minimumEpoch, [...revoked], now,
   ) as WorkspaceSuccessionClaim
 }
+
+export type WorkspaceDeviceRevocation = {
+  record: SignedEnvelope<{ kind: "workspace-device-revocation"; version: 1; workspaceId: string; personId: string; deviceId: string; revokedAt: string }>
+  authority: WorkspaceAuthority
+}
+
+export async function createWorkspaceDeviceRevocation(profile: LocalProfile, workspaceId: string,
+  personId: string, deviceId: string, certificates: DeviceCertificate[]): Promise<WorkspaceDeviceRevocation> {
+  const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
+    kind: "workspace-device-revocation" as const, version: 1 as const, workspaceId, personId, deviceId,
+    revokedAt: new Date().toISOString(),
+  }, profile.device.deviceId)
+  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
+}
+
+export function verifyWorkspaceDeviceRevocation(value: WorkspaceDeviceRevocation, workspaceId: string,
+  ownerPersonId: string): WorkspaceDeviceRevocation {
+  const record = meshRustRuntime().state.verifyWorkspaceDeviceRevocation(value.record, workspaceId,
+    ownerPersonId, value.authority, Date.now()) as WorkspaceDeviceRevocation["record"]
+  return { record, authority: value.authority }
+}
+
+export type WorkspaceDeparture = {
+  record: SignedEnvelope<{ kind: "workspace-departure"; version: 1; workspaceId: string; personId: string; accessEpoch: number; leftAt: string }>
+  authority: WorkspaceAuthority
+}
+export async function createWorkspaceDeparture(profile: LocalProfile, workspaceId: string, accessEpoch: number,
+  certificates: DeviceCertificate[]): Promise<WorkspaceDeparture> {
+  const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
+    kind: "workspace-departure" as const, version: 1 as const, workspaceId, personId: profile.identity.personId,
+    accessEpoch, leftAt: new Date().toISOString(),
+  }, profile.device.deviceId)
+  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
+}
+export function verifyWorkspaceDeparture(value: WorkspaceDeparture, workspaceId: string): WorkspaceDeparture {
+  return { record: meshRustRuntime().state.verifyWorkspaceDeparture(value.record, workspaceId, value.authority, Date.now()) as WorkspaceDeparture["record"], authority: value.authority }
+}

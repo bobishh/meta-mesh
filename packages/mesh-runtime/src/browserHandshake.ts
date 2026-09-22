@@ -27,7 +27,7 @@ export type BrowserMeshHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
   workspaceId(credential: C): string
   mergeAuthority(credential: C, request: MeshHandshakePayload): Promise<C>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
-  revoked(credential: C, personId: string, grant: unknown): boolean
+  revoked(credential: C, personId: string, grant: unknown, deviceId: string): boolean
   revocations(credential: C): MeshHandshakePayload["revocations"]
   ownBundle(credential: C): Promise<WorkspaceMemberBundle>
   response(credential: C, remotePersonId: string): Promise<MeshHandshakePayload>
@@ -90,10 +90,10 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
 
   private async rejectRevoked<S extends BrowserMeshHandshakeStream>(connection: BrowserMeshHandshakeConnection<S>,
     handshake: { stream: S; credential: C; request: MeshHandshakePayload; remote: P }): Promise<boolean> {
-    if (!this.host.revoked(handshake.credential, handshake.remote.personId, handshake.request.peer?.grant)) return false
+    if (!this.host.revoked(handshake.credential, handshake.remote.personId, handshake.request.peer?.grant, handshake.remote.deviceId)) return false
     await handshake.stream.send(this.codec.encodeResponse(this.host.secret(handshake.credential), {
-      workspaceId: this.host.workspaceId(handshake.credential), peer: await this.host.ownBundle(handshake.credential),
-      revocations: this.host.revocations(handshake.credential), ownershipTransfers: [], breakGlassClaims: [], successionVotes: [], successionClaims: [], capabilities: [],
+      ...await this.host.response(handshake.credential, handshake.remote.personId),
+      revocations: this.host.revocations(handshake.credential),
     }))
     await handshake.stream.closeSend()
     const timeout = setTimeout(() => { void connection.close() }, 10_000)

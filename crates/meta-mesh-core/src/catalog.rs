@@ -13,6 +13,10 @@ pub struct MeshCatalog {
     pub version: u8,
     pub peers: Vec<Value>,
     pub revocations: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_revocations: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departures: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ownership_transfers: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,6 +36,8 @@ pub fn validate_mesh_catalog(raw: Value) -> Result<MeshCatalog, String> {
     if catalog.version != 1
         || catalog.peers.len() > MAX_PEERS
         || catalog.revocations.len() > MAX_PEERS
+        || catalog.device_revocations.len() > MAX_PEERS
+        || catalog.departures.len() > MAX_PEERS
         || catalog.ownership_transfers.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
         || catalog.succession_votes.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
         || catalog.succession_claims.as_ref().is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)

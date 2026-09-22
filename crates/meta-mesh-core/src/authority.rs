@@ -50,6 +50,53 @@ pub type WorkspaceRevocation = SignedEnvelope<WorkspaceRevocationPayload>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceDeparturePayload {
+    pub kind: String, pub version: u8, pub workspace_id: String, pub person_id: String,
+    pub access_epoch: u64, pub left_at: String,
+}
+pub type WorkspaceDeparture = SignedEnvelope<WorkspaceDeparturePayload>;
+
+pub fn verify_workspace_departure(record: &WorkspaceDeparture, workspace_id: &str,
+    authority: &WorkspaceAuthority, now_ms: i128) -> Result<(), String> {
+    bounded(record, 32 * 1024, "Workspace departure too large")?;
+    let p = &record.payload;
+    if p.kind != "workspace-departure" || p.version != 1 || p.workspace_id != workspace_id
+        || p.person_id != authority.person_id || p.access_epoch < 1
+        || public_key_id(&authority.public_key)? != authority.person_id || !valid_time(&p.left_at, now_ms)? {
+        return Err("Invalid workspace departure".into());
+    }
+    verify_owner_envelope(record, authority, "workspace departure")
+}
+
+/// A device removal is scoped to one workspace and preserves person membership.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDeviceRevocationPayload {
+    pub kind: String,
+    pub version: u8,
+    pub workspace_id: String,
+    pub person_id: String,
+    pub device_id: String,
+    pub revoked_at: String,
+}
+pub type WorkspaceDeviceRevocation = SignedEnvelope<WorkspaceDeviceRevocationPayload>;
+
+pub fn verify_workspace_device_revocation(record: &WorkspaceDeviceRevocation, workspace_id: &str,
+    owner_person_id: &str, authority: &WorkspaceAuthority, now_ms: i128) -> Result<(), String> {
+    bounded(record, 32 * 1024, "Device revocation too large")?;
+    let p = &record.payload;
+    if p.kind != "workspace-device-revocation" || p.version != 1 || p.workspace_id != workspace_id
+        || p.person_id.is_empty() || p.device_id.is_empty()
+        || (authority.person_id != owner_person_id && authority.person_id != p.person_id)
+        || public_key_id(&authority.public_key)? != authority.person_id
+        || !valid_time(&p.revoked_at, now_ms)? {
+        return Err("Invalid workspace device revocation".into());
+    }
+    verify_owner_envelope(record, authority, "workspace device revocation")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceOwnershipTransferPayload {
     pub kind: String,
     pub version: u8,

@@ -11,6 +11,8 @@ export type RustStateCore = {
   summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, breakGlassClaims: unknown, revocations: unknown, epoch: number): unknown
   eligibleEditorPersonIds(peers: unknown): string[]
   canonicalRevocations(records: unknown): unknown
+  verifyWorkspaceDeparture(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
+  verifyWorkspaceDeviceRevocation(record: unknown, workspaceId: string, ownerPersonId: string, authority: unknown, nowMs: number): unknown
   verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
   verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
   verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown

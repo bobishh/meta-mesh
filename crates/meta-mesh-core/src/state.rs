@@ -100,7 +100,7 @@ pub fn merge_peer_records(
     } else {
         existing
     };
-    let role = if incoming_newer {
+    let mut role = if incoming_newer {
         incoming.role
     } else if existing_time > incoming_time {
         existing.role
@@ -116,6 +116,19 @@ pub fn merge_peer_records(
     let mut instances = BTreeMap::<String, PeerTransportInstance>::new();
     collect_instances(&mut instances, existing, false, incoming_dominates)?;
     collect_instances(&mut instances, incoming, true, incoming_dominates)?;
+
+    // Routes advance independently of owner-issued permissions. Both records
+    // must already have passed member verification before entering this store.
+    let mut advertisement = dominant.advertisement.clone();
+    if let Some(authorized) = newer_grant_record(existing, incoming) {
+        role = authorized.role;
+        if let (Some(target), Some(source)) = (advertisement.as_mut(), authorized.advertisement.as_ref()) {
+            copy_grant(target, source);
+            for instance in instances.values_mut() {
+                if let Some(bundle) = instance.advertisement.as_mut() { copy_grant(bundle, source); }
+            }
+        }
+    }
 
     Ok(WorkspacePeerRecord {
         workspace_id: existing.workspace_id.clone(),
@@ -137,9 +150,34 @@ pub fn merge_peer_records(
             existing.last_seen.clone()
         },
         revoked_at,
-        advertisement: dominant.advertisement.clone(),
+        advertisement,
         instances: (!instances.is_empty()).then(|| instances.into_values().take(32).collect()),
     })
+}
+
+fn newer_grant_record<'a>(left: &'a WorkspacePeerRecord, right: &'a WorkspacePeerRecord) -> Option<&'a WorkspacePeerRecord> {
+    if left.person_id != right.person_id { return None; }
+    let a = left.advertisement.as_ref()?;
+    let b = right.advertisement.as_ref()?;
+    if a.get("ownerPublicKey")?.as_str()? != b.get("ownerPublicKey")?.as_str()? { return None; }
+    let epoch = |bundle: &Value| -> Option<u64> {
+        let payload = bundle.get("grant")?.get("payload")?;
+        if payload.get("workspaceId")?.as_str()? != left.workspace_id || payload.get("personId")?.as_str()? != left.person_id { return None; }
+        Some(payload.get("accessEpoch").and_then(Value::as_u64).unwrap_or(1))
+    };
+    match epoch(a)?.cmp(&epoch(b)?) {
+        std::cmp::Ordering::Greater => Some(left),
+        std::cmp::Ordering::Less => Some(right),
+        std::cmp::Ordering::Equal => None,
+    }
+}
+
+fn copy_grant(target: &mut Value, source: &Value) {
+    if let Some(object) = target.as_object_mut() {
+        for key in ["grant", "ownerPublicKey", "ownerCertificates"] {
+            if let Some(value) = source.get(key) { object.insert(key.to_string(), value.clone()); }
+        }
+    }
 }
 
 fn collect_instances(
@@ -500,6 +538,24 @@ mod tests {
         assert_eq!(merged.endpoint, "new");
         assert_eq!(merged.role, WorkspaceRole::Visitor);
         assert_eq!(merge_peer_records(&new, &old).unwrap(), merged);
+    }
+
+    #[test]
+    fn newer_grant_survives_a_newer_route_with_old_permissions() {
+        let mut promoted = peer("old", "2026-09-20T10:00:00.000Z");
+        promoted.advertisement = Some(serde_json::json!({"ownerPublicKey":"owner", "grant": {
+            "payload":{"workspaceId":"workspace-1","personId":"person-1","accessEpoch":3,"role":"editor"}
+        }}));
+        let mut stale = peer("new", "2026-09-20T10:01:00.000Z");
+        stale.role = WorkspaceRole::Visitor;
+        stale.advertisement = Some(serde_json::json!({"ownerPublicKey":"owner", "grant": {
+            "payload":{"workspaceId":"workspace-1","personId":"person-1","accessEpoch":1,"role":"visitor"}
+        }}));
+        let merged = merge_peer_records(&promoted, &stale).unwrap();
+        assert_eq!(merged.endpoint, "new");
+        assert_eq!(merged.role, WorkspaceRole::Editor);
+        assert_eq!(merged.advertisement.as_ref().unwrap()["grant"], promoted.advertisement.as_ref().unwrap()["grant"]);
+        assert_eq!(merge_peer_records(&stale, &promoted).unwrap(), merged);
     }
 
     #[test]

@@ -285,6 +285,31 @@ function promisifyRequest<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+// Transport timestamps cannot erase verified security records saved by another tab.
+function mergeCredentialSecurity(current: WorkspaceMeshCredential, incoming: WorkspaceMeshCredential): WorkspaceMeshCredential {
+  const newer = incoming.epoch > current.epoch || (incoming.epoch === current.epoch && incoming.updatedAt >= current.updatedAt)
+  const result = structuredClone(newer ? incoming : current)
+  const left = (current.catalog ?? {}) as Record<string, unknown>
+  const right = (incoming.catalog ?? {}) as Record<string, unknown>
+  const catalog = { ...(result.catalog as Record<string, unknown> | undefined) }
+  for (const key of ["deviceRevocations", "departures", "revocations"]) {
+    if (!Array.isArray(left[key]) && !Array.isArray(right[key])) continue
+    const values = [...(Array.isArray(left[key]) ? left[key] : []), ...(Array.isArray(right[key]) ? right[key] : [])]
+    const unique = new Map(values.map(value => [JSON.stringify(value), value]))
+    if (unique.size > 512) throw new Error("Too many workspace security records")
+    catalog[key] = [...unique.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
+  }
+  result.catalog = catalog
+  type Grant = { payload: { personId: string; accessEpoch?: number } }
+  const oldGrant = current.localGrant as Grant | undefined, nextGrant = incoming.localGrant as Grant | undefined
+  if (oldGrant && nextGrant && oldGrant.payload.personId === nextGrant.payload.personId) {
+    result.localGrant = (oldGrant.payload.accessEpoch ?? 1) > (nextGrant.payload.accessEpoch ?? 1) ? current.localGrant : incoming.localGrant
+  }
+  result.ownerCertificates = [...new Map([...current.ownerCertificates, ...incoming.ownerCertificates]
+    .map(value => [JSON.stringify(value), value])).values()]
+  return result
+}
+
 async function putAuthorityIfNewer(store: IDBObjectStore, authority: WorkspaceAuthorityRecord): Promise<void> {
   const current = await promisifyRequest<WorkspaceAuthorityRecord | undefined>(store.get(authority.workspaceId))
   if (current) {
@@ -559,8 +584,7 @@ export class PeerStore {
       if (current) {
         validateWorkspaceCredential(current.credential)
         if (current.credential.ownerPersonId !== credential.ownerPersonId) throw new Error("Workspace mesh owner cannot change")
-        if (credential.epoch < current.credential.epoch) return
-        if (credential.epoch === current.credential.epoch && credential.updatedAt < current.credential.updatedAt) return
+        credential = mergeCredentialSecurity(current.credential, credential)
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))
       await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(credential))

@@ -407,6 +407,21 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect(storageSpy.clear).not.toHaveBeenCalled()
     })
 
+    it("keeps device removals and a newer local grant when a stale tab saves credentials", async () => {
+      const store = new PeerStore("match-test-security", mockIdb as any)
+      const base: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_security", ownerPersonId: "owner", ownerPublicKey: "key",
+        ownerCertificates: [], transportSecret: "secret", epoch: 2, updatedAt: "2026-09-11T00:02:00.000Z" }
+      const removal = { record: { signature: "removal", payload: { deviceId: "device" } } }
+      const grant = { payload: { personId: "member", accessEpoch: 3, role: "editor" } }
+      await store.putWorkspaceCredential({ ...base, localGrant: grant, catalog: { deviceRevocations: [removal] } })
+      await store.putWorkspaceCredential({ ...base, updatedAt: "2026-09-11T00:03:00.000Z",
+        localGrant: { payload: { personId: "member", accessEpoch: 1, role: "visitor" } }, catalog: {} })
+      const restored = await store.getWorkspaceCredential(base.workspaceId)
+      expect(restored?.localGrant).toEqual(grant)
+      expect((restored?.catalog as any).deviceRevocations).toEqual([removal])
+      expect((await store.getWorkspaceAuthority(base.workspaceId))?.localGrant).toEqual(grant)
+    })
+
     it("Given multiple workspace credentials, when one workspace leaves the mesh, then routes and active credentials are removed but signed authority survives", async () => {
       const store = new PeerStore("match-test-leave-workspace", mockIdb as any)
       const credential = (workspaceId: string): WorkspaceMeshCredential => ({
