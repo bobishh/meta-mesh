@@ -42,7 +42,7 @@ describe("MeshHandshakeCodec", () => {
     const codec = new MeshHandshakeCodec()
     const payload = { workspaceId: "board-1", peer: { advertisement: { payload: {
       deviceId: "device-123456789", deviceName: "Bo's laptop",
-    } } }, capabilities: ["iroh-gossip-v1", "automerge-sync-v1"], breakGlassClaims: [] }
+    } } }, capabilities: ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"], breakGlassClaims: [] }
     expect(codec.validate(payload, "board-1").workspaceId).toBe("board-1")
     expect(() => codec.validate({ ...payload, breakGlassClaims: [{}] }, "board-1"))
       .toThrow(/Reported device \(unverified\): "Bo's laptop" \(device-123\); workspace: board-1/)
@@ -58,9 +58,8 @@ describe("MeshHandshakeCodec", () => {
 
   it("uses owner workspace offers only with the renamed v2 protocol capability", () => {
     const codec = new MeshHandshakeCodec()
-    expect(codec.features(["owner-workspace-v1"])).toMatchObject({
-      ownerWorkspaceSupported: false, ownerWorkspaceOfferFrame: undefined,
-    })
+    expect(codec.features(["owner-workspace-v1"])).toMatchObject({ ownerWorkspaceSupported: false })
+    expect(codec.features(["owner-workspace-v1"])).not.toHaveProperty("ownerWorkspaceOfferFrame")
     expect(codec.features(["owner-workspace-v2"])).toMatchObject({
       ownerWorkspaceSupported: true, ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer",
     })
