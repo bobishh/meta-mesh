@@ -175,6 +175,12 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - Match `6e6e330` lets the native invitation join reuse the container's `/data` directory and preserves `/data/inbox` on join failure. The standalone container starts HTTP-only before pairing and is configured to start the native peer plus HTTP after a successful join and restart. The new container image has not yet been verified against a real owner-issued invitation, so production document replication remains open.
 - `6.7`, `7.3`–`7.6`, Twang runtime integration, authority catalog propagation, and two-device E2E remain open. One owner-issued editor invitation is needed before production lighthouse sync can be checked.
 
+### Verified lighthouse peer routes (2026-09-23)
+
+- MetaMesh `bc9dbc9` merges signed peer advertisements in Rust. It admits each route against the current workspace authority, drops unverified bundles, and selects the latest route sequence per device and instance. Focused core test passes.
+- Match `81ffdac` persists the verified catalog in the lighthouse state, seeds it from a one-board invitation, publishes it with scope snapshots, and updates Iroh transport admission for newly verified devices. Focused restart/catalog test and Rust build pass. The separate `mesh-lighthouse` repo has the same changes under local check; no production pairing or multi-device exchange is claimed by this check.
+- The native node still actively dials only the invitation issuer. Other devices can connect if they discover its signed route. Native authority-control catalog merge remains explicitly unsupported, so this is not yet complete keeper replication or a full two-device sync result.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
