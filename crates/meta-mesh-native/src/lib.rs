@@ -1,5 +1,6 @@
 pub mod node;
 pub mod scope;
+pub mod scope_store;
 
 pub use meta_mesh_core::{
     CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, GossipLifecycleState,
@@ -13,6 +14,7 @@ pub use node::{
     NativeRpcInbox, NativeRpcRequest,
 };
 pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
+pub use scope_store::FileScopeStore;
 
 pub const IROH_VERSION: &str = "1.2.0";
 pub const IROH_GOSSIP_VERSION: &str = "0.101.0";
