@@ -39,18 +39,23 @@ export class BrowserMeshScopeSync {
     this.runtime.startDocumentSync(localDeviceId, remoteDeviceId)
   }
 
-  async receive(stream: MeshScopeStream, frame: Uint8Array): Promise<void> {
-    const effect = this.runtime.receiveFrame(frame)
-    if (!effect) { await stream.closeSend(); return }
+  receive(stream: MeshScopeStream, frame: Uint8Array): Promise<void> {
+    const prepared = this.queue.then(() => this.runtime.receiveFrame(frame), () => this.runtime.receiveFrame(frame))
     // Gossip callback must stay outside document/control serialization. It may
     // publish another stream and waiting here recreates the old sync deadlock.
-    if (effect.kind === "gossip") return this.apply(stream, frame, effect)
-    this.queue = this.queue.then(() => this.apply(stream, frame, effect), () => this.apply(stream, frame, effect))
-    return this.queue as Promise<void>
+    const queued = prepared.then(effect => {
+      if (effect?.kind === "gossip") return
+      if (!effect) return stream.closeSend()
+      return this.apply(stream, frame, effect)
+    })
+    this.queue = queued
+    return prepared.then(effect => effect?.kind === "gossip" ? this.apply(stream, frame, effect) : queued)
   }
 
-  async publish(document: Uint8Array, proof: unknown, sendFrame: MeshScopeSendFrame): Promise<boolean> {
+  async publish(sendFrame: MeshScopeSendFrame): Promise<boolean> {
     const run = async () => {
+      const document = await this.host.readDocument()
+      const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
       const nextKnownChat = new Set(this.knownChat)
       const plan = this.runtime.preparePublish(document, proof, proof,
         this.host.readChat ? await this.host.readChat(nextKnownChat) : undefined,
