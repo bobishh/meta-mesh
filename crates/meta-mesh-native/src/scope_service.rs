@@ -103,12 +103,7 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         self.admission
             .peer(&credential.workspace_id, remote_endpoint)
             .ok_or("Unauthenticated mesh peer")?;
-        let authority = self.host.authority(&credential.workspace_id)?;
-        let evicted = self.admission.refresh(&authority, now_ms)?;
-        for endpoint in evicted {
-            self.peers
-                .remove(&(credential.workspace_id.clone(), endpoint));
-        }
+        self.refresh_authority(&credential.workspace_id, now_ms)?;
         self.admission
             .peer(&credential.workspace_id, remote_endpoint)
             .ok_or("Unauthenticated mesh peer")?;
@@ -122,7 +117,9 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         &mut self,
         workspace_id: &str,
         remote_endpoint: &str,
+        now_ms: i128,
     ) -> Result<LiveSessionPublishPlan, String> {
+        self.refresh_authority(workspace_id, now_ms)?;
         self.admission
             .peer(workspace_id, remote_endpoint)
             .ok_or("Unauthenticated mesh peer")?;
@@ -143,6 +140,14 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
             .get_mut(&(workspace_id.to_string(), remote_endpoint.to_string()))
             .ok_or("Mesh scope session is missing")?
             .finish_publish(control_snapshot, all_frames_sent);
+        Ok(())
+    }
+
+    fn refresh_authority(&mut self, workspace_id: &str, now_ms: i128) -> Result<(), String> {
+        let authority = self.host.authority(workspace_id)?;
+        for endpoint in self.admission.refresh(&authority, now_ms)? {
+            self.peers.remove(&(workspace_id.to_string(), endpoint));
+        }
         Ok(())
     }
 }
