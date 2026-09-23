@@ -280,7 +280,7 @@ mod tests {
         let bundle = json!({ "advertisement": advertisement, "publicKey": editor.public_key,
             "certificates": editor.certificates, "grant": grant });
         let handshake = json!({ "workspaceId": workspace_id, "peer": bundle,
-            "capabilities": ["iroh-gossip-v1", "automerge-sync-v1"] });
+            "capabilities": ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"] });
         let snapshot = WorkspaceWriteAuthorizationSnapshot {
             workspace_id: workspace_id.into(),
             genesis_owner: owner.clone(),

@@ -72,7 +72,7 @@ mod tests {
         let handshake = json!({
             "workspaceId": "workspace",
             "peer": { "advertisement": {} },
-            "capabilities": ["iroh-gossip-v1", "automerge-sync-v1"],
+            "capabilities": ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"],
         });
         let validated = validate_mesh_handshake(handshake, Some("workspace")).unwrap();
         assert_eq!(validated.workspace_id, "workspace");
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn ignores_an_empty_obsolete_claim_list_but_rejects_authority_evidence() {
-        let base = json!({ "workspaceId": "workspace", "peer": {}, "capabilities": ["iroh-gossip-v1", "automerge-sync-v1"] });
+        let base = json!({ "workspaceId": "workspace", "peer": {}, "capabilities": ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"] });
         let mut empty = base.clone();
         empty["breakGlassClaims"] = json!([]);
         assert!(validate_mesh_handshake(empty, Some("workspace")).is_ok());
