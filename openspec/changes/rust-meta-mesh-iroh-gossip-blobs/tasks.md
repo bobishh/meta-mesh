@@ -160,6 +160,13 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - `6.7` and `7.3`–`7.6` stay open. Next: provision bot via the real invitation path, run one production-protocol browser↔native sync/reconnect scenario, then verify Twang's adapter and remaining browser E2E before deployment.
 - Twang `d1474ee` adds a standalone Rust validator for signed conversation participants/messages and preserves accepted Automerge ancestry. It is not yet connected to Twang's browser adapter or a native room service. Twang currently creates groups from accepted contacts; it has no room-invite URL or existing-group join path. A lighthouse controlled from Tsali must first receive a separately signed room membership through a new one-time room invitation, then keep its own durable identity and replicate as a normal participant. This is design direction, not completed behavior.
 
+### Native invitation checkpoint (2026-09-23, after Match deployment)
+
+- Match `bd78ab4` was deployed through Hetzner/Kamal; this deployed the browser client, not lighthouse. A browser↔native production scope exchange remains unverified.
+- Native `64aafaa` can keep one browser-compatible Iroh connection across invitation request, response, and acknowledgement streams. Focused native test passes. Ordinary native RPC still opens one connection per request.
+- Match lighthouse now has a Rust `join INVITE_URL STATE_DIR` path under local build: creates separate identity/device and signed peer advertisement, parses one-workspace invitation, checks the signed editor/visitor grant and issuer device route, validates the received Match document/proof, persists private state and config, then acknowledges. Cargo check and focused existing library test pass. No real Match owner has approved this native join yet, so successful browser pairing, subsequent signed scope exchange, reconnect, and restart remain **unverified**. Do not deploy lighthouse on this evidence.
+- A future bot writer needs an editor grant and Match command signing. Public HTTP ingestion, Turnstile, Jev, and lead creation are outside this checkpoint; the native replication node must first join and converge with Match.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
