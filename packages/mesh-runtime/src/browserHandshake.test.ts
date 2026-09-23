@@ -78,6 +78,8 @@ describe("BrowserMeshHandshake", () => {
     expect(codec.encodeResponse).toHaveBeenCalledWith("secret", expect.objectContaining({ revocations: [{ payload: { personId: "revoked" } }] }))
     expect(host.install).not.toHaveBeenCalled()
     expect(host.putVerifiedBundle).not.toHaveBeenCalled()
+    expect(connection.close).toHaveBeenCalledOnce()
+    expect(host.failed).not.toHaveBeenCalled()
   })
 })
 

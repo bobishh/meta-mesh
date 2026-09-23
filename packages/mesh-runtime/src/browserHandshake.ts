@@ -87,11 +87,13 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
             }))
             await stream.closeSend()
             const timeout = setTimeout(() => { void connection.close() }, 10_000)
-            try { await connection.acceptStream() } finally { clearTimeout(timeout); await connection.close() }
+            try { await connection.acceptStream().catch(() => undefined) }
+            finally { clearTimeout(timeout); await connection.close() }
             break
           }
           case "persistPeer":
-            assertRustAdmittedPeer(flow, remote, await this.host.admit(credential, request, connection.remoteEndpointId ?? ""))
+            if (!connection.remoteEndpointId) throw new Error("Mesh transport peer endpoint is missing")
+            assertRustAdmittedPeer(flow, remote, await this.host.admit(credential, request, connection.remoteEndpointId))
             await this.host.putVerifiedBundle(credential, request.peer)
             break
           case "installSession": {
