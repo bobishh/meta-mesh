@@ -54,6 +54,10 @@ export type IrohModule = {
     decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
     validateMeshCatalog(raw: unknown): unknown
     validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
+    admitMeshPeer(handshake: unknown, snapshot: unknown, remoteEndpoint: string, nowMs: number): {
+      workspaceId: string; personId: string; deviceId: string; endpoint: string; instanceId?: string | null;
+      role: "owner" | "editor" | "visitor"
+    }
     meshCapabilities(): string[]
     validateMeshCapabilities(capabilities: unknown): void
     verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
