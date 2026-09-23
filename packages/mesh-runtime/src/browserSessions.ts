@@ -190,6 +190,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     if (previous && lifecycleInstall.replacedConnectionId === previous.connectionId) void previous.evict("replaced")
     queueMicrotask(() => {
       if (this.lifecycle.publishRecovery(sessionKey, generation)) {
+        this.host.trace("session.recovery.started", { connectionId: input.connectionId, peerId: short(input.deviceId) })
         void this.host.publishRecovered(key, entry)
       }
     })

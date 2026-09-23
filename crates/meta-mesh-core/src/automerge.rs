@@ -367,4 +367,27 @@ mod tests {
         }
         panic!("sender never sent the document change");
     }
+
+    #[test]
+    fn concurrent_initial_messages_converge() {
+        let mut left_doc = AutoCommit::new();
+        left_doc.put(ROOT, "left", "value").unwrap();
+        let mut right_doc = AutoCommit::load(&left_doc.save()).unwrap();
+        right_doc.put(ROOT, "right", "value").unwrap();
+        let mut left = AutomergeSyncEngine::new("left", None).unwrap();
+        let mut right = AutomergeSyncEngine::new("right", None).unwrap();
+        left.load_document("scope", "doc", &left_doc.save()).unwrap();
+        right.load_document("scope", "doc", &right_doc.save()).unwrap();
+        let from_left = left.generate("doc", "right", true, None).unwrap().unwrap();
+        let from_right = right.generate("doc", "left", true, None).unwrap().unwrap();
+        let mut pending = std::collections::VecDeque::from([(true, from_right), (false, from_left)]);
+        for _ in 0..20 {
+            let Some((to_left, frame)) = pending.pop_front() else { break };
+            let result = if to_left { left.receive("right", frame, true, None) }
+                else { right.receive("left", frame, true, None) }.unwrap();
+            if let Some(response) = result.response { pending.push_back((!to_left, response)); }
+        }
+        assert!(pending.is_empty(), "concurrent exchange did not settle");
+        assert_eq!(left.heads("doc").unwrap(), right.heads("doc").unwrap());
+    }
 }

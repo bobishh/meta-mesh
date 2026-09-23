@@ -34,7 +34,6 @@ pub enum LiveSessionEffect {
     MergeAuthorization,
     MergeChat,
     MergeMesh,
-    ResetDocument,
     HandleOwnerWorkspaceOffer,
     HandleGossip,
     HandleBlobRequest,
@@ -198,7 +197,6 @@ impl LiveWorkspaceSession {
                 let mut effects = Vec::new();
                 if control.authorization.is_some() {
                     effects.push(E::MergeAuthorization);
-                    effects.push(E::ResetDocument);
                 }
                 if control.chat.is_some() {
                     effects.push(E::MergeChat);
@@ -578,7 +576,6 @@ mod tests {
             plan.effects,
             vec![
                 LiveSessionEffect::MergeAuthorization,
-                LiveSessionEffect::ResetDocument,
                 LiveSessionEffect::MergeChat,
                 LiveSessionEffect::CloseSend,
             ]
