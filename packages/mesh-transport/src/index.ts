@@ -61,6 +61,7 @@ export type IrohModule = {
   WasmGossipLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmGossipLifecycleState
   WasmMeshSessionLifecycle?: typeof import("../wasm/meta_mesh.js").WasmMeshSessionLifecycle
   WasmLiveWorkspaceSession?: typeof import("../wasm/meta_mesh.js").WasmLiveWorkspaceSession
+  WasmMeshScopeRuntime?: typeof import("../wasm/meta_mesh.js").WasmMeshScopeRuntime
   WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
   WasmMeshAuthenticatedSessions?: { new(): any }
 }

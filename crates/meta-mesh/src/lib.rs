@@ -20,7 +20,7 @@ pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
 pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandoff, WasmWorkspaceJoinHandshake};
 pub use runtime::{
-    WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshHandshakeFlow,
+    WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshHandshakeFlow, WasmMeshScopeRuntime,
     WasmMeshBatchDeliveryFlow, WasmMeshLifecycleState, WasmMeshRuntimeState,
 };
 pub use session_lifecycle::WasmMeshSessionLifecycle;

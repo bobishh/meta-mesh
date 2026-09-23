@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use meta_mesh_core::{
     control_frames, encode_workspace_update, is_workspace_update, AutomergeSyncFrame,
     ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput, LiveWorkspaceSession,
+    MeshScopeRuntime,
     MeshBatchDeliveryFlow, MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState,
     RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
 };
@@ -218,6 +219,116 @@ impl WasmLiveWorkspaceSession {
     #[wasm_bindgen(js_name = verifyHeartbeatAck)]
     pub fn verify_heartbeat_ack(&self, frame: &[u8]) -> Result<(), JsValue> {
         self.inner.verify_heartbeat_ack(frame).map_err(js_error)
+    }
+}
+
+/// WASM host boundary for one authenticated workspace scope stream.
+#[wasm_bindgen]
+pub struct WasmMeshScopeRuntime {
+    inner: MeshScopeRuntime,
+}
+
+#[wasm_bindgen]
+impl WasmMeshScopeRuntime {
+    #[wasm_bindgen(constructor)]
+    pub fn new(workspace_id: &str, secret: &str) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: MeshScopeRuntime::new(workspace_id, secret).map_err(js_error)?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = startDocumentSync)]
+    pub fn start_document_sync(
+        &mut self,
+        local_device_id: &str,
+        remote_device_id: &str,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .start_document_sync(local_device_id, remote_device_id)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = receiveFrame)]
+    pub fn receive_frame(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.receive_frame(frame).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = provideDocument)]
+    pub fn provide_document(
+        &mut self,
+        document: &[u8],
+        response_proof: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .provide_document(document, optional_value(response_proof)?)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = completeDocumentReceive)]
+    pub fn complete_document_receive(&mut self, persisted: bool) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .complete_document_receive(persisted)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = rejectDocumentReceive)]
+    pub fn reject_document_receive(&mut self) -> Result<(), JsValue> {
+        self.inner.reject_document_receive().map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = completeSavedReceive)]
+    pub fn complete_saved_receive(&mut self, persisted: bool) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .complete_saved_receive(persisted)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = publishFrame)]
+    pub fn publish_frame(
+        &mut self,
+        document: &[u8],
+        proof: JsValue,
+    ) -> Result<Option<Vec<u8>>, JsValue> {
+        self.inner
+            .publish_frame(document, optional_value(proof)?)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = preparePublish)]
+    pub fn prepare_publish(
+        &mut self,
+        document: &[u8],
+        proof: JsValue,
+        authorization: JsValue,
+        chat: JsValue,
+        mesh: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .prepare_publish(
+                    document,
+                    optional_value(proof)?,
+                    optional_value(authorization)?,
+                    optional_value(chat)?,
+                    optional_value(mesh)?,
+                )
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = finishPublish)]
+    pub fn finish_publish(&mut self, control_snapshot: &[u8], all_frames_sent: bool) {
+        self.inner.finish_publish(control_snapshot, all_frames_sent);
     }
 }
 

@@ -240,6 +240,37 @@ export type RustLiveWorkspaceSession = {
   free?(): void
 }
 
+export type RustMeshScopeFrameEffect =
+  | { kind: "needDocument" }
+  | { kind: "documentReceive"; document: Uint8Array | number[]; proof?: unknown; shouldPersist: boolean; acceptedChanges: number; acceptedHashes: string[]; heads: string[] }
+  | { kind: "control"; control: { authorization?: unknown; chat?: unknown; mesh?: unknown }; effects: string[]; closeSend: boolean }
+  | { kind: "gossip"; payload: Uint8Array | number[]; closeSend: boolean }
+  | { kind: "heartbeat"; acknowledgement: Uint8Array | number[]; closeSend: boolean }
+  | { kind: "durableBatch"; payload: Uint8Array | number[] }
+  | { kind: "ownerWorkspaceOffer"; payload: Uint8Array | number[] }
+  | { kind: "blobRequest"; payload: Uint8Array | number[] }
+  | { kind: "handoffRequest"; payload: Uint8Array | number[] }
+  | { kind: "workspaceSnapshot"; payload: Uint8Array | number[]; closeSend: boolean }
+
+export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]; closeSend: boolean }
+
+export type RustMeshScopeRuntime = {
+  startDocumentSync(localDeviceId: string, remoteDeviceId: string): void
+  receiveFrame(frame: Uint8Array): RustMeshScopeFrameEffect | null
+  provideDocument(document: Uint8Array, responseProof: unknown): RustMeshScopeFrameEffect
+  completeDocumentReceive(persisted: boolean): RustMeshScopeDocumentCompletion
+  rejectDocumentReceive(): void
+  completeSavedReceive(persisted: boolean): RustMeshScopeDocumentCompletion
+  publishFrame(document: Uint8Array, proof: unknown): Uint8Array | number[] | null
+  preparePublish(document: Uint8Array, proof: unknown, authorization: unknown, chat: unknown, mesh: unknown): {
+    documentFrame?: Uint8Array | number[]
+    controlSnapshot: Uint8Array | number[]
+    controlFrames: Array<Uint8Array | number[]>
+  }
+  finishPublish(controlSnapshot: Uint8Array, allFramesSent: boolean): void
+  free?(): void
+}
+
 export type RustMeshHandshakeFlow = {
   step(): string
   advance(completed: string, decision?: boolean): string
@@ -363,6 +394,7 @@ export type MeshRustRuntime = {
     retryDelaysMs: number[]): RustBatchDeliveryFlow
   createMeshRuntimeState(): RustMeshRuntimeState
   createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession
+  createMeshScopeRuntime(workspaceId: string, secret: string): RustMeshScopeRuntime
   createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow
   createMeshLifecycleState(): RustMeshLifecycleState
   createGossipLifecycleState(topicPrefix?: string): RustGossipLifecycleState

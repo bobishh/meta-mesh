@@ -1,4 +1,4 @@
-import { meshRustRuntime, type RustLiveWorkspaceSession, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
+import { meshRustRuntime, type RustLiveWorkspaceSession, type RustMeshRuntimeState, type RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession } from "./browserGossip"
@@ -13,10 +13,14 @@ export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHos
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
-export type { RustLiveSessionAction, RustLiveWorkspaceSession } from "@meta-uber/mesh-replication/runtime"
+export type { RustLiveSessionAction, RustLiveWorkspaceSession, RustMeshScopeFrameEffect, RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 
 export function createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession {
   return meshRustRuntime().createLiveWorkspaceSession(workspaceId, secret)
+}
+
+export function createMeshScopeRuntime(workspaceId: string, secret: string): RustMeshScopeRuntime {
+  return meshRustRuntime().createMeshScopeRuntime(workspaceId, secret)
 }
 
 /** Creates the shared Rust/WASM mesh runtime state machine. */
@@ -106,3 +110,4 @@ export class MeshReconnectPolicy {
 }
 
 export { BrowserMeshLifecycle, type BrowserMeshLifecycleHost } from "./browserLifecycle"
+export { BrowserMeshScopeSync, type MeshScopeHost, type MeshScopeStream } from "./browserScopeSync"

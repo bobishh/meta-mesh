@@ -29,6 +29,7 @@ pub mod recovery;
 pub mod replication;
 pub mod runtime;
 pub mod scope_authority;
+pub mod scope_runtime;
 pub mod session_admission;
 pub mod session_lifecycle;
 pub mod state;
@@ -173,6 +174,9 @@ pub use scope_authority::{
     ScopeControlTransferPayloadInput, ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload,
     ScopeGenesisPayloadInput, ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, SignedScopeGenesis,
     ValidatedScopeAuthority,
+};
+pub use scope_runtime::{
+    MeshScopeDocumentCompletion, MeshScopeFrameEffect, MeshScopeRuntime,
 };
 pub use session_admission::{admit_mesh_peer, MeshAuthenticatedSessions, MeshPeerAdmission};
 pub use session_lifecycle::{
