@@ -261,7 +261,7 @@ export type RustMeshScopeRuntime = {
   completeDocumentReceive(persisted: boolean): RustMeshScopeDocumentCompletion
   rejectDocumentReceive(): void
   completeSavedReceive(persisted: boolean): RustMeshScopeDocumentCompletion
-  publishFrame(document: Uint8Array, proof: unknown): Uint8Array | number[] | null
+  publishFrame(document: Uint8Array, proof: unknown): Uint8Array | number[] | undefined
   preparePublish(document: Uint8Array, proof: unknown, authorization: unknown, chat: unknown, mesh: unknown): {
     documentFrame?: Uint8Array | number[]
     controlSnapshot: Uint8Array | number[]
