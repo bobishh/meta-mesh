@@ -182,6 +182,13 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - The native node still actively dials only the invitation issuer. Other devices can connect if they discover its signed route. Native authority-control catalog merge remains explicitly unsupported, so this is not yet complete keeper replication or a full two-device sync result.
 - Standalone `mesh-lighthouse` `ff0118b` was deployed on Hetzner with its own image version. Kamal reported the new container healthy; external `GET https://ingest.meta-uber-engineer.dev/health` returned HTTP 200. The existing `/data/inbox` volume survived. `/data/config.json` is absent, so this is still HTTP-only; no production mesh join or card delivery has been tested.
 
+### Owner-offline lighthouse delivery checkpoint (2026-09-23)
+
+- MetaMesh `5e6fdcc` permits an unlisted device to open only the browser sync RPC transport when explicitly enabled; document admission still requires a valid signed handshake. Blob and gossip access remain restricted. The focused native access test passed.
+- Match `5a06d51` enables that transport path for its lighthouse and adds a Playwright scenario using the real browser and native peer: owner invites the lighthouse and another editor, owner closes, editor sends a card, lighthouse receives it, lighthouse restarts, and an offline edit catches up. The targeted scenario passed locally. This does not establish a production pairing or Twang sync.
+- Standalone lighthouse must use the same native transport option before deployment. The production image remains HTTP-only until an owner-issued invitation pairs it; no production card delivery is claimed.
+- Iroh relay is available to the native node as a client through its default relay mode. Lighthouse does not host an `iroh-relay` server; self-hosting relay would require a separate service.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
