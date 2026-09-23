@@ -51,57 +51,14 @@ export type IrohModule = {
     guestConfirmationFailed(): "retry" | "failed" | "adopted" | "complete"
     hostReceiveConfirmation(frame: Uint8Array): void
   } }
-  WasmStateCore?: {
-    decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
-    validateMeshCatalog(raw: unknown): unknown
-    validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
-    admitMeshPeer(handshake: unknown, snapshot: unknown, remoteEndpoint: string, nowMs: number): {
-      workspaceId: string; personId: string; deviceId: string; endpoint: string; instanceId?: string | null;
-      role: "owner" | "editor" | "visitor"
-    }
-    meshCapabilities(): string[]
-    validateMeshCapabilities(capabilities: unknown): void
-    verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
-    verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
-    admitWorkspaceChangeAuthorization(authorization: unknown, snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
-      hash: string; role: "owner" | "editor" | "visitor"
-    }>
-    admitWorkspaceChangeAuthorizations(authorizations: unknown[], snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
-      hash: string; role: "owner" | "editor" | "visitor"
-    }>
-    hasConflictingOwnershipTransfers(records: unknown): boolean
-    planOwnershipTransitions(records: unknown, initialOwnerPersonId: string, initialEpoch: number): { records: unknown[], conflicted: boolean }
-    nextVerifiedOwnershipTransition(records: unknown, workspaceId: string, currentOwner: unknown, currentEpoch: number,
-      revokedPeople: string[], nowMs: number): { candidates: unknown[], selected?: unknown | null, conflicted: boolean }
-    summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, revocations: unknown, epoch: number): unknown
-    eligibleEditorPersonIds(peers: unknown): string[]
-    canonicalRevocations(records: unknown): unknown
-    verifyWorkspaceDeparture(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceDeviceRevocation(record: unknown, workspaceId: string, ownerPersonId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
-    verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceSuccessionVote(vote: unknown, policy: unknown, candidatePersonId: string, authority: unknown, revoked: string[], nowMs: number): unknown
-    verifyWorkspaceSuccessionClaim(claim: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, revoked: string[], nowMs: number): unknown
-    planChangeAdmission(documentId: string, changes: unknown, verifiedAt: string): unknown
-    transitionOutboxClaim(current: unknown, input: unknown): unknown
-    mergePeerRecords(existing: unknown, incoming: unknown): unknown
-    reconcileReplicaSets(left: unknown, right: unknown): unknown
-    selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]
-    validateDeviceRoute(route: unknown): void
-    validateDeviceRoutePayload(payload: unknown): void
-    validateDurableAckPayload(payload: unknown): void
-    verifyDeviceRoute(envelope: unknown, publicKey: string, nowMs: number, allowExpired: boolean): unknown
-    verifyDurableAck(envelope: unknown, publicKey: string): unknown
-    durableAckMatches(ack: unknown, batch: unknown, targetDeviceId: string): boolean
-    orderDeliveryRoutes(targetDeviceId: string, routes: unknown): unknown
-  }
+  WasmStateCore?: typeof import("../wasm/meta_mesh.js").WasmStateCore
   WasmDeviceRouteCatalog?: { new(): any }
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
   WasmMeshRuntimeState?: { new(): any }
-  WasmMeshLifecycleState?: { new(): any }
-  WasmMeshSessionLifecycle?: { new(stableAfterMs?: number): any }
-  WasmLiveWorkspaceSession?: { new(workspaceId: string, secret: string): any }
+  WasmMeshLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmMeshLifecycleState
+  WasmGossipLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmGossipLifecycleState
+  WasmMeshSessionLifecycle?: typeof import("../wasm/meta_mesh.js").WasmMeshSessionLifecycle
+  WasmLiveWorkspaceSession?: typeof import("../wasm/meta_mesh.js").WasmLiveWorkspaceSession
   WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
   WasmMeshAuthenticatedSessions?: { new(): any }
 }
