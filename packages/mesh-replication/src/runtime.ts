@@ -1,4 +1,14 @@
 export type RustStateCore = {
+  planAuthorityMerge(input: unknown): { credential: unknown; peers: unknown[]; evictDeviceIds: string[];
+    evictPersonIds: string[]; localAccessRevoked: boolean }
+  planOwnershipAdoption(input: unknown): { previousOwnerPersonId: string; credential: unknown; peers: unknown[] }
+  planSuccessionMerge(input: unknown, nowMs: number): {
+    policy?: unknown
+    votes: unknown[]
+    claims: unknown[]
+    transitions: unknown[]
+    conflicted: boolean
+  }
   encodeWorkspaceSet(entries: unknown[]): Uint8Array
   decodeWorkspaceSet(bytes: Uint8Array, allowedIds: string[]): Array<{
     id: string; bytes: string; authorization?: unknown; chat?: unknown; mesh?: unknown

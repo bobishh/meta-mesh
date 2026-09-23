@@ -1,13 +1,7 @@
-import type { DeviceCertificate, LocalProfile } from "@meta-uber/mesh-identity"
+import type { LocalProfile } from "@meta-uber/mesh-identity"
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
-import {
-  verifyWorkspaceSuccessionClaim,
-  verifyWorkspaceSuccessionPolicy,
-  verifyWorkspaceSuccessionVote,
-  type WorkspaceAuthority,
-  type WorkspaceSuccessionClaim,
-  type WorkspaceSuccessionPolicy,
-  type WorkspaceSuccessionVote,
+import type {
+  WorkspaceAuthority, WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
 } from "@meta-uber/mesh-workspace"
 
 export type RuntimeWorkspaceCredential = {
@@ -34,116 +28,26 @@ export type SuccessionHost<TCredential extends RuntimeWorkspaceCredential = Runt
   putCredential: (credential: TCredential) => Promise<void>
   getCredential: (workspaceId: string) => Promise<TCredential | null>
   transferCredential: (previousOwner: string, credential: TCredential) => Promise<void>
-  updateTransferredPeers: (credential: TCredential, payload: WorkspaceSuccessionClaim["payload"]) => Promise<void>
+  listPeers: (workspaceId: string) => Promise<unknown[]>
+  putPeers: (peers: unknown[]) => Promise<void>
   sessionCount: () => number
   publishAll: () => Promise<void>
 }
 
-const authorityFor = (credential: RuntimeWorkspaceCredential): WorkspaceAuthority => ({
-  personId: credential.ownerPersonId,
-  publicKey: credential.ownerPublicKey,
-  certificates: credential.ownerCertificates as DeviceCertificate[],
-})
-
 function catalogSnapshot<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential) {
-  return JSON.stringify({
-    policy: host.getPolicy(credential),
-    votes: host.getVotes(credential),
-    claims: host.getClaims(credential),
-  })
+  return JSON.stringify({ policy: host.getPolicy(credential), votes: host.getVotes(credential), claims: host.getClaims(credential) })
 }
 
-async function selectPolicy<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential,
-  rawPolicy: WorkspaceSuccessionPolicy | undefined): Promise<WorkspaceSuccessionPolicy | undefined> {
-  let policy = host.getPolicy(credential)
-  if (rawPolicy?.payload?.ownerPersonId === credential.ownerPersonId && rawPolicy.payload.epoch === credential.epoch) {
-    const verified = await verifyWorkspaceSuccessionPolicy(rawPolicy, credential.workspaceId, authorityFor(credential))
-    if (!policy || verified.payload.updatedAt > policy.payload.updatedAt ||
-      (verified.payload.updatedAt === policy.payload.updatedAt && verified.signature > policy.signature)) policy = verified
-  }
-  if (!policy || policy.payload.ownerPersonId !== credential.ownerPersonId || policy.payload.epoch !== credential.epoch) return undefined
-  return verifyWorkspaceSuccessionPolicy(policy, credential.workspaceId, authorityFor(credential))
-}
-
-async function collectVotes<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential, policy: WorkspaceSuccessionPolicy | undefined,
-  rawVotes: WorkspaceSuccessionVote[]): Promise<WorkspaceSuccessionVote[]> {
-  if (!policy) return []
-  const votes = new Map<string, WorkspaceSuccessionVote>()
-  for (const raw of [...host.getVotes(credential), ...rawVotes]) {
-    if (raw?.signed?.payload?.policySignature !== policy.signature) continue
-    const vote = await verifyWorkspaceSuccessionVote(raw, policy, raw.signed.payload.candidatePersonId,
-      authorityFor(credential), host.revokedPeople(credential), Date.now())
-    const prior = votes.get(vote.signed.payload.voterPersonId)
-    if (!prior || vote.signed.signature < prior.signed.signature) votes.set(vote.signed.payload.voterPersonId, vote)
-  }
-  return [...votes.values()].sort((a, b) => a.signed.payload.voterPersonId.localeCompare(b.signed.payload.voterPersonId))
-}
-
-async function collectClaims<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential,
-  rawClaims: WorkspaceSuccessionClaim[]): Promise<Map<string, WorkspaceSuccessionClaim>> {
-  const claims = new Map<string, WorkspaceSuccessionClaim>()
-  for (const claim of host.getClaims(credential)) if (claim?.signature) claims.set(claim.signature, claim)
-  for (const claim of rawClaims) await verifyAndStoreClaim(host, credential, claim, claims)
-  return claims
-}
-
-async function verifyAndStoreClaim<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential, claim: WorkspaceSuccessionClaim,
-  claims: Map<string, WorkspaceSuccessionClaim>): Promise<void> {
-  if (!claim?.signature) return
-  if (claim.payload?.epoch === credential.epoch + 1 && claim.payload.fromOwnerPersonId === credential.ownerPersonId) {
-    const verified = await verifyWorkspaceSuccessionClaim(claim, credential.workspaceId, authorityFor(credential), credential.epoch,
-      host.revokedPeople(credential))
-    claims.set(verified.signature, verified)
-    return
-  }
-  if (claim.payload?.epoch !== credential.epoch) return
-  const previousOwner = host.getAuthorities(credential).find(owner => owner.personId === claim.payload.fromOwnerPersonId)
-  if (!previousOwner) return
-  const revokedAtClaim = host.revokedBefore(credential, claim.payload.epoch)
-  const verified = await verifyWorkspaceSuccessionClaim(claim, credential.workspaceId, previousOwner,
-    claim.payload.epoch - 1, revokedAtClaim)
-  claims.set(verified.signature, verified)
-}
-
-async function adoptPendingClaims<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, initial: TCredential,
-  claims: Map<string, WorkspaceSuccessionClaim>): Promise<TCredential> {
-  let credential = initial
-  const plan = meshRustRuntime().state.planOwnershipTransitions([...claims.values()], credential.ownerPersonId, credential.epoch) as {
-    records: WorkspaceSuccessionClaim[]
-    conflicted: boolean
-  }
-  if (plan.conflicted) return credential
-  for (const raw of plan.records) {
-    credential = await adoptClaim(host, credential, raw, claims)
-  }
-  return credential
-}
-
-async function adoptClaim<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential, raw: WorkspaceSuccessionClaim,
-  claims: Map<string, WorkspaceSuccessionClaim>): Promise<TCredential> {
-  const previousOwner = authorityFor(credential)
-  const claim = await verifyWorkspaceSuccessionClaim(raw, credential.workspaceId, previousOwner, credential.epoch,
-    host.revokedPeople(credential))
-  const payload = claim.payload
+async function adoptClaim<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential,
+  claim: WorkspaceSuccessionClaim, claims: WorkspaceSuccessionClaim[]): Promise<TCredential> {
   const profile = await host.getProfile()
-  const history = [...((credential.ownerHistory ?? []) as WorkspaceAuthority[])]
-  if (!history.some(owner => owner.personId === previousOwner.personId)) history.push(previousOwner)
-  const localGrant = profile.identity.personId === payload.toOwnerPersonId ? undefined
-    : profile.identity.personId === payload.fromOwnerPersonId ? payload.formerOwnerGrant : credential.localGrant
-  const next = {
-    ...credential,
-    ownerPersonId: payload.toOwnerPersonId,
-    ownerPublicKey: payload.toOwnerPublicKey,
-    ownerCertificates: payload.toOwnerCertificates,
-    ownerHistory: history,
-    ...(localGrant ? { localGrant } : {}),
-    epoch: payload.epoch,
-    updatedAt: payload.claimedAt,
-    catalog: { ...host.getCatalog(credential), successionPolicy: undefined, successionVotes: [],
-      successionClaims: [...claims.values()].sort((a, b) => a.payload.epoch - b.payload.epoch) },
-  } as TCredential
-  await host.transferCredential(previousOwner.personId, next)
-  await host.updateTransferredPeers(next, payload)
+  const plan = meshRustRuntime().state.planOwnershipAdoption({ credential,
+    peers: await host.listPeers(credential.workspaceId), localPersonId: profile.identity.personId,
+    verifiedCurrentOwnerEpoch: credential.epoch,
+    transition: { kind: "succession", record: claim, claims } })
+  const next = plan.credential as TCredential
+  await host.transferCredential(plan.previousOwnerPersonId, next)
+  await host.putPeers(plan.peers)
   return next
 }
 
@@ -153,14 +57,24 @@ export async function mergeSuccessionState<TCredential extends RuntimeWorkspaceC
   if (!rawPolicy && rawVotes.length === 0 && rawClaims.length === 0 && !host.getPolicy(initial) &&
     host.getVotes(initial).length === 0 && host.getClaims(initial).length === 0) return initial
   const before = catalogSnapshot(host, initial)
-  const policy = await selectPolicy(host, initial, rawPolicy)
-  const votes = await collectVotes(host, initial, policy, rawVotes)
-  const claims = await collectClaims(host, initial, rawClaims)
-  let credential = await adoptPendingClaims(host, initial, claims)
+  const plan = meshRustRuntime().state.planSuccessionMerge({
+    workspaceId: initial.workspaceId,
+    owner: { personId: initial.ownerPersonId, publicKey: initial.ownerPublicKey,
+      certificates: initial.ownerCertificates },
+    ownerHistory: host.getAuthorities(initial), epoch: initial.epoch,
+    currentPolicy: host.getPolicy(initial) ?? null, currentVotes: host.getVotes(initial), currentClaims: host.getClaims(initial),
+    incomingPolicy: rawPolicy ?? null, incomingVotes: rawVotes, incomingClaims: rawClaims,
+    revokedPeople: [...host.revokedPeople(initial)], revokedBeforeEpoch: [...host.revokedBefore(initial, initial.epoch)],
+  }, Date.now()) as { policy?: WorkspaceSuccessionPolicy; votes: WorkspaceSuccessionVote[];
+    claims: WorkspaceSuccessionClaim[]; transitions: WorkspaceSuccessionClaim[]; conflicted: boolean }
+  let credential = initial
+  if (!plan.conflicted) {
+    for (const claim of plan.transitions) credential = await adoptClaim(host, credential, claim, plan.claims)
+  }
   if (credential.ownerPersonId === initial.ownerPersonId) {
-    const catalog = { ...host.getCatalog(credential), successionPolicy: policy, successionVotes: votes,
-      successionClaims: [...claims.values()].sort((a, b) => a.payload.epoch - b.payload.epoch || a.signature.localeCompare(b.signature)) }
-    if (JSON.stringify({ policy, votes, claims: catalog.successionClaims }) !== before) {
+    const catalog = { ...host.getCatalog(credential), successionPolicy: plan.policy, successionVotes: plan.votes,
+      successionClaims: plan.claims }
+    if (JSON.stringify({ policy: plan.policy, votes: plan.votes, claims: plan.claims }) !== before) {
       await host.putCredential({ ...credential, updatedAt: new Date().toISOString(), catalog })
       credential = await host.getCredential(credential.workspaceId) ?? credential
     }

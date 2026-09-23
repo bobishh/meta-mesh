@@ -51,6 +51,25 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = planAuthorityMerge)]
+    pub fn plan_authority_merge(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::AuthorityMergeInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_authority_merge(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planOwnershipAdoption)]
+    pub fn plan_ownership_adoption(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::OwnershipAdoptionInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_ownership_adoption(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planSuccessionMerge)]
+    pub fn plan_succession_merge(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::SuccessionMergeInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_succession_merge(input,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?)).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = encodeWorkspaceSet)]
     pub fn encode_workspace_set(entries: JsValue) -> Result<Vec<u8>, JsValue> {
         let entries: Vec<meta_mesh_core::WorkspaceSetEntry> = from_value(entries)?;

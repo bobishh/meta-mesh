@@ -10,6 +10,7 @@ pub mod handshake_flow;
 pub mod identity;
 pub mod invitation;
 pub mod live_session;
+pub mod ownership_adoption;
 pub mod member;
 pub mod pairing;
 pub mod persistence;
@@ -18,6 +19,7 @@ pub mod replication;
 pub mod runtime;
 pub mod session_admission;
 pub mod state;
+pub mod succession_merge;
 pub mod workspace_set;
 
 pub use access::{WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access};
@@ -99,3 +101,7 @@ pub use state::{
     select_scoped_neighbors, validate_peer_record,
 };
 pub use workspace_set::{WorkspaceSetEntry, decode_workspace_set, encode_workspace_set};
+pub use succession_merge::{SuccessionMergeInput, SuccessionMergePlan, plan_succession_merge};
+pub use ownership_adoption::{OwnershipAdoptionInput, OwnershipAdoptionPlan, OwnershipAdoptionRecord, plan_ownership_adoption};
+mod authority_merge;
+pub use authority_merge::{AuthorityMergeInput, AuthorityMergePlan, AuthorityMergeRecords, SignedDeparture, SignedDeviceRevocation, plan_authority_merge};
