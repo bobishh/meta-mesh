@@ -980,6 +980,217 @@ public func FfiConverterTypeMobileGossipTopic_lower(_ value: MobileGossipTopic) 
 
 
 
+public protocol MobileLiveWorkspaceSessionProtocol: AnyObject, Sendable {
+
+    func acknowledgeSaved(bytes: Data) throws  -> Data
+
+    func controlChanged(snapshot: Data) throws  -> Bool
+
+    func controlFrames(snapshot: Data) throws  -> [Data]
+
+    func encode(frameType: String, payload: Data) throws  -> Data
+
+    func markControlSent(snapshot: Data) throws
+
+    func receiveJson(frame: Data) throws  -> String
+
+    func verifyHeartbeatAck(frame: Data) throws
+
+    func verifySavedReceipt(frame: Data, bytes: Data) throws
+
+}
+open class MobileLiveWorkspaceSession: MobileLiveWorkspaceSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_meta_mesh_mobile_fn_clone_mobileliveworkspacesession(self.handle, $0) }
+    }
+public convenience init(workspaceId: String, secret: String)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_constructor_mobileliveworkspacesession_new(
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(secret),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_meta_mesh_mobile_fn_free_mobileliveworkspacesession(handle, $0) }
+    }
+
+
+
+
+open func acknowledgeSaved(bytes: Data)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_acknowledge_saved(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+})
+}
+
+open func controlChanged(snapshot: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_changed(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(snapshot),uniffiCallStatus
+    )
+})
+}
+
+open func controlFrames(snapshot: Data)throws  -> [Data]  {
+    return try  FfiConverterSequenceData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_frames(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(snapshot),uniffiCallStatus
+    )
+})
+}
+
+open func encode(frameType: String, payload: Data)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(frameType),
+        FfiConverterData.lower(payload),uniffiCallStatus
+    )
+})
+}
+
+open func markControlSent(snapshot: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(snapshot),uniffiCallStatus
+    )
+}
+}
+
+open func receiveJson(frame: Data)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_receive_json(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(frame),uniffiCallStatus
+    )
+})
+}
+
+open func verifyHeartbeatAck(frame: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_heartbeat_ack(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(frame),uniffiCallStatus
+    )
+}
+}
+
+open func verifySavedReceipt(frame: Data, bytes: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_saved_receipt(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(frame),
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+}
+}
+
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileLiveWorkspaceSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = MobileLiveWorkspaceSession
+
+    public static func lift(_ handle: UInt64) throws -> MobileLiveWorkspaceSession {
+        return MobileLiveWorkspaceSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: MobileLiveWorkspaceSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileLiveWorkspaceSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MobileLiveWorkspaceSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileLiveWorkspaceSession_lift(_ handle: UInt64) throws -> MobileLiveWorkspaceSession {
+    return try FfiConverterTypeMobileLiveWorkspaceSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileLiveWorkspaceSession_lower(_ value: MobileLiveWorkspaceSession) -> UInt64 {
+    return FfiConverterTypeMobileLiveWorkspaceSession.lower(value)
+}
+
+
+
+
+
+
 public protocol MobileMeshAuthenticatedSessionsProtocol: AnyObject, Sendable {
 
     func admitJson(handshakeJson: String, snapshotJson: String, remoteEndpoint: String, nowMs: Int64) throws  -> String
@@ -3041,6 +3252,30 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive() != 60073) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved() != 17535) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed() != 59873) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames() != 45796) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode() != 4622) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() != 21253) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json() != 17819) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack() != 30873) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_saved_receipt() != 50855) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_admit_json() != 59338) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3177,6 +3412,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() != 18983) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_constructor_mobileliveworkspacesession_new() != 51681) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshauthenticatedsessions_new() != 17309) {

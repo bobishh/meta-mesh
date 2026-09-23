@@ -1,11 +1,58 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    ControlFrameReceiver, DialMode, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
+    ControlFrameReceiver, DialMode, LiveWorkspaceSession, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
     control_frames,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub struct WasmLiveWorkspaceSession {
+    inner: LiveWorkspaceSession,
+}
+
+#[wasm_bindgen]
+impl WasmLiveWorkspaceSession {
+    #[wasm_bindgen(constructor)]
+    pub fn new(workspace_id: &str, secret: &str) -> Result<Self, JsValue> {
+        Ok(Self { inner: LiveWorkspaceSession::new(workspace_id, secret).map_err(js_error)? })
+    }
+
+    pub fn receive(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.receive(frame).map_err(js_error)?)
+    }
+
+    pub fn encode(&self, frame_type: &str, payload: &[u8]) -> Result<Vec<u8>, JsValue> {
+        self.inner.encode(frame_type, payload).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = controlChanged)]
+    pub fn control_changed(&self, snapshot: &[u8]) -> bool { self.inner.control_changed(snapshot) }
+
+    #[wasm_bindgen(js_name = controlFrames)]
+    pub fn control_frames(&mut self, snapshot: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.control_frames(snapshot).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = markControlSent)]
+    pub fn mark_control_sent(&mut self, snapshot: &[u8]) { self.inner.mark_control_sent(snapshot.to_vec()); }
+
+    #[wasm_bindgen(js_name = acknowledgeSaved)]
+    pub fn acknowledge_saved(&self, bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
+        self.inner.acknowledge_saved(bytes).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = verifySavedReceipt)]
+    pub fn verify_saved_receipt(&self, frame: &[u8], bytes: &[u8]) -> Result<(), JsValue> {
+        self.inner.verify_saved_receipt(frame, bytes).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = verifyHeartbeatAck)]
+    pub fn verify_heartbeat_ack(&self, frame: &[u8]) -> Result<(), JsValue> {
+        self.inner.verify_heartbeat_ack(frame).map_err(js_error)
+    }
+}
 
 #[wasm_bindgen]
 pub struct WasmMeshHandshakeFlow {

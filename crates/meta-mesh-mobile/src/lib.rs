@@ -13,7 +13,7 @@ use meta_mesh_core::{
     DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, IncomingDocumentChange,
-    DialMode, MeshAuthenticatedSessions, MeshHandshakeFlow, MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, RelayDialPolicy,
+    DialMode, LiveWorkspaceSession, MeshAuthenticatedSessions, MeshHandshakeFlow, MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, RelayDialPolicy,
     ReplicaSet, RouteHealth,
     SessionCandidate, SessionDirection, SessionKey, SignedDeviceRoute,
     SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
@@ -627,6 +627,60 @@ pub struct MobileMeshRuntime {
     relay_policy: Mutex<RelayDialPolicy>,
     control_receivers: Mutex<BTreeMap<String, ControlFrameReceiver>>,
     transfer_sequence: Mutex<u64>,
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileLiveWorkspaceSession {
+    inner: Mutex<LiveWorkspaceSession>,
+}
+
+#[uniffi::export]
+impl MobileLiveWorkspaceSession {
+    #[uniffi::constructor]
+    pub fn new(workspace_id: String, secret: String) -> Result<Arc<Self>, MobileMeshError> {
+        Ok(Arc::new(Self { inner: Mutex::new(
+            LiveWorkspaceSession::new(workspace_id, secret).map_err(MobileMeshError::from_display)?,
+        ) }))
+    }
+
+    pub fn receive_json(&self, frame: Vec<u8>) -> Result<String, MobileMeshError> {
+        self.with_inner(|session| to_json(&session.receive(&frame).map_err(MobileMeshError::from_display)?))
+    }
+
+    pub fn encode(&self, frame_type: String, payload: Vec<u8>) -> Result<Vec<u8>, MobileMeshError> {
+        self.with_inner(|session| session.encode(&frame_type, &payload).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn control_changed(&self, snapshot: Vec<u8>) -> Result<bool, MobileMeshError> {
+        self.with_inner(|session| Ok(session.control_changed(&snapshot)))
+    }
+
+    pub fn control_frames(&self, snapshot: Vec<u8>) -> Result<Vec<Vec<u8>>, MobileMeshError> {
+        self.with_inner(|session| session.control_frames(&snapshot).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn mark_control_sent(&self, snapshot: Vec<u8>) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| { session.mark_control_sent(snapshot); Ok(()) })
+    }
+
+    pub fn acknowledge_saved(&self, bytes: Vec<u8>) -> Result<Vec<u8>, MobileMeshError> {
+        self.with_inner(|session| session.acknowledge_saved(&bytes).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn verify_saved_receipt(&self, frame: Vec<u8>, bytes: Vec<u8>) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| session.verify_saved_receipt(&frame, &bytes).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn verify_heartbeat_ack(&self, frame: Vec<u8>) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| session.verify_heartbeat_ack(&frame).map_err(MobileMeshError::from_display))
+    }
+}
+
+impl MobileLiveWorkspaceSession {
+    fn with_inner<T>(&self, action: impl FnOnce(&mut LiveWorkspaceSession) -> Result<T, MobileMeshError>) -> Result<T, MobileMeshError> {
+        let mut session = self.inner.lock().map_err(|_| MobileMeshError::from_display("Mobile live session lock poisoned"))?;
+        action(&mut session)
+    }
 }
 
 #[uniffi::export]
@@ -1524,6 +1578,19 @@ mod tests {
         assert_eq!(result, Some(bytes));
         assert_eq!(runtime.stop().unwrap(), vec!["replacement"]);
         assert!(!runtime.is_running().unwrap());
+    }
+
+    #[test]
+    fn mobile_live_workspace_session_confirms_only_saved_data() {
+        let sender = MobileLiveWorkspaceSession::new("board".into(), "secret".into()).unwrap();
+        let receiver = MobileLiveWorkspaceSession::new("board".into(), "secret".into()).unwrap();
+        let bytes = b"document and authorization".to_vec();
+        let frame = sender.encode("mesh-durable-batch".into(), bytes.clone()).unwrap();
+        let action: Option<meta_mesh_core::LiveSessionAction> = from_json(&receiver.receive_json(frame).unwrap()).unwrap();
+        assert_eq!(action, Some(meta_mesh_core::LiveSessionAction::DurableBatch(bytes.clone())));
+        let receipt = receiver.acknowledge_saved(bytes.clone()).unwrap();
+        sender.verify_saved_receipt(receipt.clone(), bytes.clone()).unwrap();
+        assert!(sender.verify_saved_receipt(receipt, b"different".to_vec()).is_err());
     }
 
     #[test]

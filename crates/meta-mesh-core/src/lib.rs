@@ -7,6 +7,7 @@ pub mod handshake;
 pub mod handshake_flow;
 pub mod identity;
 pub mod invitation;
+pub mod live_session;
 pub mod member;
 pub mod pairing;
 pub mod persistence;
@@ -54,6 +55,7 @@ pub use invitation::{
     WorkspaceJoinInvitation, create_device_enrollment_invitation, create_workspace_join_invitation,
     invitation_url, pairing_invite_url, parse_invitation, parse_pairing_invite,
 };
+pub use live_session::{LiveSessionAction, LiveWorkspaceSession};
 pub use member::{
     PeerAdvertisement, PeerAdvertisementPayload, VerifiedWorkspaceMember,
     VerifyWorkspaceMemberOptions, verify_workspace_member_bundle,

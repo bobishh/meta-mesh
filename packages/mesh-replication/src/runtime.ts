@@ -106,6 +106,24 @@ export type RustMeshRuntimeState = {
   free?(): void
 }
 
+export type RustLiveSessionAction = {
+  kind: "durableBatch" | "heartbeat" | "control" | "ownerWorkspaceOffer" | "gossip" |
+    "blobRequest" | "handoffRequest" | "automergeSync" | "snapshot"
+  payload?: number[]
+}
+
+export type RustLiveWorkspaceSession = {
+  receive(frame: Uint8Array): RustLiveSessionAction | null
+  encode(frameType: string, payload: Uint8Array): Uint8Array
+  controlChanged(snapshot: Uint8Array): boolean
+  controlFrames(snapshot: Uint8Array): Uint8Array[]
+  markControlSent(snapshot: Uint8Array): void
+  acknowledgeSaved(bytes: Uint8Array): Uint8Array
+  verifySavedReceipt(frame: Uint8Array, bytes: Uint8Array): void
+  verifyHeartbeatAck(frame: Uint8Array): void
+  free?(): void
+}
+
 export type RustMeshHandshakeFlow = {
   step(): string
   advance(completed: string, decision?: boolean): string
@@ -131,6 +149,7 @@ export type MeshRustRuntime = {
   createDeviceRouteCatalog(): RustDeviceRouteCatalog
   createAutomergeSyncEngine(localDeviceId: string, maximumFrameBytes?: number): RustAutomergeSyncEngine
   createMeshRuntimeState(): RustMeshRuntimeState
+  createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession
   createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow
   createMeshAuthenticatedSessions(): RustMeshAuthenticatedSessions
 }

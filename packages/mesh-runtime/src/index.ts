@@ -1,4 +1,4 @@
-import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
+import { meshRustRuntime, type RustLiveWorkspaceSession, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
@@ -22,6 +22,11 @@ export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMesh
 export { BrowserMeshOwnershipTransfer, type BrowserMeshTransferCredential, type BrowserMeshTransferHost, type BrowserMeshTransferPeer, type BrowserMeshTransferProfile, type BrowserMeshTransferRecord } from "./browserOwnership"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
+export type { RustLiveSessionAction, RustLiveWorkspaceSession } from "@meta-uber/mesh-replication/runtime"
+
+export function createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession {
+  return meshRustRuntime().createLiveWorkspaceSession(workspaceId, secret)
+}
 
 /** Creates the shared Rust/WASM mesh runtime state machine. */
 export function createMeshRuntime(): RustMeshRuntimeState {

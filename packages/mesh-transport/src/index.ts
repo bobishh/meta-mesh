@@ -99,6 +99,7 @@ export type IrohModule = {
   WasmDeviceRouteCatalog?: { new(): any }
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
   WasmMeshRuntimeState?: { new(): any }
+  WasmLiveWorkspaceSession?: { new(workspaceId: string, secret: string): any }
   WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
   WasmMeshAuthenticatedSessions?: { new(): any }
 }
