@@ -13,6 +13,7 @@ iroh = "1.2.0"
 iroh-gossip = { version = "0.101.0", features = ["net"] }
 iroh-blobs = "0.103.0"
 tokio = { version = "1", features = ["full"] }
+serde_json = "1"
 
 [dev-dependencies]
 automerge = "0.12"

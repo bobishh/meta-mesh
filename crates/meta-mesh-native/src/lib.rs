@@ -1,16 +1,18 @@
 pub mod node;
+pub mod scope;
 
 pub use meta_mesh_core::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, MAX_CONTROL_FRAME_BYTES,
-    MAX_CONTROL_SNAPSHOT_BYTES, GossipLifecycleState, MeshLifecycleState,
-    MeshRuntimeState, MeshSessionLifecycleState, PAIRING_VERSION, PairingCodec,
-    PairingFrameHeader, ReconnectState, RouteAttempt, RuntimeSession, SessionAdmission,
-    SessionCandidate, SessionDirection, SessionKey, control_frames,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, GossipLifecycleState,
+    MAX_CONTROL_FRAME_BYTES, MAX_CONTROL_SNAPSHOT_BYTES, MeshLifecycleState, MeshRuntimeState,
+    MeshSessionLifecycleState, PAIRING_VERSION, PairingCodec, PairingFrameHeader, ReconnectState,
+    RouteAttempt, RuntimeSession, SessionAdmission, SessionCandidate, SessionDirection, SessionKey,
+    control_frames,
 };
 pub use node::{
     GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions,
     NativeRpcInbox, NativeRpcRequest,
 };
+pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
 
 pub const IROH_VERSION: &str = "1.2.0";
 pub const IROH_GOSSIP_VERSION: &str = "0.101.0";
