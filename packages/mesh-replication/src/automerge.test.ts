@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 import {
   AutomergeAntiEntropy,
   AutomergeDocumentCache,
-  AutomergeSyncScheduler,
   receiveAutomergeDeviceSync,
   syncAutomergeDocumentToDevice,
   type AutomergeAdmission,
@@ -188,22 +187,6 @@ describe("Automerge anti-entropy", () => {
     reject = false
     await receiver.receive(receiverAdapter, "sender", change!)
     expect(receiverAdapter.document.messages).toEqual(["approved later"])
-  })
-
-  it("Given several repair triggers occur together, when scheduled, then one flush retains every reason", async () => {
-    const flush = vi.fn()
-    const scheduler = new AutomergeSyncScheduler(flush)
-    scheduler.trigger("chat-1", "local-commit")
-    scheduler.trigger("chat-1", "remote-commit")
-    scheduler.trigger("chat-1", "connection")
-    scheduler.trigger("chat-1", "scope-discovery")
-    scheduler.trigger("chat-1", "scheduled-repair")
-
-    await vi.waitFor(() => expect(flush).toHaveBeenCalledOnce())
-    const requests = flush.mock.calls[0][0]
-    expect([...requests.get("chat-1")]).toEqual([
-      "local-commit", "remote-commit", "connection", "scope-discovery", "scheduled-repair",
-    ])
   })
 
   it("Given one durable device has two routes, when the first route fails, then one native sync reaches the sibling route and returns a signed durable ACK", async () => {

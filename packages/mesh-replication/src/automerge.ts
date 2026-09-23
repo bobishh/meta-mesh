@@ -42,8 +42,6 @@ export class AutomergeDocumentCache<T extends Record<string, unknown>> {
   }
 }
 
-export type SyncTrigger = "local-commit" | "remote-commit" | "connection" | "scope-discovery" | "scheduled-repair"
-
 export type AutomergeSyncFrame = {
   version: 1
   scopeId: string
@@ -283,32 +281,6 @@ export class AutomergeAntiEntropy {
 
 function normalizeRustFrame(frame: AutomergeSyncFrame): AutomergeSyncFrame {
   return { ...frame, message: new Uint8Array(frame.message) }
-}
-
-export class AutomergeSyncScheduler {
-  private readonly queued = new Map<string, Set<SyncTrigger>>()
-  private scheduled = false
-
-  constructor(private readonly flush: (requests: ReadonlyMap<string, ReadonlySet<SyncTrigger>>) => void | Promise<void>) {}
-
-  trigger(documentId: string, trigger: SyncTrigger): void {
-    let triggers = this.queued.get(documentId)
-    if (!triggers) {
-      triggers = new Set()
-      this.queued.set(documentId, triggers)
-    }
-    triggers.add(trigger)
-    if (this.scheduled) return
-    this.scheduled = true
-    queueMicrotask(() => { void this.drain() })
-  }
-
-  private async drain(): Promise<void> {
-    const requests = new Map([...this.queued].map(([documentId, triggers]) => [documentId, new Set(triggers)]))
-    this.queued.clear()
-    this.scheduled = false
-    await this.flush(requests)
-  }
 }
 
 export function reconcileAutomergePeers<T extends Record<string, unknown>>(
