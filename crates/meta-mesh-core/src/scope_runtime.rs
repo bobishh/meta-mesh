@@ -30,7 +30,7 @@ pub struct MeshScopeRuntime {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum MeshScopeFrameEffect {
     NeedDocument,
     DocumentReceive {
