@@ -41,14 +41,22 @@ export class BrowserMeshOwnershipTransfer<C extends BrowserMeshTransferCredentia
   private async confirmed(workspaceId: string, personId: string): Promise<void> {
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
-    const peers = (await this.host.peers(workspaceId)).filter(peer => peer.personId === personId && !peer.revokedAt)
+    const allPeers = await this.host.peers(workspaceId)
+    const transfers = credential ? this.host.transfers(credential) : []
+    const advertisements = allPeers.map(peer => this.host.advertisement(peer))
+    const selection = meshRustRuntime().state.selectOwnershipTransfer({ localPersonId: profile.personId,
+      ownerPersonId: credential?.ownerPersonId ?? null, credentialEpoch: credential?.epoch ?? null,
+      targetPersonId: personId, peers: allPeers.map((peer, index) => ({ personId: peer.personId,
+        revoked: Boolean(peer.revokedAt), online: this.host.online(peer, workspaceId),
+        hasAdvertisement: Boolean(advertisements[index]) })),
+      transfers: transfers.map(record => record.payload) })
+    const peers = selection.peerIndices.map(index => allPeers[index]!)
     const sessions = this.host.confirmationSessions(peers, workspaceId)
-    const advertisement = peers.map(peer => this.host.advertisement(peer)).find(Boolean)
-    const pending = credential && this.host.transfers(credential).find(record => record.payload.epoch === credential.epoch + 1 &&
-      record.payload.fromOwnerPersonId === profile.personId)
+    const advertisement = selection.advertisementIndex === null ? undefined : advertisements[selection.advertisementIndex]
+    const pending = selection.pendingIndex === null ? undefined : transfers[selection.pendingIndex]
     const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "transfer", localPersonId: profile.personId,
       ownerPersonId: credential?.ownerPersonId ?? null, targetPersonId: personId, activePeerCount: peers.length,
-      targetOnline: peers.some(peer => this.host.online(peer, workspaceId)),
+      targetOnline: selection.targetOnline,
       confirmationSessionCount: sessions.length, hasAdvertisement: Boolean(advertisement),
       pendingTargetPersonId: pending?.payload.toOwnerPersonId ?? null })
     let target!: Target

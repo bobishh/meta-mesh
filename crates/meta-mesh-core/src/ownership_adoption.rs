@@ -93,7 +93,7 @@ pub fn plan_ownership_adoption(
             });
             let catalog = catalog(credential);
             catalog.insert("ownershipTransfers".into(), json!(accepted));
-                catalog.remove("successionPolicy");
+            catalog.remove("successionPolicy");
             catalog.insert("successionVotes".into(), json!([]));
             (
                 p.to_owner_person_id,
@@ -120,7 +120,7 @@ pub fn plan_ownership_adoption(
                     .then_with(|| a.signature.cmp(&b.signature))
             });
             let catalog = catalog(credential);
-                catalog.remove("successionPolicy");
+            catalog.remove("successionPolicy");
             catalog.insert("successionVotes".into(), json!([]));
             catalog.insert("successionClaims".into(), json!(claims));
             (

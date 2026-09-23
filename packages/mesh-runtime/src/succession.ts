@@ -34,10 +34,6 @@ export type SuccessionHost<TCredential extends RuntimeWorkspaceCredential = Runt
   publishAll: () => Promise<void>
 }
 
-function catalogSnapshot<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential) {
-  return JSON.stringify({ policy: host.getPolicy(credential), votes: host.getVotes(credential), claims: host.getClaims(credential) })
-}
-
 async function adoptClaim<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, credential: TCredential,
   claim: WorkspaceSuccessionClaim, claims: WorkspaceSuccessionClaim[]): Promise<TCredential> {
   const profile = await host.getProfile()
@@ -54,9 +50,6 @@ async function adoptClaim<TCredential extends RuntimeWorkspaceCredential>(host: 
 export async function mergeSuccessionState<TCredential extends RuntimeWorkspaceCredential>(host: SuccessionHost<TCredential>, initial: TCredential,
   rawPolicy: WorkspaceSuccessionPolicy | undefined, rawVotes: WorkspaceSuccessionVote[],
   rawClaims: WorkspaceSuccessionClaim[]): Promise<TCredential> {
-  if (!rawPolicy && rawVotes.length === 0 && rawClaims.length === 0 && !host.getPolicy(initial) &&
-    host.getVotes(initial).length === 0 && host.getClaims(initial).length === 0) return initial
-  const before = catalogSnapshot(host, initial)
   const plan = meshRustRuntime().state.planSuccessionMerge({
     workspaceId: initial.workspaceId,
     owner: { personId: initial.ownerPersonId, publicKey: initial.ownerPublicKey,
@@ -65,20 +58,22 @@ export async function mergeSuccessionState<TCredential extends RuntimeWorkspaceC
     currentPolicy: host.getPolicy(initial) ?? null, currentVotes: host.getVotes(initial), currentClaims: host.getClaims(initial),
     incomingPolicy: rawPolicy ?? null, incomingVotes: rawVotes, incomingClaims: rawClaims,
     revokedPeople: [...host.revokedPeople(initial)], revokedBeforeEpoch: [...host.revokedBefore(initial, initial.epoch)],
-  }, Date.now()) as { policy?: WorkspaceSuccessionPolicy; votes: WorkspaceSuccessionVote[];
+  }, Date.now()) as { noop: boolean; policy?: WorkspaceSuccessionPolicy; votes: WorkspaceSuccessionVote[];
     claims: WorkspaceSuccessionClaim[]; transitions: WorkspaceSuccessionClaim[]; conflicted: boolean }
+  if (plan.noop) return initial
   let credential = initial
   if (!plan.conflicted) {
     for (const claim of plan.transitions) credential = await adoptClaim(host, credential, claim, plan.claims)
   }
-  if (credential.ownerPersonId === initial.ownerPersonId) {
-    const catalog = { ...host.getCatalog(credential), successionPolicy: plan.policy, successionVotes: plan.votes,
-      successionClaims: plan.claims }
-    if (JSON.stringify({ policy: plan.policy, votes: plan.votes, claims: plan.claims }) !== before) {
-      await host.putCredential({ ...credential, updatedAt: new Date().toISOString(), catalog })
-      credential = await host.getCredential(credential.workspaceId) ?? credential
-    }
+  const catalogPlan = meshRustRuntime().state.planSuccessionCatalog({ originalCatalog: host.getCatalog(initial),
+    originalOwnerPersonId: initial.ownerPersonId, credential,
+    policy: plan.policy ?? null, votes: plan.votes, claims: plan.claims,
+    updatedAt: new Date().toISOString() })
+  if (catalogPlan.persist) {
+    credential = catalogPlan.credential as TCredential
+    await host.putCredential(credential)
+    credential = await host.getCredential(credential.workspaceId) ?? credential
   }
-  if (catalogSnapshot(host, credential) !== before && host.sessionCount() > 0) queueMicrotask(() => { void host.publishAll() })
+  if (catalogPlan.publish && host.sessionCount() > 0) queueMicrotask(() => { void host.publishAll() })
   return credential
 }

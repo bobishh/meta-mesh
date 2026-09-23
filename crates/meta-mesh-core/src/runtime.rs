@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 pub const MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024;
 pub const CONTROL_CHUNK_BYTES: usize = 128 * 1024;
 pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
-pub const MESH_CAPABILITIES: [&str; 6] = [
+pub const MESH_CAPABILITIES: [&str; 7] = [
     "heartbeat-v1", "automerge-sync-v1", "ownership-receipt-v1", "owner-workspace-v2", "iroh-gossip-v1",
-    "blob-transfer-v1",
+    "blob-transfer-v1", "device-revocation-v1",
 ];
 
 pub fn validate_mesh_capabilities(capabilities: &[String]) -> Result<(), String> {
@@ -18,7 +18,32 @@ pub fn validate_mesh_capabilities(capabilities: &[String]) -> Result<(), String>
     if !capabilities.iter().any(|capability| capability == "automerge-sync-v1") {
         return Err("Peer does not support required Automerge sync".to_string());
     }
+    if !capabilities.iter().any(|capability| capability == "device-revocation-v1") {
+        return Err("Peer does not support device revocations; update the app".to_string());
+    }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshHandshakeFeatures {
+    pub heartbeat_supported: bool,
+    pub ownership_receipt_supported: bool,
+    pub owner_workspace_supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_workspace_offer_frame: Option<&'static str>,
+    pub blob_transfer_supported: bool,
+}
+
+pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures {
+    let has = |feature: &str| capabilities.iter().any(|item| item == feature);
+    MeshHandshakeFeatures {
+        heartbeat_supported: has("heartbeat-v1"),
+        ownership_receipt_supported: has("ownership-receipt-v1"),
+        owner_workspace_supported: has("owner-workspace-v2"),
+        owner_workspace_offer_frame: has("owner-workspace-v2").then_some("mesh-owner-workspace-offer"),
+        blob_transfer_supported: has("blob-transfer-v1"),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

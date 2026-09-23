@@ -11,7 +11,6 @@ describe("BrowserMeshInvitations", () => {
       peers: async () => ["active"],
       createEnvelope: (credential, peers) => ({ workspaceId: credential.workspaceId, ownerPersonId: credential.ownerPersonId, peers }),
       isEnvelope: (value): value is Envelope => typeof value === "object" && value !== null && "workspaceId" in value && "ownerPersonId" in value && "peers" in value,
-      ownerPersonId: envelope => envelope.ownerPersonId,
       install: async () => undefined,
     })
 
@@ -27,7 +26,6 @@ describe("BrowserMeshInvitations", () => {
       peers: async () => [],
       createEnvelope: credential => ({ workspaceId: credential.workspaceId, ownerPersonId: credential.ownerPersonId, peers: [] }),
       isEnvelope: (value): value is Envelope => typeof value === "object" && value !== null && "workspaceId" in value && "ownerPersonId" in value && "peers" in value,
-      ownerPersonId: envelope => envelope.ownerPersonId,
       install: async () => { installed = true },
     })
 
@@ -43,7 +41,6 @@ describe("BrowserMeshInvitations", () => {
       peers: async () => [],
       createEnvelope: credential => ({ workspaceId: credential.workspaceId, ownerPersonId: credential.ownerPersonId, peers: [] }),
       isEnvelope: (value): value is Envelope => typeof value === "object" && value !== null && "workspaceId" in value && "ownerPersonId" in value && "peers" in value,
-      ownerPersonId: envelope => envelope.ownerPersonId,
       validate: async workspaceId => { if (workspaceId === "second") throw new Error("Invalid grant") },
       install: async workspaceId => { installed.push(workspaceId) },
     })

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::{
     WorkspaceAuthority, WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy,
@@ -28,6 +29,7 @@ pub struct SuccessionMergeInput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SuccessionMergePlan {
+    pub noop: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy: Option<WorkspaceSuccessionPolicy>,
     pub votes: Vec<WorkspaceSuccessionVote>,
@@ -36,10 +38,130 @@ pub struct SuccessionMergePlan {
     pub conflicted: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionPolicyRefresh {
+    pub changed: bool,
+    pub successor_person_id: Option<String>,
+}
+
+pub fn plan_succession_policy_refresh(
+    current: &WorkspaceSuccessionPolicy,
+    eligible_editor_person_ids: &[String],
+    epoch: u64,
+) -> SuccessionPolicyRefresh {
+    let successor = current
+        .payload
+        .successor_person_id
+        .as_ref()
+        .filter(|person_id| eligible_editor_person_ids.contains(person_id))
+        .cloned();
+    SuccessionPolicyRefresh {
+        changed: current.payload.eligible_editor_person_ids.as_slice()
+            != eligible_editor_person_ids
+            || current.payload.successor_person_id != successor
+            || current.payload.epoch != epoch,
+        successor_person_id: successor,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionCatalogInput {
+    pub original_catalog: Value,
+    pub original_owner_person_id: String,
+    pub credential: Value,
+    pub policy: Option<WorkspaceSuccessionPolicy>,
+    pub votes: Vec<WorkspaceSuccessionVote>,
+    pub claims: Vec<WorkspaceSuccessionClaim>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionCatalogPlan {
+    pub credential: Value,
+    pub persist: bool,
+    pub publish: bool,
+}
+
+pub fn plan_succession_catalog(
+    mut input: SuccessionCatalogInput,
+) -> Result<SuccessionCatalogPlan, String> {
+    let original = fields(&input.original_catalog);
+    let credential = input
+        .credential
+        .as_object_mut()
+        .ok_or("Invalid workspace credential")?;
+    let same_owner = credential.get("ownerPersonId").and_then(Value::as_str)
+        == Some(&input.original_owner_person_id);
+    let mut persist = false;
+    if same_owner {
+        let catalog = credential.entry("catalog").or_insert_with(|| json!({}));
+        if !catalog.is_object() {
+            *catalog = json!({});
+        }
+        let catalog = catalog.as_object_mut().ok_or("Invalid workspace catalog")?;
+        let before = fields(&Value::Object(catalog.clone()));
+        if let Some(policy) = input.policy {
+            catalog.insert("successionPolicy".into(), json!(policy));
+        } else {
+            catalog.remove("successionPolicy");
+        }
+        catalog.insert("successionVotes".into(), json!(input.votes));
+        catalog.insert("successionClaims".into(), json!(input.claims));
+        persist = fields(&Value::Object(catalog.clone())) != before;
+        if persist {
+            credential.insert("updatedAt".into(), json!(input.updated_at));
+        }
+    }
+    let publish = credential
+        .get("catalog")
+        .is_some_and(|catalog| fields(catalog) != original);
+    Ok(SuccessionCatalogPlan {
+        credential: input.credential,
+        persist,
+        publish,
+    })
+}
+
+fn fields(catalog: &Value) -> (Option<Value>, Value, Value) {
+    (
+        catalog
+            .get("successionPolicy")
+            .filter(|value| !value.is_null())
+            .cloned(),
+        catalog
+            .get("successionVotes")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+        catalog
+            .get("successionClaims")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+}
+
 pub fn plan_succession_merge(
     input: SuccessionMergeInput,
     now_ms: i128,
 ) -> Result<SuccessionMergePlan, String> {
+    if input.current_policy.is_none()
+        && input.current_votes.is_empty()
+        && input.current_claims.is_empty()
+        && input.incoming_policy.is_none()
+        && input.incoming_votes.is_empty()
+        && input.incoming_claims.is_empty()
+    {
+        return Ok(SuccessionMergePlan {
+            noop: true,
+            policy: None,
+            votes: vec![],
+            claims: vec![],
+            transitions: vec![],
+            conflicted: false,
+        });
+    }
     let mut policy = input.current_policy;
     if let Some(incoming) = input.incoming_policy {
         if incoming.payload.owner_person_id == input.owner.person_id
@@ -185,6 +307,7 @@ pub fn plan_succession_merge(
         current_epoch = claim.payload.epoch;
     }
     Ok(SuccessionMergePlan {
+        noop: false,
         policy,
         votes,
         claims,

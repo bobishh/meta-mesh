@@ -19,12 +19,16 @@ export class BrowserMeshCatalog<C extends BrowserMeshCatalogCredential, Catalog,
     const catalog = this.host.parse(raw)
     let credential = await this.host.credential(workspaceId)
     if (!credential) return
-    credential = await this.host.ownership(credential, catalog)
-    await this.host.revocations(credential, catalog)
-    credential = await this.host.refreshed(workspaceId) ?? credential
-    credential = await this.host.succession(credential, catalog)
-    credential = await this.host.refreshed(workspaceId) ?? credential
-    await this.host.peers(credential, catalog)
-    await this.host.notify()
+    for (const action of meshRustRuntime().state.planCatalogMerge()) {
+      switch (action) {
+        case "ownership": credential = await this.host.ownership(credential, catalog); break
+        case "revocations": await this.host.revocations(credential, catalog); break
+        case "refreshCredential": credential = await this.host.refreshed(workspaceId) ?? credential; break
+        case "succession": credential = await this.host.succession(credential, catalog); break
+        case "peers": await this.host.peers(credential, catalog); break
+        case "notify": await this.host.notify(); break
+      }
+    }
   }
 }
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

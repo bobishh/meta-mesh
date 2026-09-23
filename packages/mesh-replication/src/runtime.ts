@@ -1,8 +1,45 @@
 export type RustStateCore = {
+  planSuccessionCatalog(input: unknown): { credential: unknown; persist: boolean; publish: boolean }
+  planOwnershipMerge(input: unknown): { accepted: unknown[];
+    steps: Array<{ record: unknown; accepted: unknown[]; previousOwnerEpoch: number }>;
+    conflicted: boolean; persistCatalog: boolean }
+  canRemoveWorkspaceDevice(credential: unknown, localPersonId: string, localPublicKey: string,
+    localDeviceId: string, targetPersonId: string, targetDeviceId: string, peerPersonId?: string): boolean
+  partitionCredentials(input: unknown): { activeIndices: number[]; mismatchedIndices: number[] }
+  ownedWorkspaceIds(credentials: unknown[], personId: string, publicKey: string): string[]
+  planAuthorityImport(kind: "invitation" | "handshake", hasRevocations: boolean, hasTransfers: boolean):
+    Array<"validateCapabilities" | "deviceRevocations" | "departures" | "revocations" | "ownershipTransfers" |
+      "succession" | "refreshCredential" | "peers">
+  meshHandshakeFeatures(capabilities: string[]): { heartbeatSupported: boolean;
+    ownershipReceiptSupported: boolean; ownerWorkspaceSupported: boolean;
+    ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"; blobTransferSupported: boolean }
+  credentialBelongsToProfile(credential: unknown, personId: string, publicKey: string): boolean
+  canReuseMemberBundle(input: unknown): boolean
+  planSuccessionPolicyRefresh(current: unknown, eligible: string[], epoch: number): {
+    changed: boolean; successorPersonId: string | null }
+  missingOwnerWorkspaces(owned: string[], remote: unknown): string[]
+  planGuestAdvertisements(input: unknown): Array<{ workspaceId: string; bundleIndex: number; grantIndex: number }>
+  validateOwnerWorkspaceOffer(raw: unknown, remotePersonId: string, localPersonId: string): string
+  knowsWorkspaceIssuer(workspaces: unknown[], issuerPersonId: string, localPersonId: string, localDeviceId: string): boolean
+  nextAccessEpoch(credential: unknown, issuedGrants: unknown[]): number
+  planInvitationCredential(input: unknown): unknown
+  planCatalogMerge(): Array<"ownership" | "revocations" | "refreshCredential" | "succession" | "peers" | "notify">
+  selectOwnershipTransfer(input: unknown): { peerIndices: number[]; advertisementIndex: number | null;
+    pendingIndex: number | null; targetOnline: boolean }
+  isWorkspaceEnvelope(raw: unknown): boolean
+  hasLeftWorkspace(credential: unknown, personId: string, grant: unknown): boolean
+  isGrantRevoked(credential: unknown, personId: string, grant: unknown): boolean
+  isDeviceRevoked(credential: unknown, personId: string, deviceId: string): boolean
+  planDialSchedule(input: unknown): { readyGroups: number[][]; retries: Record<string, number> }
+  planOwnerCertificateRefresh(credential: unknown, localPersonId: string, certificates: unknown[], updatedAt: string): unknown | null
+  decideOwnerCredential(existingOwnerPersonId: string | undefined, localPersonId: string): "create" | "refresh"
+  planInvitation(input: unknown): Array<{ workspaceId: string; envelopeIndex: number; grantIndex: number | null }>
+  planMemberGrant(input: unknown): { bundle?: unknown; credential?: unknown; grant?: unknown; grantId?: string }
   planAuthorityMerge(input: unknown): { credential: unknown; peers: unknown[]; evictDeviceIds: string[];
     evictPersonIds: string[]; localAccessRevoked: boolean }
   planOwnershipAdoption(input: unknown): { previousOwnerPersonId: string; credential: unknown; peers: unknown[] }
   planSuccessionMerge(input: unknown, nowMs: number): {
+    noop: boolean
     policy?: unknown
     votes: unknown[]
     claims: unknown[]

@@ -2140,6 +2140,46 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} credential
+     * @param {string} local_person_id
+     * @param {string} local_public_key
+     * @param {string} local_device_id
+     * @param {string} target_person_id
+     * @param {string} target_device_id
+     * @param {string | null} [peer_person_id]
+     * @returns {boolean}
+     */
+    static canRemoveWorkspaceDevice(credential, local_person_id, local_public_key, local_device_id, target_person_id, target_device_id, peer_person_id) {
+        const ptr0 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(target_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(target_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        var ptr5 = isLikeNone(peer_person_id) ? 0 : passStringToWasm0(peer_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len5 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_canRemoveWorkspaceDevice(credential, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static canReuseMemberBundle(raw) {
+        const ret = wasm.wasmstatecore_canReuseMemberBundle(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {any} records
      * @returns {any}
      */
@@ -2149,6 +2189,50 @@ export class WasmStateCore {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {string} public_key
+     * @returns {boolean}
+     */
+    static credentialBelongsToProfile(credential, person_id, public_key) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_credentialBelongsToProfile(credential, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {string | null | undefined} existing_owner_person_id
+     * @param {string} local_person_id
+     * @returns {string}
+     */
+    static decideOwnerCredential(existing_owner_person_id, local_person_id) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            var ptr0 = isLikeNone(existing_owner_person_id) ? 0 : passStringToWasm0(existing_owner_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            var len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmstatecore_decideOwnerCredential(ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
     }
     /**
      * @param {any} raw
@@ -2227,6 +2311,84 @@ export class WasmStateCore {
         return ret[0] !== 0;
     }
     /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {any} grant
+     * @returns {boolean}
+     */
+    static hasLeftWorkspace(credential, person_id, grant) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_hasLeftWorkspace(credential, ptr0, len0, grant);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {string} device_id
+     * @returns {boolean}
+     */
+    static isDeviceRevoked(credential, person_id, device_id) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_isDeviceRevoked(credential, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {any} grant
+     * @returns {boolean}
+     */
+    static isGrantRevoked(credential, person_id, grant) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_isGrantRevoked(credential, ptr0, len0, grant);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static isWorkspaceEnvelope(raw) {
+        const ret = wasm.wasmstatecore_isWorkspaceEnvelope(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @param {string} issuer_person_id
+     * @param {string} local_person_id
+     * @param {string} local_device_id
+     * @returns {boolean}
+     */
+    static knowsWorkspaceIssuer(raw, issuer_person_id, local_person_id, local_device_id) {
+        const ptr0 = passStringToWasm0(issuer_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_knowsWorkspaceIssuer(raw, ptr0, len0, ptr1, len1, ptr2, len2);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {any} existing
      * @param {any} incoming
      * @returns {any}
@@ -2247,6 +2409,41 @@ export class WasmStateCore {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static meshHandshakeFeatures(raw) {
+        const ret = wasm.wasmstatecore_meshHandshakeFeatures(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} owned
+     * @param {any} remote
+     * @returns {any}
+     */
+    static missingOwnerWorkspaces(owned, remote) {
+        const ret = wasm.wasmstatecore_missingOwnerWorkspaces(owned, remote);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {any} issued_grants
+     * @returns {number}
+     */
+    static nextAccessEpoch(credential, issued_grants) {
+        const ret = wasm.wasmstatecore_nextAccessEpoch(credential, issued_grants);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
     }
     /**
      * @param {any} records
@@ -2281,6 +2478,34 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} credentials
+     * @param {string} person_id
+     * @param {string} public_key
+     * @returns {any}
+     */
+    static ownedWorkspaceIds(credentials, person_id, public_key) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_ownedWorkspaceIds(credentials, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static partitionCredentials(raw) {
+        const ret = wasm.wasmstatecore_partitionCredentials(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} raw
      * @returns {any}
      */
@@ -2292,11 +2517,36 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {string} kind
+     * @param {boolean} has_revocations
+     * @param {boolean} has_transfers
+     * @returns {any}
+     */
+    static planAuthorityImport(kind, has_revocations, has_transfers) {
+        const ptr0 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_planAuthorityImport(ptr0, len0, has_revocations, has_transfers);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} raw
      * @returns {any}
      */
     static planAuthorityMerge(raw) {
         const ret = wasm.wasmstatecore_planAuthorityMerge(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    static planCatalogMerge() {
+        const ret = wasm.wasmstatecore_planCatalogMerge();
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2323,8 +2573,92 @@ export class WasmStateCore {
      * @param {any} raw
      * @returns {any}
      */
+    static planDialSchedule(raw) {
+        const ret = wasm.wasmstatecore_planDialSchedule(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planGuestAdvertisements(raw) {
+        const ret = wasm.wasmstatecore_planGuestAdvertisements(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planInvitation(raw) {
+        const ret = wasm.wasmstatecore_planInvitation(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planInvitationCredential(raw) {
+        const ret = wasm.wasmstatecore_planInvitationCredential(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planMemberGrant(raw) {
+        const ret = wasm.wasmstatecore_planMemberGrant(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {string} local_person_id
+     * @param {any} certificates
+     * @param {string} updated_at
+     * @returns {any}
+     */
+    static planOwnerCertificateRefresh(credential, local_person_id, certificates, updated_at) {
+        const ptr0 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(updated_at, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_planOwnerCertificateRefresh(credential, ptr0, len0, certificates, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
     static planOwnershipAdoption(raw) {
         const ret = wasm.wasmstatecore_planOwnershipAdoption(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planOwnershipMerge(raw) {
+        const ret = wasm.wasmstatecore_planOwnershipMerge(raw);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2347,11 +2681,35 @@ export class WasmStateCore {
     }
     /**
      * @param {any} raw
+     * @returns {any}
+     */
+    static planSuccessionCatalog(raw) {
+        const ret = wasm.wasmstatecore_planSuccessionCatalog(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
      * @param {number} now_ms
      * @returns {any}
      */
     static planSuccessionMerge(raw, now_ms) {
         const ret = wasm.wasmstatecore_planSuccessionMerge(raw, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} current
+     * @param {any} eligible
+     * @param {number} epoch
+     * @returns {any}
+     */
+    static planSuccessionPolicyRefresh(current, eligible, epoch) {
+        const ret = wasm.wasmstatecore_planSuccessionPolicyRefresh(current, eligible, epoch);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2364,6 +2722,17 @@ export class WasmStateCore {
      */
     static reconcileReplicaSets(left, right) {
         const ret = wasm.wasmstatecore_reconcileReplicaSets(left, right);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static selectOwnershipTransfer(raw) {
+        const ret = wasm.wasmstatecore_selectOwnershipTransfer(raw);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2510,6 +2879,34 @@ export class WasmStateCore {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @param {string} remote_person_id
+     * @param {string} local_person_id
+     * @returns {string}
+     */
+    static validateOwnerWorkspaceOffer(raw, remote_person_id, local_person_id) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passStringToWasm0(remote_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmstatecore_validateOwnerWorkspaceOffer(raw, ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
     }
     /**
      * @param {any} envelope
@@ -3885,57 +4282,57 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3600, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3646, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6233, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6283, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
             return ret;
         },
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 3159, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 3205, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 1629, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 1675, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 4090, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 4136, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 1629, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 1675, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5);
             return ret;
         },
         __wbindgen_cast_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 1629, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 1675, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6);
             return ret;
         },
         __wbindgen_cast_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3549, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3595, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000009: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3609, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3655, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_cast_000000000000000a: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3632, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3678, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_cast_000000000000000b: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 5325, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 5371, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__3_);
             return ret;
         },

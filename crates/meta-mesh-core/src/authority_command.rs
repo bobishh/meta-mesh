@@ -75,6 +75,74 @@ pub enum AuthorityAction {
     MergeTransfer,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CatalogMergeAction {
+    Ownership,
+    Revocations,
+    RefreshCredential,
+    Succession,
+    Peers,
+    Notify,
+}
+
+pub fn plan_catalog_merge() -> Vec<CatalogMergeAction> {
+    use CatalogMergeAction as C;
+    vec![
+        C::Ownership,
+        C::Revocations,
+        C::RefreshCredential,
+        C::Succession,
+        C::RefreshCredential,
+        C::Peers,
+        C::Notify,
+    ]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthorityImportAction {
+    ValidateCapabilities,
+    DeviceRevocations,
+    Departures,
+    Revocations,
+    OwnershipTransfers,
+    Succession,
+    RefreshCredential,
+    Peers,
+}
+
+pub fn plan_authority_import(
+    kind: &str,
+    has_revocations: bool,
+    has_transfers: bool,
+) -> Result<Vec<AuthorityImportAction>, String> {
+    use AuthorityImportAction as I;
+    let mut actions = Vec::new();
+    match kind {
+        "invitation" => {}
+        "handshake" => actions.push(I::ValidateCapabilities),
+        _ => return Err("Invalid authority import".into()),
+    }
+    actions.extend([
+        I::DeviceRevocations,
+        I::RefreshCredential,
+        I::Departures,
+        I::RefreshCredential,
+    ]);
+    if kind == "invitation" && has_revocations {
+        actions.extend([I::Revocations, I::RefreshCredential]);
+    }
+    if kind == "handshake" && has_transfers {
+        actions.push(I::OwnershipTransfers);
+    }
+    actions.extend([I::Succession, I::RefreshCredential]);
+    if kind == "invitation" {
+        actions.push(I::Peers);
+    }
+    Ok(actions)
+}
+
 pub fn plan_authority_command(
     input: AuthorityCommandInput,
 ) -> Result<Vec<AuthorityAction>, String> {
@@ -252,9 +320,11 @@ mod tests {
             candidate_person_id: "candidate".into(),
             existing_vote_for,
         };
-        assert!(plan_authority_command(make(Some("candidate".into())))
-            .unwrap()
-            .is_empty());
+        assert!(
+            plan_authority_command(make(Some("candidate".into())))
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             plan_authority_command(make(Some("other".into()))).unwrap_err(),
             "Your vote is already recorded for this policy"

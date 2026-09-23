@@ -12,7 +12,6 @@ export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJo
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
-export { credentialBelongsToProfile, activeCredentialsForProfile, type CredentialIdentityHost, type RuntimeAuthority, type RuntimeCredential, type RuntimeProfile } from "./credentials"
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"
 export { BrowserMeshCredentials, type BrowserMeshCredentialsHost, type BrowserMeshOwnerCredential, type BrowserMeshOwnerProfile } from "./browserCredentials"
 export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type BrowserMeshInvitationEnvelope, type BrowserMeshInvitationsHost } from "./browserInvitations"

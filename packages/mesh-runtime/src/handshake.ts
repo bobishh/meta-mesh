@@ -41,14 +41,7 @@ export class MeshHandshakeCodec {
   capabilities(): string[] { return meshRustRuntime().state.meshCapabilities() }
 
   features(capabilities: unknown): MeshHandshakeFeatures {
-    const values = Array.isArray(capabilities) ? capabilities : []
-    return {
-      heartbeatSupported: values.includes("heartbeat-v1"),
-      ownershipReceiptSupported: values.includes("ownership-receipt-v1"),
-      ownerWorkspaceSupported: values.includes("owner-workspace-v2"),
-      ownerWorkspaceOfferFrame: values.includes("owner-workspace-v2") ? "mesh-owner-workspace-offer" : undefined,
-      blobTransferSupported: values.includes("blob-transfer-v1"),
-    }
+    return meshRustRuntime().state.meshHandshakeFeatures(Array.isArray(capabilities) ? capabilities : [])
   }
 
   encodeRequest(secret: string, payload: MeshHandshakePayload): Uint8Array {

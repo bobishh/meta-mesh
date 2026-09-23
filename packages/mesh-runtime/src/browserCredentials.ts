@@ -14,10 +14,11 @@ export class BrowserMeshCredentials<C extends BrowserMeshOwnerCredential, P exte
 
   async ensureOwnerCredential(workspaceId: string, profile: P, certificates: Cert[]): Promise<C> {
     const existing = await this.host.credential(workspaceId)
-    if (existing && existing.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can invite peers")
-    if (existing) return this.host.refreshOwnerCertificates(existing, profile, certificates)
+    const action = meshRustRuntime().state.decideOwnerCredential(existing?.ownerPersonId, profile.personId)
+    if (action === "refresh") return this.host.refreshOwnerCertificates(existing!, profile, certificates)
     const credential = this.host.createCredential(workspaceId, profile, certificates)
     await this.host.putCredential(credential)
     return credential
   }
 }
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

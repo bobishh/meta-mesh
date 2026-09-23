@@ -6,7 +6,6 @@ export type BrowserMeshInvitationsHost<C extends BrowserMeshInvitationCredential
   peers(workspaceId: string): Promise<Peer[]>
   createEnvelope(credential: C, peers: Peer[]): E
   isEnvelope(value: unknown): value is E
-  ownerPersonId(envelope: E): string
   /** Verify an invitation without changing durable credentials. */
   validate?(workspaceId: string, envelope: E, context: Context, grant: Grant | undefined): Promise<void>
   install(workspaceId: string, envelope: E, context: Context, grant: Grant | undefined): Promise<void>
@@ -32,10 +31,6 @@ export class BrowserMeshInvitations<C extends BrowserMeshInvitationCredential, E
   async receive(raw: unknown, workspaceIds: string[], context: Context, grants: Grant[], grantWorkspaceId: (grant: Grant) => string): Promise<void> {
     const entries = await this.prepare(raw, workspaceIds, context, grants, grantWorkspaceId)
     for (const entry of entries) {
-      const existing = await this.host.credential(entry.workspaceId)
-      if (existing && existing.ownerPersonId !== this.host.ownerPersonId(entry.envelope)) {
-        throw new Error("Workspace ownership proof is missing")
-      }
       await this.host.install(entry.workspaceId, entry.envelope, context, entry.grant)
     }
   }
@@ -45,28 +40,20 @@ export class BrowserMeshInvitations<C extends BrowserMeshInvitationCredential, E
   }
 
   private async prepare(raw: unknown, workspaceIds: string[], context: Context, grants: Grant[], grantWorkspaceId: (grant: Grant) => string) {
-    if (!Array.isArray(raw) || raw.length !== workspaceIds.length || new Set(workspaceIds).size !== workspaceIds.length ||
-      !this.isBounded(raw)) throw new Error("Invalid mesh invitation")
+    const existing = await Promise.all(workspaceIds.map(id => this.host.credential(id)))
+    const plan = meshRustRuntime().state.planInvitation({ raw, workspaceIds,
+      grantWorkspaceIds: grants.map(grantWorkspaceId),
+      existingOwnerPersonIds: existing.map(value => value?.ownerPersonId ?? null) })
     const entries: Array<{ workspaceId: string; envelope: E; grant: Grant | undefined }> = []
-    for (const workspaceId of workspaceIds) {
-      const envelope = raw.find(item => this.host.isEnvelope(item) && item.workspaceId === workspaceId)
-      if (!envelope || !this.host.isEnvelope(envelope)) throw new Error("Invalid mesh invitation")
-      const grant = grants.find(grant => grantWorkspaceId(grant) === workspaceId)
-      const existing = await this.host.credential(workspaceId)
-      if (existing && existing.ownerPersonId !== this.host.ownerPersonId(envelope)) {
-        throw new Error("Workspace ownership proof is missing")
-      }
+    for (const item of plan) {
+      const envelope = (raw as unknown[])[item.envelopeIndex]
+      if (!this.host.isEnvelope(envelope)) throw new Error("Invalid mesh invitation")
+      const workspaceId = item.workspaceId
+      const grant = item.grantIndex === null ? undefined : grants[item.grantIndex]
       await this.host.validate?.(workspaceId, envelope, context, grant)
       entries.push({ workspaceId, envelope, grant })
     }
     return entries
   }
-
-  private isBounded(raw: unknown[]): boolean {
-    try {
-      return new TextEncoder().encode(JSON.stringify(raw)).byteLength <= 8 * 1024 * 1024
-    } catch {
-      return false
-    }
-  }
 }
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

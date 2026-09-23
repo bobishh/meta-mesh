@@ -8,8 +8,15 @@ pub mod catalog;
 pub mod handshake;
 pub mod handshake_flow;
 pub mod identity;
+pub mod ownership_merge;
+pub mod bundle_reuse;
+pub mod transfer_selection;
+pub mod credential_access;
+pub mod dial_schedule;
+pub mod invitation_plan;
 pub mod invitation;
 pub mod live_session;
+pub mod member_grant;
 pub mod ownership_adoption;
 pub mod member;
 pub mod pairing;
@@ -36,6 +43,8 @@ pub use authority::{
     verify_workspace_succession_policy, verify_workspace_succession_vote,
 };
 pub use authority_command::{AuthorityAction, AuthorityCommandInput, plan_authority_command};
+pub use authority_command::{CatalogMergeAction, AuthorityImportAction, plan_catalog_merge,
+    plan_authority_import};
 pub use gossip_payload::{encode_workspace_update, is_workspace_update};
 pub use authorization::{
     AuthorizedWorkspaceChange, IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
@@ -94,6 +103,7 @@ pub use runtime::{
     ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames, validate_mesh_capabilities,
 };
+pub use runtime::{MeshHandshakeFeatures, mesh_handshake_features};
 pub use session_admission::{MeshAuthenticatedSessions, MeshPeerAdmission, admit_mesh_peer};
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
@@ -101,7 +111,23 @@ pub use state::{
     select_scoped_neighbors, validate_peer_record,
 };
 pub use workspace_set::{WorkspaceSetEntry, decode_workspace_set, encode_workspace_set};
-pub use succession_merge::{SuccessionMergeInput, SuccessionMergePlan, plan_succession_merge};
+pub use succession_merge::{SuccessionMergeInput, SuccessionMergePlan, SuccessionPolicyRefresh,
+    SuccessionCatalogInput, SuccessionCatalogPlan, plan_succession_merge,
+    plan_succession_policy_refresh, plan_succession_catalog};
 pub use ownership_adoption::{OwnershipAdoptionInput, OwnershipAdoptionPlan, OwnershipAdoptionRecord, plan_ownership_adoption};
+pub use member_grant::{MemberGrantInput, MemberGrantPlan, decide_owner_credential, plan_member_grant, plan_owner_certificate_refresh};
+pub use invitation_plan::{InvitationPlanInput, InvitationPlanEntry, InvitationCredentialInput,
+    GuestAdvertisementInput, GuestAdvertisementEntry, IssuerWorkspaceInput,
+    plan_invitation, plan_invitation_credential, plan_guest_advertisements,
+    validate_owner_workspace_offer, knows_workspace_issuer, missing_owner_workspaces};
+pub use dial_schedule::{DialRouteInput, DialScheduleInput, DialSchedulePlan, plan_dial_schedule};
+pub use credential_access::{credential_belongs_to_profile, has_left_workspace, is_device_revoked,
+    is_grant_revoked, is_workspace_envelope, next_access_epoch, CredentialPartitionInput,
+    CredentialPartition, partition_credentials, owned_workspace_ids, can_remove_workspace_device};
+pub use transfer_selection::{TransferPeerInput, TransferRecordInput, TransferSelectionInput,
+    TransferSelectionPlan, select_ownership_transfer};
+pub use bundle_reuse::{BundleReuseInput, can_reuse_member_bundle};
+pub use ownership_merge::{OwnershipMergeInput, OwnershipMergePlan, OwnershipMergeStep,
+    plan_ownership_merge};
 mod authority_merge;
 pub use authority_merge::{AuthorityMergeInput, AuthorityMergePlan, AuthorityMergeRecords, SignedDeparture, SignedDeviceRevocation, plan_authority_merge};
