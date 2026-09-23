@@ -164,6 +164,9 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
   const maximumRounds = options.maximumRounds ?? 64
   if (!Number.isSafeInteger(maximumRounds) || maximumRounds < 1) throw new Error("Invalid Automerge sync round limit")
   const routeInstanceIds: string[] = []
+  // Each browser tab has its own Automerge sync state, even when its device ID
+  // is shared. Keep one route for the whole exchange after initial discovery.
+  let selectedRoute: DeviceRoute | undefined
   let frame = await options.engine.generate(options.adapter, options.targetDeviceId)
   for (let rounds = 0; rounds < maximumRounds; rounds += 1) {
     if (!frame) {
@@ -181,7 +184,7 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
     const responses = new Map<string, AutomergeDeviceSyncResponse>()
     const delivery = await deliverBatchToDevice({
       targetDeviceId: options.targetDeviceId,
-      routes: options.routes,
+      routes: selectedRoute ? [selectedRoute] : options.routes,
       batch,
       fallbackDelayMs: options.fallbackDelayMs,
       retryDelaysMs: options.retryDelaysMs,
@@ -198,6 +201,7 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
       },
       verifyAck: () => true,
     })
+    selectedRoute = delivery.route
     routeInstanceIds.push(delivery.route.instanceId)
     const response = responses.get(delivery.route.instanceId)?.frame
     frame = response

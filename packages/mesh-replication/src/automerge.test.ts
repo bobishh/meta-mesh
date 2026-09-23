@@ -229,4 +229,44 @@ describe("Automerge anti-entropy", () => {
     expect(rightAdapter.document.messages).toEqual(["one"])
     expect(Automerge.getHeads(rightAdapter.document)).toEqual(Automerge.getHeads(leftAdapter.document))
   })
+
+  it("Given two live tabs share a device, when route speed changes, then one sync exchange stays on its selected tab", async () => {
+    const leftProfile = (await createRecoverableIdentity("better", "Left")).profile
+    const rightProfile = (await createRecoverableIdentity("better", "Right")).profile
+    const base = Automerge.from<Chat>({ messages: [] })
+    const leftAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("one") }))
+    const tabs = new Map(["tab-a", "tab-b"].map(id => [id, {
+      engine: new AutomergeAntiEntropy(rightProfile.device.deviceId, Automerge),
+      adapter: new MemoryAdapter(Automerge.clone(base)),
+    }]))
+    const route = (instanceId: string): DeviceRoute => ({
+      kind: "mesh-device-route", version: 1, scopeId: "room-1", personId: rightProfile.identity.personId,
+      deviceId: rightProfile.device.deviceId, instanceId, endpoint: instanceId, sequence: 1,
+      issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      signerKeyId: rightProfile.device.deviceId, signature: "route-signature",
+    })
+    const calls = new Map<string, number>()
+    const result = await syncAutomergeDocumentToDevice({
+      engine: new AutomergeAntiEntropy(leftProfile.device.deviceId, Automerge),
+      adapter: leftAdapter,
+      targetDeviceId: rightProfile.device.deviceId,
+      routes: [route("tab-a"), route("tab-b")],
+      fallbackDelayMs: 0,
+      retryDelaysMs: [],
+      send: async (candidate, request) => {
+        const count = (calls.get(candidate.instanceId) ?? 0) + 1
+        calls.set(candidate.instanceId, count)
+        // First round selects A; later B would win if delivery raced again.
+        await new Promise(resolve => setTimeout(resolve, candidate.instanceId === "tab-a" ? (count === 1 ? 1 : 20) : (count === 1 ? 20 : 1)))
+        const tab = tabs.get(candidate.instanceId)!
+        return receiveAutomergeDeviceSync({ profile: rightProfile, engine: tab.engine, adapter: tab.adapter,
+          remoteDeviceId: leftProfile.device.deviceId, request })
+      },
+      verifyAck: async ack => verifySignedDurableBatchAck(ack,
+        await verifyDeviceCertificateChain(rightProfile.identity, rightProfile.device.deviceId, [rightProfile.certificate])),
+    })
+    expect(result.routeInstanceIds.length).toBeGreaterThan(1)
+    expect(new Set(result.routeInstanceIds)).toEqual(new Set(["tab-a"]))
+    expect(tabs.get("tab-a")!.adapter.document.messages).toEqual(["one"])
+  })
 })
