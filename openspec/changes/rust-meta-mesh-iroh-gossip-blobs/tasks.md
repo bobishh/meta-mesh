@@ -152,6 +152,13 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - Native `3150caf` rechecks signed authority before publish; `6a10dfe` passes accepted Automerge hashes to the product write validator. A Match lighthouse must implement the same editor transition restrictions as `Match/src/domain/permissions.ts` before acknowledging changes. Signed-grant admission alone does not stop an editor changing owner-only board fields. No fresh bot identity/editor enrollment, executable Iroh loop, or card writer is present yet. The older local debug export contains legacy profile data and is not a valid lighthouse credential source.
 - Remaining for this goal: consolidate signed scope genesis/authority command boundaries, remove duplicated protocol decisions where still present in Match/Twang host code, verify full browser and native sync/reconnect after final integration, then build and wire an authorized native lighthouse. Browser and product storage/network callbacks necessarily remain in TypeScript.
 
+### Native lighthouse checkpoint (2026-09-23)
+
+- Meta-mesh `6ab21a3` routes native signed scope frames over actual Iroh RPC streams. `56186ce` adds outbound authenticated handshakes; `f586ca1` writes native scope state with owner-only file permissions on Unix.
+- Match `65782e9` adds a buildable `match-lighthouse` Rust executable and a Match-specific signed-document admission adapter. It persists document, write proof, and chat atomically, rejects unsigned document changes and rollback of already accepted changes, and periodically reconnects and publishes. Focused Rust checks pass.
+- This executable currently needs a manually provisioned signed bot identity, grant, transport secret, and initial board state. There is no owner-invite provisioning path, no bot card writer, and no verified Match browser↔lighthouse exchange or restart/reconnect E2E. Existing `browser-native.spec.ts` uses a JSON RPC probe rather than Match's production sync path; it cannot establish this claim. No production deployment of Match `codex/rust-live-sync` or lighthouse has occurred.
+- `6.7` and `7.3`–`7.6` stay open. Next: provision bot via the real invitation path, run one production-protocol browser↔native sync/reconnect scenario, then verify Twang's adapter and remaining browser E2E before deployment.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
