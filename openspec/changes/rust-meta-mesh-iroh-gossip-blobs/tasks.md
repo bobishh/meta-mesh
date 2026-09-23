@@ -76,18 +76,19 @@ The previous completion marks overstated the implementation. Reopened tasks requ
   - [x] Port workspace grant roles, owner/root-or-certified-device verification, and reusable device-signed admission checks to `meta-mesh-core`; expose grant admission through WASM.
   - [x] Port HKDF device-key derivation, BIP39 and exact EFF-long recovery validation, PBKDF2-600k/AES-GCM recovery and passphrase envelopes; verify WebCrypto ciphertext parity and expose WASM bindings.
 - [x] 6.3 Port pairing and mesh wire framing to Rust; install the Rust codec in Match production runtime, keep Twang on its Rust-backed transport framing, and remove the TypeScript production fallback after parity tests pass.
-- [x] 6.4 Port workspace authority, peer catalog, Automerge orchestration, and durable delivery state machines to Rust.
+- [x] 6.4 Port authority verification, peer catalog, Automerge sync primitives, and durable delivery state machines to Rust. Command orchestration remains in 7.3.
   - [x] Port deterministic peer catalog merge, generic replica reconciliation, scoped neighbor selection, device route catalog, route ordering, and durable ACK matching.
-  - [x] Port Automerge document ownership and per-peer binary sync state to Rust; browser TypeScript now supplies authorization, persistence, and UI callbacks only.
+  - [x] Port Automerge document ownership and per-peer binary sync state to Rust; browser TypeScript supplies persisted bytes, application change admission, transport I/O, and UI callbacks.
   - [x] Port ownership transfer/succession/revocation verification plus durable change admission and outbox claim transitions.
 - [x] 6.5 Upgrade native runtime to current compatible `iroh`, `iroh-gossip`, and `iroh-blobs`; isolate the browser WebRTC adapter's Iroh 0.98 exact pin until upstream support or a maintained replacement exists.
   - [x] Resolve `meta-mesh-native` on `iroh 1.2.0`, `iroh-gossip 0.101.0`, and `iroh-blobs 0.103.0` without the browser dependency graph.
 - [x] 6.6 Add UniFFI Swift and Kotlin bindings over the platform-neutral core and native runtime.
   - [x] Export identity/recovery/signature/invitation APIs plus current-Iroh endpoint, allowlist, gossip, Bao blob transfer, and disk-store lifecycle through UniFFI.
   - [x] Generate checked-in Swift and Kotlin bindings and verify two mobile-adapter nodes exchange blobs and gossip over the real native runtime.
-- [x] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations.
+- [ ] 6.7 Migrate Match and Twang to thin UI adapters and delete superseded TypeScript protocol implementations. Primitive migration is complete; consumer orchestration is not.
   - [x] Delete TypeScript peer merge, replica reconcile, route catalog, route/ACK validation and verification, route ordering, ACK matching, neighbor selection, authority admission, durable persistence transitions, and Automerge sync implementations; unit tests load the actual Rust WASM runtime.
-  - [x] Install the Rust state runtime in Match and Twang production bootstrap and remove remaining authority/delivery implementations.
+  - [x] Install the Rust state runtime in Match and Twang production bootstrap.
+  - [ ] Remove remaining TypeScript authority commands, handshake/gossip/session orchestration, and Match's large sync hierarchy.
 - [x] 6.8 Add cross-platform interoperability tests: browser↔browser, browser↔native, Swift↔native, Kotlin↔native, persistence restart, denial, revocation, and protocol-version failure.
   - [x] Drive browser gossip across multi-hop peers, compare browser/native wire fixtures in both directions, and reject unsupported Automerge protocol versions.
   - [x] Compile and run generated Swift and Kotlin clients against the native runtime with blob, gossip, deny-by-default, and live revocation coverage; retain native disk-restart coverage.
@@ -96,15 +97,27 @@ The previous completion marks overstated the implementation. Reopened tasks requ
 
 ## 7. Complete Runtime Ownership
 
-The 6.7 completion mark covered protocol primitives, but overstated the consumer boundary. Match still owns connection lifecycle, handshake orchestration, route racing, session replacement, reconnect scheduling, gossip session management, control-frame reassembly, and ownership workflows in a nine-class TypeScript inheritance chain.
+The original 6.7 completion mark overstated the consumer boundary. Rust now owns several runtime decisions and live document protocol, but Match still coordinates browser I/O and some protocol workflows in its TypeScript sync hierarchy.
 
 - [x] 7.1 Add a platform-neutral Rust runtime state machine for lifecycle, route attempts, session admission/replacement, reconnect scheduling, and bounded control transfers.
 - [x] 7.2 Expose the runtime through the browser WASM adapter and native/mobile adapters with equivalent observable behavior.
 - [ ] 7.3 Move authenticated handshake, gossip-session orchestration, Automerge session lifecycle, and ownership/recovery commands behind the Rust runtime API.
+  - [x] `LiveWorkspaceSession` in `meta-mesh-core` owns authenticated live frame dispatch, bounded control reassembly, durable receipt/heartbeat checks, and transactional Automerge sync state. WASM and Rust UniFFI wrappers expose it; Match uses it for its live document transaction.
+  - [x] Match calls Rust for live frame parsing/encoding and document prepare/commit/abort/reset. Delete superseded `browserDocumentSessions.ts`.
+  - [ ] Move remaining handshake I/O sequencing and gossip/session lifecycle decisions out of TypeScript where they are protocol policy. Browser transport and persistence remain host callbacks.
+  - [ ] Move ownership transfer, revocation, succession, and recovery command workflows into Rust. Rust currently verifies signed records and selects ownership transitions, while `browserAuthority.ts`, `browserOwnership.ts`, `succession.ts`, and `ownership.ts` still coordinate commands and persistence.
 - [ ] 7.4 Replace Match's `DurableMesh` hierarchy with a thin host adapter for persistence, browser lifecycle signals, and UI notifications; remove the superseded TypeScript runtime.
 - [ ] 7.5 Integrate the same runtime in Twang without product-specific forks.
 - [ ] 7.6 Verify browser↔browser, browser↔native, reconnect, duplicate-session, multi-tab, ownership transfer, and oversized-control scenarios through consumer E2E tests.
-  - Browser↔native Iroh RPC plus two-way Rust/WASM Automerge convergence runs in Match Playwright. Both runtimes verify the signed editor grant and transport endpoint; missing grant and forged device fail. A signed device revocation drops the live native session and rejects re-handshake. Native durable persistence remains unverified.
+  - [x] On the Match `codex/rust-live-sync` branch, Playwright passed four targeted scenarios after the live document migration: browser↔native signed editor sync/revocation; unsigned change rejected without dropping the channel; control history spanning multiple frames followed by reconnect and further edits; browser↔browser invitation with two-way card edits.
+  - [ ] Re-run the relevant E2E batch after remaining runtime migration; cover duplicate-session, multi-tab, ownership transfer, oversized-control, and native durable restart with the final implementation. The earlier four passing scenarios do not prove the full suite green.
+
+### Current implementation boundary (2026-09-23)
+
+- Meta-mesh branch `codex/rust-workspace-sync` at `63a6b37`: platform-neutral Rust live session, WASM/native bindings, and deletion of the duplicate browser document-session engine. Rust core verification and sync state are implemented; the full native lighthouse process is not.
+- Match branch `codex/rust-live-sync` at `c78ec1b`: Rust live protocol wired into `workspaceSet.ts` and `durableMeshSessions.ts`. Branch has not been deployed. The six Match sync files (`durableMeshAuthority.ts`, `durableMeshBase.ts`, `durableMeshCredentials.ts`, `durableMeshHandshake.ts`, `durableMeshSessions.ts`, `workspaceSet.ts`) still total 2,536 lines; much is storage, browser transport, or product integration, but protocol decisions remain.
+- Shared `mesh-runtime` still has 1,181 lines across authority, ownership, succession, handshake, gossip, session, lifecycle, and dial modules. Do not infer completion from Rust line count; remove duplicated decisions and retain only necessary host I/O.
+- Verification at this checkpoint: Rust core live-session tests, native/WASM build, Match quality checks and 20 `workspaceSet` tests, and the four Playwright scenarios above passed. No final post-migration full E2E run or production sync verification has occurred.
 
 ### Dependency status (2026-09-20)
 

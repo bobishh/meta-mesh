@@ -57,21 +57,29 @@ export class BrowserMeshAuthority<C extends BrowserMeshAuthorityCredential, P ex
   async revokePerson(workspaceId: string, personId: string): Promise<void> {
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
-    if (!credential || credential.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can revoke access")
-    const record = await this.host.createRevocation(profile, workspaceId, personId, await this.host.nextAccessEpoch(workspaceId))
-    await this.host.mergeRevocations(credential, [record], false)
-    await this.host.refreshSuccessionPolicy(workspaceId)
-    // Publish the signed tombstone before severing the revoked session.
-    await this.host.publishAll()
-    const current = await this.host.credential(workspaceId) ?? credential
-    await this.host.mergeRevocations(current, [record], true)
-    await this.host.notify()
+    const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "revoke", localPersonId: profile.personId,
+      ownerPersonId: credential?.ownerPersonId ?? null })
+    let record!: R
+    let current = credential!
+    for (const action of actions) {
+      switch (action) {
+        case "createRevocation": record = await this.host.createRevocation(profile, workspaceId, personId,
+          await this.host.nextAccessEpoch(workspaceId)); break
+        case "mergeRevocation": await this.host.mergeRevocations(current, [record], false); break
+        case "refreshSuccessionPolicy": await this.host.refreshSuccessionPolicy(workspaceId); break
+        case "publish": await this.host.publishAll(); break
+        case "reloadCredential": current = await this.host.credential(workspaceId) ?? current; break
+        case "disconnectRevoked": await this.host.mergeRevocations(current, [record], true); break
+        case "notify": await this.host.notify(); break
+      }
+    }
   }
 
   async leaveWorkspace(workspaceId: string): Promise<void> {
-    if (!workspaceId) throw new Error("No active workspace")
-    await this.host.leave(workspaceId)
-    await this.host.notify()
+    for (const action of meshRustRuntime().state.planAuthorityCommand({ kind: "leave", workspaceId })) {
+      if (action === "leave") await this.host.leave(workspaceId)
+      if (action === "notify") await this.host.notify()
+    }
   }
 }
 
@@ -80,12 +88,18 @@ export class BrowserMeshSuccession<C extends BrowserMeshAuthorityCredential, P e
 
   async setSuccessor(workspaceId: string, personId: string | null): Promise<void> {
     const [profile, credential] = await Promise.all([this.host.profile(), this.host.credential(workspaceId)])
-    if (!credential || credential.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can set succession")
-    const eligible = await this.host.eligibleEditors(workspaceId)
-    if (personId && !eligible.includes(personId)) throw new Error("Successor must be an editor")
-    await this.host.setPolicy(credential, await this.host.createPolicy(profile, workspaceId, personId, eligible, this.host.epoch(credential)))
-    await this.host.notify()
-    await this.host.publishAll()
+    const eligible = credential?.ownerPersonId === profile.personId ? await this.host.eligibleEditors(workspaceId) : []
+    const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "setSuccessor", localPersonId: profile.personId,
+      ownerPersonId: credential?.ownerPersonId ?? null, successorPersonId: personId, eligibleEditorPersonIds: eligible })
+    let policy!: Policy
+    for (const action of actions) {
+      switch (action) {
+        case "createPolicy": policy = await this.host.createPolicy(profile, workspaceId, personId, eligible, this.host.epoch(credential!)); break
+        case "setPolicy": await this.host.setPolicy(credential!, policy); break
+        case "notify": await this.host.notify(); break
+        case "publish": await this.host.publishAll(); break
+      }
+    }
   }
 }
 
@@ -104,43 +118,46 @@ export class BrowserMeshRecovery<
   async vote(workspaceId: string, candidatePersonId: string): Promise<void> {
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
-    if (!credential) throw new Error("Workspace membership is unavailable")
-    const policy = this.host.policy(credential)
-    if (!policy) throw new Error("The owner has not enabled ownership recovery")
-    const grant = this.host.grant(credential)
-    if (!grant || grant.payload.role !== "editor" ||
-      !policy.payload.eligibleEditorPersonIds.includes(profile.personId)) {
-      throw new Error("You are not an eligible editor in the current recovery policy")
-    }
-    if (policy.payload.successorPersonId) throw new Error("This workspace uses a named successor, not editor voting")
-    const votes = this.host.votes(credential)
+    const policy = credential && this.host.policy(credential)
+    const grant = credential && this.host.grant(credential)
+    const votes = credential ? this.host.votes(credential) : []
     const existing = votes.find(vote => vote.signed.payload.voterPersonId === profile.personId)
-    if (existing?.signed.payload.candidatePersonId === candidatePersonId) return
-    if (existing) throw new Error("Your vote is already recorded for this policy")
-    const vote = await this.host.createVote(profile, policy, candidatePersonId, grant,
-      await this.host.certificates(profile))
-    await this.host.merge(credential, policy, [vote], [])
-    await this.finish()
+    const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "vote", localPersonId: profile.personId,
+      hasCredential: Boolean(credential), hasPolicy: Boolean(policy), grantRole: grant?.payload.role ?? null,
+      eligibleEditorPersonIds: policy?.payload.eligibleEditorPersonIds ?? [],
+      successorPersonId: policy?.payload.successorPersonId ?? null, candidatePersonId,
+      existingVoteFor: existing?.signed.payload.candidatePersonId ?? null })
+    let vote!: Vote
+    for (const action of actions) {
+      switch (action) {
+        case "createVote": vote = await this.host.createVote(profile, policy!, candidatePersonId, grant!,
+          await this.host.certificates(profile)); break
+        case "mergeVote": await this.host.merge(credential!, policy!, [vote], []); break
+        case "notify": await this.host.notify(); break
+        case "publish": await this.host.publishAll(); break
+      }
+    }
   }
 
   async claim(workspaceId: string): Promise<void> {
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
-    if (!credential) throw new Error("Only an eligible editor can claim ownership")
-    const policy = this.host.policy(credential)
-    const grant = this.host.grant(credential)
-    if (!policy || !grant || grant.payload.role !== "editor" || grant.payload.personId !== profile.personId) {
-      throw new Error("Only an eligible editor can claim ownership")
+    const policy = credential && this.host.policy(credential)
+    const grant = credential && this.host.grant(credential)
+    const votes = credential ? this.host.votes(credential) : []
+    const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "claim", localPersonId: profile.personId,
+      hasCredential: Boolean(credential), hasPolicy: Boolean(policy), grantRole: grant?.payload.role ?? null,
+      grantPersonId: grant?.payload.personId ?? null })
+    let claim!: Claim
+    for (const action of actions) {
+      switch (action) {
+        case "createClaim": claim = await this.host.createClaim(profile, credential!, policy!, votes, grant!,
+          await this.host.certificates(profile)); break
+        case "mergeClaim": await this.host.merge(credential!, policy!, votes, [claim]); break
+        case "notify": await this.host.notify(); break
+        case "publish": await this.host.publishAll(); break
+      }
     }
-    const votes = this.host.votes(credential)
-    const claim = await this.host.createClaim(profile, credential, policy, votes, grant,
-      await this.host.certificates(profile))
-    await this.host.merge(credential, policy, votes, [claim])
-    await this.finish()
-  }
-
-  private async finish(): Promise<void> {
-    await this.host.notify()
-    await this.host.publishAll()
   }
 }
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

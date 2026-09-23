@@ -51,6 +51,12 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = planAuthorityCommand)]
+    pub fn plan_authority_command(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::AuthorityCommandInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_authority_command(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = decideWorkspaceAccess)]
     pub fn decide_workspace_access(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
         let input: WorkspaceAccessDecisionInput = from_value(raw)?;

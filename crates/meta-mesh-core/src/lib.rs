@@ -1,4 +1,5 @@
 pub mod authority;
+pub mod authority_command;
 pub mod access;
 pub mod authorization;
 pub mod automerge;
@@ -30,6 +31,7 @@ pub use authority::{
     verify_workspace_revocation, verify_workspace_succession_claim,
     verify_workspace_succession_policy, verify_workspace_succession_vote,
 };
+pub use authority_command::{AuthorityAction, AuthorityCommandInput, plan_authority_command};
 pub use authorization::{
     AuthorizedWorkspaceChange, IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
     WorkspaceChangeAuthorizationPayload, WorkspaceDeviceRevocationEvidence, WorkspaceGrant,

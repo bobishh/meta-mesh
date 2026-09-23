@@ -41,29 +41,37 @@ export class BrowserMeshOwnershipTransfer<C extends BrowserMeshTransferCredentia
   private async confirmed(workspaceId: string, personId: string): Promise<void> {
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
-    if (!credential || credential.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can transfer ownership")
-    if (personId === profile.personId) throw new Error("You already own this workspace")
     const peers = (await this.host.peers(workspaceId)).filter(peer => peer.personId === personId && !peer.revokedAt)
-    if (!peers.length) throw new Error("Select an active mesh member")
-    if (!peers.some(peer => this.host.online(peer, workspaceId))) throw new Error("Member must be online to receive ownership")
     const sessions = this.host.confirmationSessions(peers, workspaceId)
-    if (!sessions.length) throw new Error("The recipient must reload Match before receiving ownership")
     const advertisement = peers.map(peer => this.host.advertisement(peer)).find(Boolean)
-    if (!advertisement) throw new Error("Member identity is unavailable")
-    const target = await this.host.verifyTarget(credential, advertisement)
-    const pending = this.host.transfers(credential).find(record => record.payload.epoch === credential.epoch + 1 &&
+    const pending = credential && this.host.transfers(credential).find(record => record.payload.epoch === credential.epoch + 1 &&
       record.payload.fromOwnerPersonId === profile.personId)
-    if (pending && pending.payload.toOwnerPersonId !== personId) {
-      throw new Error("An ownership transfer is pending for another member. Reconnect that member to finish it.")
+    const actions = meshRustRuntime().state.planAuthorityCommand({ kind: "transfer", localPersonId: profile.personId,
+      ownerPersonId: credential?.ownerPersonId ?? null, targetPersonId: personId, activePeerCount: peers.length,
+      targetOnline: peers.some(peer => this.host.online(peer, workspaceId)),
+      confirmationSessionCount: sessions.length, hasAdvertisement: Boolean(advertisement),
+      pendingTargetPersonId: pending?.payload.toOwnerPersonId ?? null })
+    let target!: Target
+    let transfer: Transfer = pending!
+    let current: C = credential!
+    for (const action of actions) {
+      switch (action) {
+        case "verifyTarget": target = await this.host.verifyTarget(credential!, advertisement); break
+        case "createTransfer": transfer = await this.host.createTransfer(profile, credential!, target); break
+        case "persistProposal": await this.host.persistProposal(credential!, transfer); break
+        case "confirmDelivery":
+          try { await this.host.confirmDelivery(sessions, credential!) }
+          catch { throw new Error("Ownership delivery is unconfirmed. Keep both devices open and retry the same recipient.") }
+          break
+        case "reloadCredential":
+          current = (await this.host.credential(workspaceId))!
+          if (!current) throw new Error("Workspace mesh credential disappeared")
+          break
+        case "mergeTransfer": await this.host.merge(current, transfer); break
+        case "notify": await this.host.notify(); break
+        case "publish": await this.host.publishAll(); break
+      }
     }
-    const transfer = pending ?? await this.host.createTransfer(profile, credential, target)
-    if (!pending) await this.host.persistProposal(credential, transfer)
-    try { await this.host.confirmDelivery(sessions, credential) }
-    catch { throw new Error("Ownership delivery is unconfirmed. Keep both devices open and retry the same recipient.") }
-    const current = await this.host.credential(workspaceId)
-    if (!current) throw new Error("Workspace mesh credential disappeared")
-    await this.host.merge(current, transfer)
-    await this.host.notify()
-    await this.host.publishAll()
   }
 }
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

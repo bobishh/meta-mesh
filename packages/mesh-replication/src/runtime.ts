@@ -1,4 +1,10 @@
 export type RustStateCore = {
+  planAuthorityCommand(input: unknown): Array<
+    "createRevocation" | "mergeRevocation" | "refreshSuccessionPolicy" | "publish" | "reloadCredential" |
+    "disconnectRevoked" | "notify" | "leave" | "createPolicy" | "setPolicy" | "createVote" |
+    "mergeVote" | "createClaim" | "mergeClaim" | "verifyTarget" | "createTransfer" |
+    "persistProposal" | "confirmDelivery" | "mergeTransfer"
+  >
   decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
   validateMeshCatalog(raw: unknown): unknown
   validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
