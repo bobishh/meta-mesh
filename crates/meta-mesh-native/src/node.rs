@@ -99,7 +99,33 @@ pub struct NativeBrowserConnection {
     connection: Connection,
 }
 
+pub struct NativeBrowserRequest {
+    payload: Vec<u8>,
+    send: iroh::endpoint::SendStream,
+}
+
+impl NativeBrowserRequest {
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub async fn respond(mut self, response: &[u8]) -> Result<(), BoxError> {
+        if response.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC response exceeds size limit"));
+        }
+        self.send.write_all(response).await?;
+        self.send.finish()?;
+        Ok(())
+    }
+}
+
 impl NativeBrowserConnection {
+    pub async fn accept(&self) -> Result<NativeBrowserRequest, BoxError> {
+        let (send, mut receive) = self.connection.accept_bi().await?;
+        let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
+        Ok(NativeBrowserRequest { payload, send })
+    }
+
     pub async fn exchange(&self, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, BoxError> {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("RPC request exceeds size limit"));

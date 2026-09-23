@@ -60,6 +60,12 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         self.admission.peer(workspace_id, remote_endpoint).is_some()
     }
 
+    pub fn forget_peer(&mut self, workspace_id: &str, remote_endpoint: &str) {
+        self.admission.remove(workspace_id, remote_endpoint);
+        self.peers
+            .remove(&(workspace_id.to_string(), remote_endpoint.to_string()));
+    }
+
     pub fn prepare_connect(&mut self, workspace_id: &str, secret: &str) -> Result<Vec<u8>, String> {
         let credential = self
             .host
