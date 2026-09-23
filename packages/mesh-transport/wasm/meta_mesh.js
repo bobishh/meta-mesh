@@ -345,6 +345,31 @@ export class WasmAutomergeSyncEngine {
     /**
      * @param {string} document_id
      * @param {string} remote_device_id
+     */
+    abortPreparedReceive(document_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(document_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.wasmautomergesyncengine_abortPreparedReceive(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @param {string} document_id
+     * @param {string} remote_device_id
+     */
+    commitPreparedReceive(document_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(document_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergesyncengine_commitPreparedReceive(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {string} document_id
+     * @param {string} remote_device_id
      * @param {boolean} authorized
      * @param {any} proof
      * @returns {any}
@@ -406,6 +431,22 @@ export class WasmAutomergeSyncEngine {
         this.__wbg_ptr = ret[0] >>> 0;
         WasmAutomergeSyncEngineFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * @param {string} remote_device_id
+     * @param {any} frame
+     * @param {boolean} authorized
+     * @param {any} response_proof
+     * @returns {any}
+     */
+    prepareReceive(remote_device_id, frame, authorized, response_proof) {
+        const ptr0 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergesyncengine_prepareReceive(this.__wbg_ptr, ptr0, len0, frame, authorized, response_proof);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * @param {string} remote_device_id
@@ -3500,7 +3541,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6173, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6170, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
             return ret;
         },

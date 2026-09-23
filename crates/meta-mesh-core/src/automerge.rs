@@ -26,6 +26,7 @@ pub struct AutomergeSyncFrame {
 #[serde(rename_all = "camelCase")]
 pub struct AutomergeSyncResult {
     pub accepted_changes: usize,
+    pub accepted_hashes: Vec<String>,
     pub heads: Vec<String>,
     pub document: Vec<u8>,
     pub response: Option<AutomergeSyncFrame>,
@@ -34,6 +35,13 @@ pub struct AutomergeSyncResult {
 struct DocumentState {
     scope_id: String,
     document: AutoCommit,
+    revision: u64,
+}
+
+struct PreparedReceive {
+    document: AutoCommit,
+    state: State,
+    document_revision: u64,
 }
 
 pub struct AutomergeSyncEngine {
@@ -41,6 +49,7 @@ pub struct AutomergeSyncEngine {
     maximum_frame_bytes: usize,
     documents: HashMap<String, DocumentState>,
     peers: HashMap<(String, String), State>,
+    prepared: HashMap<(String, String), PreparedReceive>,
 }
 
 impl AutomergeSyncEngine {
@@ -61,6 +70,7 @@ impl AutomergeSyncEngine {
             maximum_frame_bytes,
             documents: HashMap::new(),
             peers: HashMap::new(),
+            prepared: HashMap::new(),
         })
     }
 
@@ -77,8 +87,9 @@ impl AutomergeSyncEngine {
         }
         let document = AutoCommit::load(bytes)
             .map_err(|error| format!("Invalid Automerge document: {error}"))?;
+        let revision = self.documents.get(&document_id).map_or(1, |previous| previous.revision.saturating_add(1));
         self.documents
-            .insert(document_id, DocumentState { scope_id, document });
+            .insert(document_id, DocumentState { scope_id, document, revision });
         Ok(())
     }
 
@@ -97,8 +108,9 @@ impl AutomergeSyncEngine {
     }
 
     pub fn reset(&mut self, document_id: &str, remote_device_id: &str) {
-        self.peers
-            .remove(&(document_id.to_string(), remote_device_id.to_string()));
+        let key = (document_id.to_string(), remote_device_id.to_string());
+        self.peers.remove(&key);
+        self.prepared.remove(&key);
     }
 
     pub fn generate(
@@ -115,18 +127,22 @@ impl AutomergeSyncEngine {
             return Err("Invalid remote device ID".to_string());
         }
         let key = (document_id.to_string(), remote_device_id.to_string());
-        let mut state = self.peers.remove(&key).unwrap_or_else(State::new);
+        if self.prepared.contains_key(&key) {
+            return Err("Automerge receive is awaiting admission".to_string());
+        }
+        let mut state = self.peers.get(&key).cloned().unwrap_or_else(State::new);
         let local_device_id = self.local_device_id.clone();
         let maximum_frame_bytes = self.maximum_frame_bytes;
         let document = self.document_mut(document_id)?;
         let message = document.document.sync().generate_sync_message(&mut state);
         let scope_id = document.scope_id.clone();
-        self.peers.insert(key, state);
         let Some(message) = message else {
+            self.peers.insert(key, state);
             return Ok(None);
         };
         let message = message.encode();
         validate_message(&message, maximum_frame_bytes)?;
+        self.peers.insert(key, state);
         Ok(Some(AutomergeSyncFrame {
             version: 1,
             scope_id,
@@ -138,7 +154,7 @@ impl AutomergeSyncEngine {
         }))
     }
 
-    pub fn receive(
+    pub fn prepare_receive(
         &mut self,
         remote_device_id: &str,
         frame: AutomergeSyncFrame,
@@ -150,29 +166,33 @@ impl AutomergeSyncEngine {
         }
         self.validate_frame(remote_device_id, &frame)?;
         let key = (frame.document_id.clone(), remote_device_id.to_string());
-        let mut state = self.peers.remove(&key).unwrap_or_else(State::new);
+        if self.prepared.contains_key(&key) {
+            return Err("Automerge receive is awaiting admission".to_string());
+        }
+        let mut state = self.peers.get(&key).cloned().unwrap_or_else(State::new);
         let message = Message::decode(&frame.message)
             .map_err(|error| format!("Invalid Automerge sync message: {error}"))?;
         let maximum_frame_bytes = self.maximum_frame_bytes;
         let local_device_id = self.local_device_id.clone();
         let document = self.document_mut(&frame.document_id)?;
-        let before_heads = document.document.get_heads();
-        document
-            .document
+        let document_revision = document.revision;
+        let scope_id = document.scope_id.clone();
+        let mut candidate = document.document.clone();
+        let before_heads = candidate.get_heads();
+        candidate
             .sync()
             .receive_sync_message(&mut state, message)
             .map_err(|error| format!("Automerge sync failed: {error}"))?;
-        let accepted_changes = document.document.get_changes(&before_heads).len();
-        let heads = document
-            .document
+        let accepted_hashes = candidate.get_changes(&before_heads).iter()
+            .map(|change| change.hash().to_string()).collect::<Vec<_>>();
+        let accepted_changes = accepted_hashes.len();
+        let heads = candidate
             .get_heads()
             .into_iter()
             .map(|head| head.to_string())
             .collect::<Vec<_>>();
-        let response = document.document.sync().generate_sync_message(&mut state);
-        let scope_id = document.scope_id.clone();
-        let document_bytes = document.document.save();
-        self.peers.insert(key, state);
+        let response = candidate.sync().generate_sync_message(&mut state);
+        let document_bytes = candidate.save();
         let response = response
             .map(|message| -> Result<AutomergeSyncFrame, String> {
                 let message = message.encode();
@@ -188,12 +208,45 @@ impl AutomergeSyncEngine {
                 })
             })
             .transpose()?;
+        self.prepared.insert(key, PreparedReceive { document: candidate, state, document_revision });
         Ok(AutomergeSyncResult {
             accepted_changes,
+            accepted_hashes,
             heads,
             document: document_bytes,
             response,
         })
+    }
+
+    pub fn commit_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) -> Result<(), String> {
+        let key = (document_id.to_string(), remote_device_id.to_string());
+        let pending = self.prepared.remove(&key)
+            .ok_or_else(|| "No prepared Automerge receive".to_string())?;
+        let document = self.document_mut(document_id)?;
+        if document.revision != pending.document_revision {
+            return Err("Automerge document changed during admission".to_string());
+        }
+        document.document = pending.document;
+        document.revision = document.revision.saturating_add(1);
+        self.peers.insert(key, pending.state);
+        Ok(())
+    }
+
+    pub fn abort_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) {
+        self.prepared.remove(&(document_id.to_string(), remote_device_id.to_string()));
+    }
+
+    pub fn receive(
+        &mut self,
+        remote_device_id: &str,
+        frame: AutomergeSyncFrame,
+        authorized: bool,
+        response_proof: Option<Value>,
+    ) -> Result<AutomergeSyncResult, String> {
+        let document_id = frame.document_id.clone();
+        let result = self.prepare_receive(remote_device_id, frame, authorized, response_proof)?;
+        self.commit_prepared_receive(&document_id, remote_device_id)?;
+        Ok(result)
     }
 
     fn validate_frame(
@@ -276,5 +329,42 @@ mod tests {
             left.save_document("doc").unwrap(),
             right.save_document("doc").unwrap()
         );
+    }
+
+    #[test]
+    fn rejected_document_admission_does_not_advance_rust_sync_state() {
+        let mut changed = AutoCommit::new();
+        changed.put(ROOT, "title", "signed-change").unwrap();
+        let mut empty = AutoCommit::new();
+        let original = empty.save();
+        let mut sender = AutomergeSyncEngine::new("sender", None).unwrap();
+        let mut receiver = AutomergeSyncEngine::new("receiver", None).unwrap();
+        sender.load_document("scope", "doc", &changed.save()).unwrap();
+        receiver.load_document("scope", "doc", &original).unwrap();
+
+        let mut frame = sender.generate("doc", "receiver", true, None).unwrap().unwrap();
+        for _ in 0..20 {
+            let prepared = receiver.prepare_receive("sender", frame.clone(), true, None).unwrap();
+            if prepared.accepted_changes > 0 {
+                assert_eq!(receiver.save_document("doc").unwrap(), original);
+                receiver.abort_prepared_receive("doc", "sender");
+                assert_eq!(receiver.save_document("doc").unwrap(), original);
+                let retried = receiver.prepare_receive("sender", frame.clone(), true, None).unwrap();
+                assert_eq!(retried.accepted_changes, prepared.accepted_changes);
+                receiver.load_document("scope", "doc", &original).unwrap();
+                assert_eq!(receiver.commit_prepared_receive("doc", "sender").unwrap_err(),
+                    "Automerge document changed during admission");
+                let retried = receiver.prepare_receive("sender", frame, true, None).unwrap();
+                assert_eq!(retried.accepted_changes, prepared.accepted_changes);
+                receiver.commit_prepared_receive("doc", "sender").unwrap();
+                assert_eq!(receiver.save_document("doc").unwrap(), changed.save());
+                return;
+            }
+            receiver.commit_prepared_receive("doc", "sender").unwrap();
+            let reply = prepared.response.expect("initial sync reply");
+            frame = sender.receive("receiver", reply, true, None).unwrap()
+                .response.expect("document change frame");
+        }
+        panic!("sender never sent the document change");
     }
 }

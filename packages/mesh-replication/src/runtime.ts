@@ -57,6 +57,9 @@ export type RustAutomergeSyncEngine = {
   reset(documentId: string, remoteDeviceId: string): void
   generate(documentId: string, remoteDeviceId: string, authorized: boolean, proof: unknown): unknown
   receive(remoteDeviceId: string, frame: unknown, authorized: boolean, responseProof: unknown): unknown
+  prepareReceive(remoteDeviceId: string, frame: unknown, authorized: boolean, responseProof: unknown): unknown
+  commitPreparedReceive(documentId: string, remoteDeviceId: string): void
+  abortPreparedReceive(documentId: string, remoteDeviceId: string): void
   free?(): void
 }
 

@@ -52,6 +52,12 @@ do {
         currentEpoch: 1, revokedPeople: [], nowMs: 0
     )
     expect(transition.contains("\"candidates\":[]"), "Swift ownership planner binding is unavailable")
+    let documentSync = try MobileAutomergeSyncEngine(localDeviceId: "swift-device", maximumFrameBytes: nil)
+    try documentSync.abortPreparedReceive(documentId: "doc", remoteDeviceId: "peer")
+    do {
+        try documentSync.commitPreparedReceive(documentId: "doc", remoteDeviceId: "peer")
+        expect(false, "Swift committed a document without prepared admission")
+    } catch {}
     let running = try runtime.isRunning()
     expect(running, "Swift runtime did not start")
     let attempt = try runtime.beginRouteAttemptJson(routeKey: "peer-1", nowMs: 100)

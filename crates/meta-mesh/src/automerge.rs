@@ -72,6 +72,31 @@ impl WasmAutomergeSyncEngine {
             .map_err(js_error)?;
         to_value(&result)
     }
+
+    #[wasm_bindgen(js_name = prepareReceive)]
+    pub fn prepare_receive(
+        &mut self,
+        remote_device_id: &str,
+        frame: JsValue,
+        authorized: bool,
+        response_proof: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let frame: AutomergeSyncFrame = serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
+        let response_proof = optional_value(response_proof)?;
+        let result = self.inner.prepare_receive(remote_device_id, frame, authorized, response_proof)
+            .map_err(js_error)?;
+        to_value(&result)
+    }
+
+    #[wasm_bindgen(js_name = commitPreparedReceive)]
+    pub fn commit_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) -> Result<(), JsValue> {
+        self.inner.commit_prepared_receive(document_id, remote_device_id).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = abortPreparedReceive)]
+    pub fn abort_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) {
+        self.inner.abort_prepared_receive(document_id, remote_device_id)
+    }
 }
 
 fn to_value(value: &impl Serialize) -> Result<JsValue, JsValue> {

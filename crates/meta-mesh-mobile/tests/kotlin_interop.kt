@@ -4,6 +4,7 @@ import uniffi.meta_mesh_mobile.MobileMeshNode
 import uniffi.meta_mesh_mobile.MobileMeshRuntime
 import uniffi.meta_mesh_mobile.MobileMeshHandshakeFlow
 import uniffi.meta_mesh_mobile.MobileMeshAuthenticatedSessions
+import uniffi.meta_mesh_mobile.MobileAutomergeSyncEngine
 import uniffi.meta_mesh_mobile.meshAdmitPeerJson
 import uniffi.meta_mesh_mobile.meshNextVerifiedOwnershipTransitionJson
 
@@ -33,6 +34,10 @@ fun main() {
         val owner = """{"personId":"owner","publicKey":"key","certificates":[]}"""
         expect(meshNextVerifiedOwnershipTransitionJson("[]", "workspace", owner, 1UL, emptyList(), 0L)
             .contains("\"candidates\":[]"), "Kotlin ownership planner binding is unavailable")
+        val documentSync = MobileAutomergeSyncEngine("kotlin-device", null)
+        documentSync.abortPreparedReceive("doc", "peer")
+        expect(runCatching { documentSync.commitPreparedReceive("doc", "peer") }.isFailure,
+            "Kotlin committed a document without prepared admission")
         expect(runtime.isRunning(), "Kotlin runtime did not start")
         expect(runtime.beginRouteAttemptJson("peer-1", 100UL).contains("\"routeKey\":\"peer-1\""), "Kotlin route attempt lost peer key")
         expect(runtime.routeAttemptActive("peer-1"), "Kotlin route attempt was not retained")

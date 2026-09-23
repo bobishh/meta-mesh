@@ -64,11 +64,13 @@ Applications inject one compatible `@automerge/automerge` runtime into `Automerg
 
 1. Validate frame bounds, scope, document, sender, and recipient.
 2. Verify remote authorization.
-3. Apply the native Automerge sync message to a candidate.
-4. Run application semantic validation.
-5. Persist admitted immutable changes and an explicit-head snapshot.
+3. Call Rust `prepare_receive`/`prepareReceive`/`prepareReceiveJson`. It returns candidate bytes and `acceptedHashes` without changing the live document or peer sync state.
+4. Verify signed authorization for every accepted hash, then run application semantic validation. Abort the prepared receive on any rejection.
+5. Commit the prepared Rust state and persist the admitted document. If persistence fails, reload Rust from durable storage and reset that peer's sync state.
 6. Publish local invalidation.
-7. Sign durable ACK.
+7. Sign durable ACK only after persistence succeeds.
+
+Native and mobile hosts must use the prepare/commit boundary when document admission depends on application rules. The direct `receive` API is for callers whose authorization decision is already complete. A changed document between prepare and commit rejects the stale candidate so the host can retry from current durable state.
 
 Reconnect can discard ephemeral sync state. Native Automerge anti-entropy reconstructs missing dependencies and heals partitions from durable document state.
 

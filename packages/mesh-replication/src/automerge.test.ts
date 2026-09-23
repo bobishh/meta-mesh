@@ -169,6 +169,27 @@ describe("Automerge anti-entropy", () => {
     expect(adapter.commits).toBe(0)
   })
 
+  it("Given a document admission is rejected, when the same signed sync frame is retried, then no unapproved state survives", async () => {
+    const base = Automerge.from<Chat>({ messages: [] })
+    const senderAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("approved later") }))
+    const receiverAdapter = new MemoryAdapter(Automerge.clone(base))
+    let reject = true
+    receiverAdapter.validateCandidate = async () => {
+      if (reject) throw new Error("Document permission denied")
+    }
+    const sender = new AutomergeAntiEntropy("sender", Automerge)
+    const receiver = new AutomergeAntiEntropy("receiver", Automerge)
+    const hello = await sender.generate(senderAdapter, "receiver")
+    const request = (await receiver.receive(receiverAdapter, "sender", hello!)).response
+    const change = (await sender.receive(senderAdapter, "receiver", request!)).response
+
+    await expect(receiver.receive(receiverAdapter, "sender", change!)).rejects.toThrow("Document permission denied")
+    expect(receiverAdapter.document.messages).toEqual([])
+    reject = false
+    await receiver.receive(receiverAdapter, "sender", change!)
+    expect(receiverAdapter.document.messages).toEqual(["approved later"])
+  })
+
   it("Given several repair triggers occur together, when scheduled, then one flush retains every reason", async () => {
     const flush = vi.fn()
     const scheduler = new AutomergeSyncScheduler(flush)

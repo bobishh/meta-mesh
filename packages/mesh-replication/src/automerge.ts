@@ -213,6 +213,7 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
 
 export class AutomergeAntiEntropy {
   private readonly busy = new Set<string>()
+  private readonly documentQueues = new Map<string, Promise<void>>()
   private readonly engine: RustAutomergeSyncEngine
 
   constructor(
@@ -234,10 +235,19 @@ export class AutomergeAntiEntropy {
     this.engine.reset(documentId, remoteDeviceId)
   }
 
-  private async exclusive<T>(key: string, run: () => Promise<T>): Promise<T> {
+  private async exclusive<T>(key: string, documentId: string, run: () => Promise<T>): Promise<T> {
     if (this.busy.has(key)) throw new Error("Automerge sync backpressure")
     this.busy.add(key)
-    try { return await run() } finally { this.busy.delete(key) }
+    const previous = this.documentQueues.get(documentId)
+    let release!: () => void
+    const current = new Promise<void>(resolve => { release = resolve })
+    this.documentQueues.set(documentId, current)
+    await previous
+    try { return await run() } finally {
+      this.busy.delete(key)
+      release()
+      if (this.documentQueues.get(documentId) === current) this.documentQueues.delete(documentId)
+    }
   }
 
   async generate<T extends Record<string, unknown>>(
@@ -245,7 +255,7 @@ export class AutomergeAntiEntropy {
     remoteDeviceId: string,
   ): Promise<AutomergeSyncFrame | null> {
     const key = this.key(adapter.documentId, remoteDeviceId)
-    return this.exclusive(key, async () => {
+    return this.exclusive(key, adapter.documentId, async () => {
       if (!await adapter.authorize(remoteDeviceId, undefined, "send")) throw new Error("Unauthorized Automerge sync")
       const document = await adapter.current()
       this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(document))
@@ -261,34 +271,43 @@ export class AutomergeAntiEntropy {
     frame: AutomergeSyncFrame,
   ): Promise<AutomergeSyncResult> {
     const key = this.key(adapter.documentId, remoteDeviceId)
-    return this.exclusive(key, async () => {
+    return this.exclusive(key, adapter.documentId, async () => {
       if (!await adapter.authorize(remoteDeviceId, frame.proof, "receive")) throw new Error("Unauthorized Automerge sync")
       const before = await adapter.current()
       this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(before))
       const responseProof = await this.options.proof?.(adapter.scopeId, adapter.documentId, remoteDeviceId)
-      const result = this.engine.receive(remoteDeviceId, frame, true, responseProof) as {
+      const result = this.engine.prepareReceive(remoteDeviceId, frame, true, responseProof) as {
         acceptedChanges: number
         heads: string[]
         document: Uint8Array | number[]
         response?: AutomergeSyncFrame | null
       }
-      const candidate = this.automerge.load<T>(new Uint8Array(result.document))
-      const changes = this.automerge.getChanges(before, candidate)
-      if (changes.length > 0) {
+      let rustCommitted = false
+      try {
+        const candidate = this.automerge.load<T>(new Uint8Array(result.document))
+        const changes = this.automerge.getChanges(before, candidate)
         const admission = { before, candidate, changes, remoteDeviceId, proof: frame.proof }
-        await adapter.validateCandidate(admission)
-        await adapter.commit(admission)
-      }
-      const current = changes.length > 0 ? candidate : before
-      const heads = result.heads
-      if (changes.length > 0) {
-        await adapter.snapshot?.(current, heads)
-        await adapter.publish?.(adapter.documentId, heads, "remote-commit")
-      }
-      return {
-        acceptedChanges: result.acceptedChanges,
-        heads,
-        response: result.response ? normalizeRustFrame(result.response) : null,
+        if (changes.length > 0) await adapter.validateCandidate(admission)
+        this.engine.commitPreparedReceive(adapter.documentId, remoteDeviceId)
+        rustCommitted = true
+        if (changes.length > 0) {
+          await adapter.commit(admission)
+          await adapter.snapshot?.(candidate, result.heads)
+          await adapter.publish?.(adapter.documentId, result.heads, "remote-commit")
+        }
+        return {
+          acceptedChanges: result.acceptedChanges,
+          heads: result.heads,
+          response: result.response ? normalizeRustFrame(result.response) : null,
+        }
+      } catch (error) {
+        if (rustCommitted) {
+          this.engine.reset(adapter.documentId, remoteDeviceId)
+          this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(await adapter.current()))
+        } else {
+          this.engine.abortPreparedReceive(adapter.documentId, remoteDeviceId)
+        }
+        throw error
       }
     })
   }

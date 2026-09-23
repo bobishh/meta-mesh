@@ -619,11 +619,17 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 public protocol MobileAutomergeSyncEngineProtocol: AnyObject, Sendable {
 
+    func abortPreparedReceive(documentId: String, remoteDeviceId: String) throws
+
+    func commitPreparedReceive(documentId: String, remoteDeviceId: String) throws
+
     func generateJson(documentId: String, remoteDeviceId: String, authorized: Bool, proofJson: String?) throws  -> String?
 
     func heads(documentId: String) throws  -> [String]
 
     func loadDocument(scopeId: String, documentId: String, bytes: Data) throws
+
+    func prepareReceiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?) throws  -> String
 
     func receiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?) throws  -> String
 
@@ -695,6 +701,26 @@ public convenience init(localDeviceId: String, maximumFrameBytes: UInt64?)throws
 
 
 
+open func abortPreparedReceive(documentId: String, remoteDeviceId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_abort_prepared_receive(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),
+        FfiConverterString.lower(remoteDeviceId),uniffiCallStatus
+    )
+}
+}
+
+open func commitPreparedReceive(documentId: String, remoteDeviceId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_commit_prepared_receive(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(documentId),
+        FfiConverterString.lower(remoteDeviceId),uniffiCallStatus
+    )
+}
+}
+
 open func generateJson(documentId: String, remoteDeviceId: String, authorized: Bool, proofJson: String?)throws  -> String?  {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -727,6 +753,19 @@ open func loadDocument(scopeId: String, documentId: String, bytes: Data)throws  
         FfiConverterData.lower(bytes),uniffiCallStatus
     )
 }
+}
+
+open func prepareReceiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_prepare_receive_json(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(remoteDeviceId),
+        FfiConverterString.lower(frameJson),
+        FfiConverterBool.lower(authorized),
+        FfiConverterOptionString.lower(responseProofJson),uniffiCallStatus
+    )
+})
 }
 
 open func receiveJson(remoteDeviceId: String, frameJson: String, authorized: Bool, responseProofJson: String?)throws  -> String  {
@@ -2969,6 +3008,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json() != 14625) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_abort_prepared_receive() != 27215) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_commit_prepared_receive() != 4697) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() != 63608) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2976,6 +3021,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document() != 20124) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_prepare_receive_json() != 34923) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json() != 42173) {

@@ -907,6 +907,40 @@ impl MobileAutomergeSyncEngine {
         })?;
         to_json(&result)
     }
+
+    pub fn prepare_receive_json(
+        &self,
+        remote_device_id: String,
+        frame_json: String,
+        authorized: bool,
+        response_proof_json: Option<String>,
+    ) -> Result<String, MobileMeshError> {
+        let frame: AutomergeSyncFrame = from_json(&frame_json)?;
+        let response_proof = response_proof_json.map(|value| from_json(&value)).transpose()?;
+        let result = self.with_engine(|engine| {
+            engine.prepare_receive(&remote_device_id, frame, authorized, response_proof)
+        })?;
+        to_json(&result)
+    }
+
+    pub fn commit_prepared_receive(
+        &self,
+        document_id: String,
+        remote_device_id: String,
+    ) -> Result<(), MobileMeshError> {
+        self.with_engine(|engine| engine.commit_prepared_receive(&document_id, &remote_device_id))
+    }
+
+    pub fn abort_prepared_receive(
+        &self,
+        document_id: String,
+        remote_device_id: String,
+    ) -> Result<(), MobileMeshError> {
+        self.with_engine(|engine| {
+            engine.abort_prepared_receive(&document_id, &remote_device_id);
+            Ok(())
+        })
+    }
 }
 
 impl MobileAutomergeSyncEngine {
@@ -1423,12 +1457,15 @@ mod tests {
         )
         .unwrap();
         for _ in 0..20 {
+            let before = right.heads("doc".into()).unwrap();
             let result: meta_mesh_core::AutomergeSyncResult = from_json(
                 &right
-                    .receive_json("left".into(), to_json(&frame).unwrap(), true, None)
+                    .prepare_receive_json("left".into(), to_json(&frame).unwrap(), true, None)
                     .unwrap(),
             )
             .unwrap();
+            assert_eq!(right.heads("doc".into()).unwrap(), before);
+            right.commit_prepared_receive("doc".into(), "left".into()).unwrap();
             let Some(response) = result.response else {
                 break;
             };

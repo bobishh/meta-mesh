@@ -1,8 +1,9 @@
 use std::io::{BufRead, Write};
 
 use meta_mesh_core::{
-    AutomergeSyncEngine, AutomergeSyncFrame, MeshAuthenticatedSessions, PairingCodec,
-    WorkspaceWriteAuthorizationSnapshot,
+    AutomergeSyncEngine, AutomergeSyncFrame, IncomingWorkspaceChangeAuthorization,
+    MeshAuthenticatedSessions, PairingCodec, WorkspaceWriteAuthorizationSnapshot,
+    admit_workspace_change_authorizations,
 };
 use meta_mesh_native::{NativeNode, NativeNodeOptions};
 use serde_json::{Value, json};
@@ -98,7 +99,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     {
                         return Err("Mesh document sender does not match admitted peer".into());
                     }
-                    let result = engine.receive(&peer.device_id, frame, true, None)?;
+                    let proof = frame.proof.clone();
+                    let result = engine.prepare_receive(&peer.device_id, frame, true, None)?;
+                    let admission = (|| -> Result<(), String> {
+                        if result.accepted_hashes.is_empty() { return Ok(()); }
+                        let records: Vec<IncomingWorkspaceChangeAuthorization> = serde_json::from_value(
+                            proof.ok_or("Missing workspace change authorization")?
+                        ).map_err(|error| format!("Invalid workspace change authorization: {error}"))?;
+                        let mut snapshot = config.snapshot.clone();
+                        snapshot.document = result.document.clone();
+                        let admitted = admit_workspace_change_authorizations(
+                            &records, &snapshot, &result.accepted_hashes,
+                            time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000,
+                        )?;
+                        if result.accepted_hashes.iter().any(|hash| !admitted.iter().any(|record| record.hash == *hash)) {
+                            return Err("Workspace change authorization does not cover every incoming change".into());
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = admission {
+                        engine.abort_prepared_receive("document", &peer.device_id);
+                        return Err(error);
+                    }
+                    engine.commit_prepared_receive("document", &peer.device_id)?;
+                    config.snapshot.document = result.document.clone();
                     serde_json::to_value(result).map_err(|error| error.to_string())
                 }
                 Some("read") => {

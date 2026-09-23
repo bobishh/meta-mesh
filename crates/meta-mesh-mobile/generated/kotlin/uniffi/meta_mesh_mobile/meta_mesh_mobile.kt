@@ -745,11 +745,17 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_abort_prepared_receive(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_commit_prepared_receive(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_heads(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_prepare_receive_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json(
     ): Int
@@ -885,12 +891,18 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_constructor_mobileautomergesyncengine_new(`localDeviceId`: RustBuffer.ByValue,`maximumFrameBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_abort_prepared_receive(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_commit_prepared_receive(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_generate_json(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,`authorized`: Byte,`proofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_heads(`ptr`: Long,`documentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_load_document(`ptr`: Long,`scopeId`: RustBuffer.ByValue,`documentId`: RustBuffer.ByValue,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_prepare_receive_json(`ptr`: Long,`remoteDeviceId`: RustBuffer.ByValue,`frameJson`: RustBuffer.ByValue,`authorized`: Byte,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_receive_json(`ptr`: Long,`remoteDeviceId`: RustBuffer.ByValue,`frameJson`: RustBuffer.ByValue,`authorized`: Byte,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_reset(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1322,6 +1334,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json() and 0xFFFF) != 14625) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_abort_prepared_receive() and 0xFFFF) != 27215) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_commit_prepared_receive() and 0xFFFF) != 4697) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() and 0xFFFF) != 63608) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1329,6 +1347,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document() and 0xFFFF) != 20124) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_prepare_receive_json() and 0xFFFF) != 34923) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json() and 0xFFFF) != 42173) {
@@ -1946,11 +1967,17 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 
 public interface MobileAutomergeSyncEngineInterface {
 
+    fun `abortPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+
+    fun `commitPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+
     fun `generateJson`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String, `authorized`: kotlin.Boolean, `proofJson`: kotlin.String?): kotlin.String?
 
     fun `heads`(`documentId`: kotlin.String): List<kotlin.String>
 
     fun `loadDocument`(`scopeId`: kotlin.String, `documentId`: kotlin.String, `bytes`: kotlin.ByteArray)
+
+    fun `prepareReceiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String
 
     fun `receiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String
 
@@ -2073,6 +2100,36 @@ open class MobileAutomergeSyncEngine: Disposable, AutoCloseable, MobileAutomerge
     }
 
 
+    @Throws(MobileMeshException::class)override fun `abortPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_abort_prepared_receive(
+        it,
+
+        FfiConverterString.lower(`documentId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `commitPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_commit_prepared_receive(
+        it,
+
+        FfiConverterString.lower(`documentId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
+
+
+
     @Throws(MobileMeshException::class)override fun `generateJson`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String, `authorized`: kotlin.Boolean, `proofJson`: kotlin.String?): kotlin.String? {
             return FfiConverterOptionalString.lift(
     callWithHandle {
@@ -2119,6 +2176,24 @@ open class MobileAutomergeSyncEngine: Disposable, AutoCloseable, MobileAutomerge
 }
     }
 
+
+
+
+    @Throws(MobileMeshException::class)override fun `prepareReceiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_prepare_receive_json(
+        it,
+
+        FfiConverterString.lower(`remoteDeviceId`),
+        FfiConverterString.lower(`frameJson`),
+        FfiConverterBoolean.lower(`authorized`),
+        FfiConverterOptionalString.lower(`responseProofJson`),_status)
+}
+    }
+    )
+    }
 
 
 
