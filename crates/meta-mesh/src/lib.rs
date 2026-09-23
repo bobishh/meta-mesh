@@ -31,7 +31,7 @@ pub use node::{
     BrowserAcceptor, BrowserConnection, BrowserNode, BrowserStream, start_browser_node,
 };
 #[cfg(target_family = "wasm")]
-pub use state::{WasmDeviceRouteCatalog, WasmStateCore};
+pub use state::{WasmDeviceRouteCatalog, WasmMeshAuthenticatedSessions, WasmStateCore};
 
 use wasm_bindgen::prelude::*;
 

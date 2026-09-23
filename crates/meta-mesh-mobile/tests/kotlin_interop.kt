@@ -3,6 +3,7 @@ package interop
 import uniffi.meta_mesh_mobile.MobileMeshNode
 import uniffi.meta_mesh_mobile.MobileMeshRuntime
 import uniffi.meta_mesh_mobile.MobileMeshHandshakeFlow
+import uniffi.meta_mesh_mobile.MobileMeshAuthenticatedSessions
 import uniffi.meta_mesh_mobile.meshAdmitPeerJson
 
 private fun expect(condition: Boolean, message: String) {
@@ -24,6 +25,10 @@ fun main() {
         expect(handshake.advance("checkExpectedPeer", false) == "peerMismatch", "Kotlin handshake accepted wrong peer")
         expect(runCatching { meshAdmitPeerJson("{}", "{}", "peer", 0L) }.isFailure,
             "Kotlin admitted a peer without signed workspace authority")
+        val sessions = MobileMeshAuthenticatedSessions()
+        expect(runCatching { sessions.admitJson("{}", "{}", "peer", 0L) }.isFailure,
+            "Kotlin session registry admitted unsigned authority")
+        expect(sessions.peerJson("peer") == null, "Kotlin retained denied peer")
         expect(runtime.isRunning(), "Kotlin runtime did not start")
         expect(runtime.beginRouteAttemptJson("peer-1", 100UL).contains("\"routeKey\":\"peer-1\""), "Kotlin route attempt lost peer key")
         expect(runtime.routeAttemptActive("peer-1"), "Kotlin route attempt was not retained")

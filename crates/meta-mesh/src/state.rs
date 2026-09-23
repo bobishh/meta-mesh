@@ -10,6 +10,41 @@ use meta_mesh_core::{
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
+pub struct WasmMeshAuthenticatedSessions {
+    inner: meta_mesh_core::MeshAuthenticatedSessions,
+}
+
+#[wasm_bindgen]
+impl WasmMeshAuthenticatedSessions {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self { inner: meta_mesh_core::MeshAuthenticatedSessions::default() }
+    }
+
+    pub fn admit(&mut self, handshake: JsValue, snapshot: JsValue, remote_endpoint: &str, now_ms: f64) -> Result<JsValue, JsValue> {
+        let handshake: serde_json::Value = from_value(handshake)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let admitted = self.inner.admit(handshake, &snapshot, remote_endpoint,
+            i128::from(integer(now_ms, "Invalid member timestamp")?)).map_err(js_error)?;
+        to_value(&admitted)
+    }
+
+    pub fn peer(&self, remote_endpoint: &str) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.peer(remote_endpoint))
+    }
+
+    pub fn refresh(&mut self, snapshot: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let evicted = self.inner.refresh(&snapshot,
+            i128::from(integer(now_ms, "Invalid member timestamp")?)).map_err(js_error)?;
+        to_value(&evicted)
+    }
+
+    pub fn remove(&mut self, remote_endpoint: &str) -> bool { self.inner.remove(remote_endpoint) }
+    pub fn clear(&mut self) { self.inner.clear(); }
+}
+
+#[wasm_bindgen]
 pub struct WasmStateCore;
 
 #[wasm_bindgen]

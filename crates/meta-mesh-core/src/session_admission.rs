@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -17,6 +19,60 @@ pub struct MeshPeerAdmission {
     pub endpoint: String,
     pub instance_id: Option<String>,
     pub role: WorkspaceRole,
+}
+
+#[derive(Default)]
+pub struct MeshAuthenticatedSessions {
+    peers: BTreeMap<String, (Value, MeshPeerAdmission)>,
+}
+
+impl MeshAuthenticatedSessions {
+    pub fn admit(
+        &mut self,
+        handshake: Value,
+        snapshot: &WorkspaceWriteAuthorizationSnapshot,
+        remote_endpoint: &str,
+        now_ms: i128,
+    ) -> Result<MeshPeerAdmission, String> {
+        self.peers.remove(remote_endpoint);
+        let peer = admit_mesh_peer(handshake.clone(), snapshot, remote_endpoint, now_ms)?;
+        self.peers
+            .insert(remote_endpoint.to_string(), (handshake, peer.clone()));
+        Ok(peer)
+    }
+
+    pub fn peer(&self, remote_endpoint: &str) -> Option<&MeshPeerAdmission> {
+        self.peers.get(remote_endpoint).map(|(_, peer)| peer)
+    }
+
+    /// Recompute every live admission against an updated signed authority
+    /// snapshot before the host accepts another document or control frame.
+    pub fn refresh(
+        &mut self,
+        snapshot: &WorkspaceWriteAuthorizationSnapshot,
+        now_ms: i128,
+    ) -> Result<Vec<String>, String> {
+        ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(snapshot, now_ms)?;
+        let mut evicted = Vec::new();
+        for (endpoint, (handshake, peer)) in &mut self.peers {
+            match admit_mesh_peer(handshake.clone(), snapshot, endpoint, now_ms) {
+                Ok(admitted) => *peer = admitted,
+                Err(_) => evicted.push(endpoint.clone()),
+            }
+        }
+        for endpoint in &evicted {
+            self.peers.remove(endpoint);
+        }
+        Ok(evicted)
+    }
+
+    pub fn remove(&mut self, remote_endpoint: &str) -> bool {
+        self.peers.remove(remote_endpoint).is_some()
+    }
+
+    pub fn clear(&mut self) {
+        self.peers.clear();
+    }
 }
 
 /// Admit a mesh peer only after its signed route, grant, ownership history,
@@ -238,6 +294,14 @@ mod tests {
     #[test]
     fn signed_device_revocation_rejects_editor_before_document_sync() {
         let (handshake, mut snapshot, owner, device_id) = signed_editor();
+        let mut sessions = MeshAuthenticatedSessions::default();
+        sessions
+            .admit(handshake.clone(), &snapshot, "remote-endpoint", 0)
+            .unwrap();
+        let mut invalid = snapshot.clone();
+        invalid.workspace_id.clear();
+        assert!(sessions.refresh(&invalid, 0).is_err());
+        assert!(sessions.peer("remote-endpoint").is_some());
         let owner_device_id = public_key_id(&public_key_from_seed(&[2; 32]).unwrap()).unwrap();
         let mut document = AutoCommit::new();
         document.put(ROOT, "title", "board").unwrap();
@@ -280,5 +344,10 @@ mod tests {
             admit_mesh_peer(handshake, &snapshot, "remote-endpoint", 0).unwrap_err(),
             "Mesh peer access is revoked"
         );
+        assert_eq!(
+            sessions.refresh(&snapshot, 0).unwrap(),
+            vec!["remote-endpoint"]
+        );
+        assert!(sessions.peer("remote-endpoint").is_none());
     }
 }

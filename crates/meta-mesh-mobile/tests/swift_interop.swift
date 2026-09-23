@@ -40,6 +40,12 @@ do {
         _ = try meshAdmitPeerJson(handshakeJson: "{}", snapshotJson: "{}", remoteEndpoint: "peer", nowMs: 0)
         expect(false, "Swift admitted a peer without signed workspace authority")
     } catch {}
+    let sessions = MobileMeshAuthenticatedSessions()
+    do {
+        _ = try sessions.admitJson(handshakeJson: "{}", snapshotJson: "{}", remoteEndpoint: "peer", nowMs: 0)
+        expect(false, "Swift session registry admitted unsigned authority")
+    } catch {}
+    expect(try sessions.peerJson(remoteEndpoint: "peer") == nil, "Swift retained denied peer")
     let running = try runtime.isRunning()
     expect(running, "Swift runtime did not start")
     let attempt = try runtime.beginRouteAttemptJson(routeKey: "peer-1", nowMs: 100)

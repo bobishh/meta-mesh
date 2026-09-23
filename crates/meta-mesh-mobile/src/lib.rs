@@ -13,7 +13,7 @@ use meta_mesh_core::{
     DeviceBatch, DeviceRoute,
     DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload, GossipBounds, GossipCandidate,
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity, IncomingDocumentChange,
-    DialMode, MeshHandshakeFlow, MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, RelayDialPolicy,
+    DialMode, MeshAuthenticatedSessions, MeshHandshakeFlow, MeshRuntimeState, OutboxClaim, OutboxClaimInput, PublicIdentity, RelayDialPolicy,
     ReplicaSet, RouteHealth,
     SessionCandidate, SessionDirection, SessionKey, SignedDeviceRoute,
     SignedDurableBatchAck, SignedEnvelope, WorkspaceAuthority, WorkspaceGrant,
@@ -524,6 +524,57 @@ pub fn mesh_transition_outbox_claim_json(
     let current: Option<OutboxClaim> = current_json.map(|value| from_json(&value)).transpose()?;
     let input: OutboxClaimInput = from_json(&input_json)?;
     to_json(&transition_outbox_claim(current, input).map_err(MobileMeshError::from_display)?)
+}
+
+#[derive(uniffi::Object)]
+pub struct MobileMeshAuthenticatedSessions {
+    inner: Mutex<MeshAuthenticatedSessions>,
+}
+
+#[uniffi::export]
+impl MobileMeshAuthenticatedSessions {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self { inner: Mutex::new(MeshAuthenticatedSessions::default()) })
+    }
+
+    pub fn admit_json(&self, handshake_json: String, snapshot_json: String, remote_endpoint: String, now_ms: i64) -> Result<String, MobileMeshError> {
+        let handshake = from_json(&handshake_json)?;
+        let snapshot = from_json(&snapshot_json)?;
+        let admitted = self.inner.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?
+            .admit(handshake, &snapshot, &remote_endpoint, i128::from(now_ms))
+            .map_err(MobileMeshError::from_display)?;
+        to_json(&admitted)
+    }
+
+    pub fn peer_json(&self, remote_endpoint: String) -> Result<Option<String>, MobileMeshError> {
+        let sessions = self.inner.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?;
+        sessions.peer(&remote_endpoint).map(to_json).transpose()
+    }
+
+    pub fn refresh_json(&self, snapshot_json: String, now_ms: i64) -> Result<String, MobileMeshError> {
+        let snapshot = from_json(&snapshot_json)?;
+        let evicted = self.inner.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?
+            .refresh(&snapshot, i128::from(now_ms))
+            .map_err(MobileMeshError::from_display)?;
+        to_json(&evicted)
+    }
+
+    pub fn remove(&self, remote_endpoint: String) -> Result<bool, MobileMeshError> {
+        Ok(self.inner.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?
+            .remove(&remote_endpoint))
+    }
+
+    pub fn clear(&self) -> Result<(), MobileMeshError> {
+        self.inner.lock()
+            .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?
+            .clear();
+        Ok(())
+    }
 }
 
 #[derive(uniffi::Object)]

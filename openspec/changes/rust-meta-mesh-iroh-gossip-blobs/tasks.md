@@ -104,7 +104,7 @@ The 6.7 completion mark covered protocol primitives, but overstated the consumer
 - [ ] 7.4 Replace Match's `DurableMesh` hierarchy with a thin host adapter for persistence, browser lifecycle signals, and UI notifications; remove the superseded TypeScript runtime.
 - [ ] 7.5 Integrate the same runtime in Twang without product-specific forks.
 - [ ] 7.6 Verify browser↔browser, browser↔native, reconnect, duplicate-session, multi-tab, ownership transfer, and oversized-control scenarios through consumer E2E tests.
-  - Browser↔native Iroh RPC plus two-way Rust/WASM Automerge convergence runs in Match Playwright. Both runtimes verify the signed editor grant and transport endpoint; missing grant and forged device fail. Revocation is covered by Rust unit tests; live revocation and native durable persistence remain unverified.
+  - Browser↔native Iroh RPC plus two-way Rust/WASM Automerge convergence runs in Match Playwright. Both runtimes verify the signed editor grant and transport endpoint; missing grant and forged device fail. A signed device revocation drops the live native session and rejects re-handshake. Native durable persistence remains unverified.
 
 ### Dependency status (2026-09-20)
 

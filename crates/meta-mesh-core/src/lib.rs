@@ -85,7 +85,7 @@ pub use runtime::{
     ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames, validate_mesh_capabilities,
 };
-pub use session_admission::{MeshPeerAdmission, admit_mesh_peer};
+pub use session_admission::{MeshAuthenticatedSessions, MeshPeerAdmission, admit_mesh_peer};
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
     ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,
