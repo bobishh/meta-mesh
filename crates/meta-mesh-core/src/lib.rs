@@ -76,7 +76,7 @@ pub use automerge_delivery::{
     DeviceSyncInbound, DeviceSyncRequest, DeviceSyncRound, DeviceSyncStep, DeviceSyncWireFrame,
 };
 pub use bundle_reuse::{can_reuse_member_bundle, BundleReuseInput};
-pub use catalog::{validate_mesh_catalog, MeshCatalog};
+pub use catalog::{merge_verified_peer_catalog, validate_mesh_catalog, MeshCatalog};
 pub use change_admission_flow::{
     plan_change_admission_flow, unsigned_change_error, ChangeAdmissionChange,
     ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
