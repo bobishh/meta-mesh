@@ -20,7 +20,7 @@ use meta_mesh_core::{
     WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation, WorkspaceSuccessionClaim,
     WorkspaceSuccessionPolicy, WorkspaceSuccessionVote, derive_device_seed, durable_ack_matches,
     has_conflicting_ownership_transfers, identity_security_for_recovery,
-    legacy_recovery_from_samples, merge_peer_records, open_identity_seed,
+    legacy_recovery_from_samples, merge_peer_records, next_verified_ownership_transition, open_identity_seed,
     open_identity_seed_with_passphrase, order_delivery_routes, parse_invitation,
     plan_change_admission, public_key_from_seed, public_key_id, reconcile_replica_sets,
     recovery_phrase_from_entropy, recovery_phrase_to_entropy, seal_identity_seed,
@@ -438,6 +438,24 @@ pub fn mesh_verify_workspace_ownership_transfer_json(
     )
     .map_err(MobileMeshError::from_display)?;
     to_json(&record)
+}
+
+#[uniffi::export]
+pub fn mesh_next_verified_ownership_transition_json(
+    records_json: String,
+    workspace_id: String,
+    current_owner_json: String,
+    current_epoch: u64,
+    revoked_people: Vec<String>,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let records: Vec<Value> = from_json(&records_json)?;
+    let current_owner: WorkspaceAuthority = from_json(&current_owner_json)?;
+    let plan = next_verified_ownership_transition(
+        &records, &workspace_id, &current_owner, current_epoch,
+        &revoked_people.into_iter().collect::<HashSet<_>>(), i128::from(now_ms),
+    ).map_err(MobileMeshError::from_display)?;
+    to_json(&plan)
 }
 
 #[uniffi::export]

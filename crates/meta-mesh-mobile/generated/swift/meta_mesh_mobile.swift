@@ -2560,6 +2560,19 @@ public func meshMergePeerRecordsJson(existingJson: String, incomingJson: String)
     )
 })
 }
+public func meshNextVerifiedOwnershipTransitionJson(recordsJson: String, workspaceId: String, currentOwnerJson: String, currentEpoch: UInt64, revokedPeople: [String], nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_next_verified_ownership_transition_json(
+        FfiConverterString.lower(recordsJson),
+        FfiConverterString.lower(workspaceId),
+        FfiConverterString.lower(currentOwnerJson),
+        FfiConverterUInt64.lower(currentEpoch),
+        FfiConverterSequenceString.lower(revokedPeople),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
 public func meshOpenIdentitySeed(envelopeJson: String, recoveryKey: String)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -2870,6 +2883,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json() != 40981) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_next_verified_ownership_transition_json() != 60254) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed() != 28030) {

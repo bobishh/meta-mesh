@@ -267,6 +267,57 @@ pub fn plan_ownership_transitions(
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VerifiedOwnershipTransition {
+    pub candidates: Vec<WorkspaceOwnershipTransfer>,
+    pub selected: Option<WorkspaceOwnershipTransfer>,
+    pub conflicted: bool,
+}
+
+/// Verify every proposal at the next ownership epoch before selecting a
+/// successor. The host persists the selected credential; the decision and
+/// signature checks stay identical for browser, native, and mobile clients.
+pub fn next_verified_ownership_transition(
+    records: &[Value],
+    workspace_id: &str,
+    current_owner: &WorkspaceAuthority,
+    current_epoch: u64,
+    revoked_people: &HashSet<String>,
+    now_ms: i128,
+) -> Result<VerifiedOwnershipTransition, String> {
+    if records.len() > 512 || workspace_id.is_empty() {
+        return Err("Invalid workspace ownership transition catalog".into());
+    }
+    let next_epoch = records.iter()
+        .filter(|record| record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(current_owner.person_id.as_str()))
+        .filter_map(|record| record.pointer("/payload/epoch").and_then(Value::as_u64))
+        .filter(|epoch| *epoch > current_epoch)
+        .min();
+    let Some(next_epoch) = next_epoch else {
+        return Ok(VerifiedOwnershipTransition { candidates: vec![], selected: None, conflicted: false });
+    };
+    let mut candidates = records.iter()
+        .filter(|record| record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(current_owner.person_id.as_str())
+            && record.pointer("/payload/epoch").and_then(Value::as_u64) == Some(next_epoch))
+        .cloned()
+        .map(|record| serde_json::from_value::<WorkspaceOwnershipTransfer>(record)
+            .map_err(|_| "Invalid workspace ownership transfer".to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    candidates.sort_by(|left, right| left.signature.cmp(&right.signature));
+    let mut successors = HashSet::new();
+    for record in &candidates {
+        verify_workspace_ownership_transfer(record, workspace_id, current_owner, current_epoch, now_ms)?;
+        if revoked_people.contains(&record.payload.to_owner_person_id) {
+            return Err("New owner access is revoked".into());
+        }
+        successors.insert(record.payload.to_owner_person_id.as_str());
+    }
+    let conflicted = successors.len() > 1;
+    let selected = if conflicted { None } else { candidates.first().cloned() };
+    Ok(VerifiedOwnershipTransition { candidates, selected, conflicted })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SuccessionSummary {
     pub successor_person_id: Option<String>,
     pub eligible_editor_person_ids: Vec<String>,

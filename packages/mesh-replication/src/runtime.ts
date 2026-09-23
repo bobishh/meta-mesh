@@ -18,6 +18,8 @@ export type RustStateCore = {
   }>
   hasConflictingOwnershipTransfers(records: unknown): boolean
   planOwnershipTransitions(records: unknown, initialOwnerPersonId: string, initialEpoch: number): { records: unknown[], conflicted: boolean }
+  nextVerifiedOwnershipTransition(records: unknown, workspaceId: string, currentOwner: unknown, currentEpoch: number,
+    revokedPeople: string[], nowMs: number): { candidates: unknown[], selected?: unknown | null, conflicted: boolean }
   summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, revocations: unknown, epoch: number): unknown
   eligibleEditorPersonIds(peers: unknown): string[]
   canonicalRevocations(records: unknown): unknown

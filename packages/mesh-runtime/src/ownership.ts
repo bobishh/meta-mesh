@@ -38,23 +38,17 @@ export async function mergeOwnershipTransfers<TCredential extends RuntimeWorkspa
   if (meshRustRuntime().state.hasConflictingOwnershipTransfers(ordered(accepted.values()))) return persist().then(() => credential)
   while (true) {
     const ownerEpoch = host.ownershipEpoch(credential)
-    const nextEpoch = Math.min(...[...known.values()].filter(value => value.payload?.epoch > ownerEpoch &&
-      value.payload.fromOwnerPersonId === credential.ownerPersonId).map(value => value.payload.epoch))
-    const candidates = [...known.values()].filter(value => value.payload?.epoch === nextEpoch &&
-      value.payload.fromOwnerPersonId === credential.ownerPersonId).sort((a, b) => a.signature.localeCompare(b.signature))
-    if (!candidates.length) return credential
     const authority: WorkspaceAuthority = { personId: credential.ownerPersonId, publicKey: credential.ownerPublicKey,
       certificates: credential.ownerCertificates as DeviceCertificate[] }
-    for (const value of candidates) {
-      const record = await verifyWorkspaceOwnershipTransfer(value, credential.workspaceId, authority, ownerEpoch)
-      if (host.revokedPeople(credential).has(record.payload.toOwnerPersonId)) throw new Error("New owner access is revoked")
-      accepted.set(record.signature, record)
+    const plan = meshRustRuntime().state.nextVerifiedOwnershipTransition(
+      [...known.values()], credential.workspaceId, authority, ownerEpoch, [...host.revokedPeople(credential)], Date.now(),
+    ) as {
+      candidates: WorkspaceOwnershipTransfer[]; selected: WorkspaceOwnershipTransfer | null; conflicted: boolean
     }
-    const plan = meshRustRuntime().state.planOwnershipTransitions(ordered(accepted.values()), credential.ownerPersonId, ownerEpoch) as {
-      records: WorkspaceOwnershipTransfer[]; conflicted: boolean
-    }
-    if (plan.conflicted || !plan.records.length) return persist().then(() => credential)
-    const record = plan.records[0]!
+    for (const record of plan.candidates) accepted.set(record.signature, record)
+    if (plan.conflicted) return persist().then(() => credential)
+    if (!plan.selected) return accepted.size > host.transfers(credential).length ? persist().then(() => credential) : credential
+    const record = plan.selected
     const payload = record.payload
     const profile = await host.getProfile()
     const authorityHistory = [...(credential.ownerHistory ?? [])]

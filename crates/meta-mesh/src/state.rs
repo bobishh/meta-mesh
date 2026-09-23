@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use meta_mesh_core::{
     DeviceRoute, DeviceRouteCatalog, DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload,
     GossipBounds, GossipCandidate, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
@@ -192,6 +194,29 @@ impl WasmStateCore {
             &initial_owner_person_id,
             unsigned_integer(initial_epoch, "Invalid ownership epoch")?,
         ))
+    }
+
+    #[wasm_bindgen(js_name = nextVerifiedOwnershipTransition)]
+    pub fn next_verified_ownership_transition(
+        records: JsValue,
+        workspace_id: &str,
+        current_owner: JsValue,
+        current_epoch: f64,
+        revoked_people: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        let current_owner: WorkspaceAuthority = from_value(current_owner)?;
+        let revoked_people: Vec<String> = from_value(revoked_people)?;
+        let plan = meta_mesh_core::next_verified_ownership_transition(
+            &records,
+            workspace_id,
+            &current_owner,
+            unsigned_integer(current_epoch, "Invalid ownership epoch")?,
+            &revoked_people.into_iter().collect::<HashSet<_>>(),
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        ).map_err(js_error)?;
+        to_value(&plan)
     }
 
     #[wasm_bindgen(js_name = summarizeSuccession)]

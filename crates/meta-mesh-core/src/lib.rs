@@ -19,13 +19,13 @@ pub mod state;
 pub use access::{WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access};
 
 pub use authority::{
-    SuccessionSummary, SuccessionVoteSummary, WorkspaceAuthority, WorkspaceDeviceRevocation,
+    SuccessionSummary, SuccessionVoteSummary, VerifiedOwnershipTransition, WorkspaceAuthority, WorkspaceDeviceRevocation,
     WorkspaceDeviceRevocationPayload, WorkspaceOwnershipTransfer,
     WorkspaceOwnershipTransferPayload, WorkspaceRevocation, WorkspaceRevocationPayload,
     WorkspaceSuccessionClaim, WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy,
     WorkspaceSuccessionPolicyPayload, WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload,
     canonical_revocations, eligible_editor_person_ids, has_conflicting_ownership_transfers,
-    plan_ownership_transitions, summarize_succession, verify_workspace_ownership_transfer,
+    next_verified_ownership_transition, plan_ownership_transitions, summarize_succession, verify_workspace_ownership_transfer,
     verify_workspace_revocation, verify_workspace_succession_claim,
     verify_workspace_succession_policy, verify_workspace_succession_vote,
 };

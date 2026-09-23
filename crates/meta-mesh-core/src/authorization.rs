@@ -805,6 +805,46 @@ mod tests {
     }
 
     #[test]
+    fn verified_transition_selects_signed_owner_after_access_epoch_gap() {
+        let (owner, owner_device_seed, owner_device_id, _) = authority([61; 32], [62; 32]);
+        let (next, _, _, _) = authority([63; 32], [64; 32]);
+        let record = transfer(&owner, &[61; 32], &owner_device_seed, &owner_device_id,
+            &next, vec!["boundary".into()], 5);
+        let records = vec![serde_json::json!({"payload": {"fromOwnerPersonId": "other", "epoch": 9}}),
+            serde_json::to_value(&record).unwrap()];
+        let plan = crate::next_verified_ownership_transition(&records, "workspace", &owner, 1,
+            &std::collections::HashSet::new(), 0).unwrap();
+        assert!(!plan.conflicted);
+        assert_eq!(plan.candidates, vec![record.clone()]);
+        assert_eq!(plan.selected, Some(record));
+    }
+
+    #[test]
+    fn verified_transition_stalls_conflicts_and_rejects_forgery_or_revocation() {
+        let (owner, owner_device_seed, owner_device_id, _) = authority([65; 32], [66; 32]);
+        let (bob, _, _, _) = authority([67; 32], [68; 32]);
+        let (carol, _, _, _) = authority([69; 32], [70; 32]);
+        let bob_transfer = transfer(&owner, &[65; 32], &owner_device_seed, &owner_device_id,
+            &bob, vec!["boundary".into()], 2);
+        let carol_transfer = transfer(&owner, &[65; 32], &owner_device_seed, &owner_device_id,
+            &carol, vec!["boundary".into()], 2);
+        let records = vec![serde_json::to_value(&carol_transfer).unwrap(), serde_json::to_value(&bob_transfer).unwrap()];
+        let plan = crate::next_verified_ownership_transition(&records, "workspace", &owner, 1,
+            &std::collections::HashSet::new(), 0).unwrap();
+        assert!(plan.conflicted);
+        assert_eq!(plan.candidates.len(), 2);
+        assert!(plan.selected.is_none());
+
+        let mut forged = bob_transfer.clone();
+        forged.signature = carol_transfer.signature;
+        assert!(crate::next_verified_ownership_transition(&[serde_json::to_value(forged).unwrap()],
+            "workspace", &owner, 1, &std::collections::HashSet::new(), 0).is_err());
+        assert_eq!(crate::next_verified_ownership_transition(&[serde_json::to_value(bob_transfer).unwrap()],
+            "workspace", &owner, 1, &std::collections::HashSet::from([bob.person_id]), 0)
+            .unwrap_err(), "New owner access is revoked");
+    }
+
+    #[test]
     fn rejects_an_absent_authority_context() {
         let (owner, device_seed, device_id, certificates) = authority([15; 32], [16; 32]);
         let incoming = change_authorization(&owner, &device_seed, &device_id, certificates, vec!["change"]);

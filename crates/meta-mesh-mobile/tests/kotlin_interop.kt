@@ -5,6 +5,7 @@ import uniffi.meta_mesh_mobile.MobileMeshRuntime
 import uniffi.meta_mesh_mobile.MobileMeshHandshakeFlow
 import uniffi.meta_mesh_mobile.MobileMeshAuthenticatedSessions
 import uniffi.meta_mesh_mobile.meshAdmitPeerJson
+import uniffi.meta_mesh_mobile.meshNextVerifiedOwnershipTransitionJson
 
 private fun expect(condition: Boolean, message: String) {
     check(condition) { "Kotlin interop failure: $message" }
@@ -29,6 +30,9 @@ fun main() {
         expect(runCatching { sessions.admitJson("{}", "{}", "peer", 0L) }.isFailure,
             "Kotlin session registry admitted unsigned authority")
         expect(sessions.peerJson("workspace", "peer") == null, "Kotlin retained denied peer")
+        val owner = """{"personId":"owner","publicKey":"key","certificates":[]}"""
+        expect(meshNextVerifiedOwnershipTransitionJson("[]", "workspace", owner, 1UL, emptyList(), 0L)
+            .contains("\"candidates\":[]"), "Kotlin ownership planner binding is unavailable")
         expect(runtime.isRunning(), "Kotlin runtime did not start")
         expect(runtime.beginRouteAttemptJson("peer-1", 100UL).contains("\"routeKey\":\"peer-1\""), "Kotlin route attempt lost peer key")
         expect(runtime.routeAttemptActive("peer-1"), "Kotlin route attempt was not retained")

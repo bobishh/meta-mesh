@@ -689,6 +689,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_next_verified_ownership_transition_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed_with_passphrase(
@@ -1037,6 +1039,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_merge_peer_records_json(`existingJson`: RustBuffer.ByValue,`incomingJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_next_verified_ownership_transition_json(`recordsJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`currentOwnerJson`: RustBuffer.ByValue,`currentEpoch`: Long,`revokedPeople`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_open_identity_seed(`envelopeJson`: RustBuffer.ByValue,`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_open_identity_seed_with_passphrase(`envelopeJson`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1232,6 +1236,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json() and 0xFFFF) != 40981) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_next_verified_ownership_transition_json() and 0xFFFF) != 60254) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed() and 0xFFFF) != 28030) {
@@ -5013,6 +5020,23 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 
         FfiConverterString.lower(`existingJson`),
         FfiConverterString.lower(`incomingJson`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshNextVerifiedOwnershipTransitionJson`(`recordsJson`: kotlin.String, `workspaceId`: kotlin.String, `currentOwnerJson`: kotlin.String, `currentEpoch`: kotlin.ULong, `revokedPeople`: List<kotlin.String>, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_next_verified_ownership_transition_json(
+
+
+        FfiConverterString.lower(`recordsJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`currentOwnerJson`),
+        FfiConverterULong.lower(`currentEpoch`),
+        FfiConverterSequenceString.lower(`revokedPeople`),
+        FfiConverterLong.lower(`nowMs`),_status)
 }
     )
     }
