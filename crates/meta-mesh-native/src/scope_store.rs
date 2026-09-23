@@ -56,9 +56,14 @@ impl FileScopeStore {
             .path
             .with_extension(format!("tmp-{}-{nonce}", std::process::id()));
         let result = (|| -> Result<(), String> {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options
                 .open(&temp)
                 .map_err(|error| format!("Create temporary scope document: {error}"))?;
             file.write_all(candidate)
