@@ -76,6 +76,32 @@ impl MeshHandshakeFlow {
             || crate::is_device_revoked(credential, person_id, device_id)
     }
 
+    /// The selected outbound route and the verified response must name the
+    /// same device. Hosts supply values; the protocol core owns the decision.
+    pub fn matches_expected_peer(expected_device_id: &str, verified_device_id: &str) -> bool {
+        crate::handshake::matches_expected_mesh_peer(expected_device_id, verified_device_id)
+    }
+
+    /// Accept a host admission only when it remains bound to the verified
+    /// device, person, and transport endpoint.
+    pub fn matches_admitted_peer(
+        verified_device_id: &str,
+        verified_person_id: &str,
+        verified_endpoint: &str,
+        admitted_device_id: &str,
+        admitted_person_id: &str,
+        admitted_endpoint: &str,
+    ) -> bool {
+        crate::handshake::matches_admitted_mesh_peer(
+            verified_device_id,
+            verified_person_id,
+            verified_endpoint,
+            admitted_device_id,
+            admitted_person_id,
+            admitted_endpoint,
+        )
+    }
+
     /// Advance only after the host completed the current I/O action. A decision
     /// is required for access, peer identity, and session admission branches.
     pub fn advance(
@@ -258,5 +284,22 @@ mod tests {
             HandshakeStep::Revoked
         );
         assert!(flow.advance("persistPeer", None).is_err());
+    }
+
+    #[test]
+    fn delegates_identity_and_admission_binding_to_the_handshake_core() {
+        assert!(MeshHandshakeFlow::matches_expected_peer("device", "device"));
+        assert!(!MeshHandshakeFlow::matches_expected_peer("device", "other"));
+        assert!(MeshHandshakeFlow::matches_admitted_peer(
+            "device", "person", "endpoint", "device", "person", "endpoint",
+        ));
+        assert!(!MeshHandshakeFlow::matches_admitted_peer(
+            "device",
+            "person",
+            "endpoint",
+            "device",
+            "person",
+            "other-endpoint",
+        ));
     }
 }

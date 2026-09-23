@@ -298,6 +298,35 @@ impl WasmMeshHandshakeFlow {
         ))
     }
 
+    #[wasm_bindgen(js_name = matchesExpectedPeer)]
+    pub fn matches_expected_peer(
+        &self,
+        expected_device_id: &str,
+        verified_device_id: &str,
+    ) -> bool {
+        MeshHandshakeFlow::matches_expected_peer(expected_device_id, verified_device_id)
+    }
+
+    #[wasm_bindgen(js_name = matchesAdmittedPeer)]
+    pub fn matches_admitted_peer(
+        &self,
+        verified_device_id: &str,
+        verified_person_id: &str,
+        verified_endpoint: &str,
+        admitted_device_id: &str,
+        admitted_person_id: &str,
+        admitted_endpoint: &str,
+    ) -> bool {
+        MeshHandshakeFlow::matches_admitted_peer(
+            verified_device_id,
+            verified_person_id,
+            verified_endpoint,
+            admitted_device_id,
+            admitted_person_id,
+            admitted_endpoint,
+        )
+    }
+
     pub fn advance(&mut self, completed: &str, decision: Option<bool>) -> Result<String, JsValue> {
         self.inner
             .advance(completed, decision)

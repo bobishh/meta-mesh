@@ -1,8 +1,6 @@
 import { meshRustRuntime, type RustLiveWorkspaceSession, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
-export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
-export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
 export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
 export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJoinHandoffGuest,
@@ -13,7 +11,6 @@ export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePaylo
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"
-export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
 export type { RustLiveSessionAction, RustLiveWorkspaceSession } from "@meta-uber/mesh-replication/runtime"

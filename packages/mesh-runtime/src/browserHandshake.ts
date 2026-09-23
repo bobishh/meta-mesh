@@ -1,5 +1,5 @@
 import { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
-import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
+import { meshRustRuntime, type RustMeshHandshakeFlow } from "@meta-uber/mesh-replication/runtime"
 import type { WorkspaceMemberBundle } from "@meta-uber/mesh-workspace"
 
 export type BrowserMeshHandshakeStream = {
@@ -63,7 +63,6 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
             stream = initial?.stream ?? await connection.acceptStream()
             const frame = initial?.frame ?? await stream.read()
             const header = this.codec.inspect(frame)
-            if (header.type !== "mesh-handshake-request") throw new Error("Unsupported mesh handshake")
             const found = (await this.host.credentials()).find(item => this.host.secret(item) === header.secret)
             if (!found) throw new Error("Unknown mesh credential")
             credential = found
@@ -92,7 +91,7 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
             break
           }
           case "persistPeer":
-            assertAdmittedPeer(remote, await this.host.admit(credential, request, transportEndpoint(connection)))
+            assertRustAdmittedPeer(flow, remote, await this.host.admit(credential, request, connection.remoteEndpointId ?? ""))
             await this.host.putVerifiedBundle(credential, request.peer)
             break
           case "installSession": {
@@ -130,13 +129,10 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
 
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 
-function transportEndpoint(connection: { remoteEndpointId?: string }): string {
-  if (!connection.remoteEndpointId) throw new Error("Mesh transport endpoint unavailable")
-  return connection.remoteEndpointId
-}
-
-function assertAdmittedPeer(peer: BrowserMeshHandshakePeer, admitted: Pick<BrowserMeshHandshakePeer, "deviceId" | "personId" | "endpoint">): void {
-  if (peer.deviceId !== admitted.deviceId || peer.personId !== admitted.personId || peer.endpoint !== admitted.endpoint) {
+function assertRustAdmittedPeer(flow: RustMeshHandshakeFlow,
+  peer: BrowserMeshHandshakePeer, admitted: Pick<BrowserMeshHandshakePeer, "deviceId" | "personId" | "endpoint">): void {
+  if (!flow.matchesAdmittedPeer(peer.deviceId, peer.personId, peer.endpoint,
+    admitted?.deviceId ?? "", admitted?.personId ?? "", admitted?.endpoint ?? "")) {
     throw new Error("Rust mesh admission does not match verified peer")
   }
 }
@@ -189,10 +185,10 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
             flow.advance(step, flow.isPeerRevoked(credential, remote.personId, response.peer?.grant, remote.deviceId))
             continue
           case "checkExpectedPeer":
-            flow.advance(step, remote.deviceId === peerId)
+            flow.advance(step, flow.matchesExpectedPeer(peerId, remote.deviceId))
             continue
           case "persistPeer":
-            assertAdmittedPeer(remote, await this.host.admit(credential, response, transportEndpoint(connection)))
+            assertRustAdmittedPeer(flow, remote, await this.host.admit(credential, response, connection.remoteEndpointId ?? ""))
             await this.host.putVerifiedBundle(credential, response.peer)
             this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
             break

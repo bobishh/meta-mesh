@@ -1,4 +1,3 @@
-import { decodePairingFrame, encodePairingFrame, inspectPairingFrame } from "@meta-uber/mesh-pairing"
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import type {
   WorkspaceDeparture, WorkspaceDeviceRevocation, WorkspaceMemberBundle, WorkspaceOwnershipTransfer, WorkspaceRevocation,
@@ -27,7 +26,7 @@ export type MeshHandshakeFeatures = {
   blobTransferSupported: boolean
 }
 
-/** Canonical authenticated wire framing for browser, native and mobile hosts. */
+/** Host diagnostics around the Rust-owned mesh handshake codec. */
 export class MeshHandshakeCodec {
   validate(raw: unknown, workspaceId: string): MeshHandshakePayload {
     try { return meshRustRuntime().state.validateMeshHandshake(raw, workspaceId) as MeshHandshakePayload }
@@ -45,11 +44,11 @@ export class MeshHandshakeCodec {
   }
 
   encodeRequest(secret: string, payload: MeshHandshakePayload): Uint8Array {
-    return encodePairingFrame("mesh-handshake-request", secret, encode(payload))
+    return meshRustRuntime().state.encodeMeshHandshake("mesh-handshake-request", secret, payload)
   }
 
   encodeResponse(secret: string, payload: MeshHandshakePayload): Uint8Array {
-    return encodePairingFrame("mesh-handshake-response", secret, encode(payload))
+    return meshRustRuntime().state.encodeMeshHandshake("mesh-handshake-response", secret, payload)
   }
 
   readRequest(frame: Uint8Array, secret: string, workspaceId: string): MeshHandshakePayload {
@@ -60,17 +59,14 @@ export class MeshHandshakeCodec {
     return this.read(frame, "mesh-handshake-response", secret, workspaceId)
   }
 
-  inspect(frame: Uint8Array): { type: string; secret: string } { return inspectPairingFrame(frame) }
+  inspect(frame: Uint8Array): { type: string; secret: string } {
+    return meshRustRuntime().state.inspectMeshHandshake(frame)
+  }
 
   private read(frame: Uint8Array, type: "mesh-handshake-request" | "mesh-handshake-response", secret: string, workspaceId: string): MeshHandshakePayload {
-    let raw: unknown
-    try { raw = JSON.parse(new TextDecoder().decode(decodePairingFrame(frame, type, secret))) }
-    catch (error) { throw error instanceof Error ? error : new Error(String(error)) }
-    return this.validate(raw, workspaceId)
+    return meshRustRuntime().state.decodeMeshHandshake(frame, type, secret, workspaceId) as MeshHandshakePayload
   }
 }
-
-function encode(payload: MeshHandshakePayload): Uint8Array { return new TextEncoder().encode(JSON.stringify(payload)) }
 
 function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null

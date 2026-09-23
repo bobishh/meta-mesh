@@ -4,6 +4,7 @@ export type RustStateCore = {
   createScopeGenesis(input: unknown): { scopeId: string; creatorPersonId: string;
     creatorPublicKey: string; creatorCertificates: unknown[] }
   createScopeGenesisPayload(input: unknown): unknown
+  planScopeGenesis(input: unknown): unknown
   createScopeControlTransferPayload(input: unknown): unknown
   preferredSessionDirection(localDeviceId: string, remoteDeviceId: string): "incoming" | "outgoing"
   hasAuthorityConflict(credential: unknown): boolean
@@ -19,6 +20,12 @@ export type RustStateCore = {
   planAuthorityImport(kind: "invitation" | "handshake", hasRevocations: boolean, hasTransfers: boolean):
     Array<"validateCapabilities" | "deviceRevocations" | "departures" | "revocations" | "ownershipTransfers" |
       "succession" | "refreshCredential" | "peers">
+  planMeshHandshakeAuthorityImport(): Array<"validateCapabilities" | "deviceRevocations" | "departures" |
+    "revocations" | "ownershipTransfers" | "succession" | "refreshCredential" | "peers">
+  selectMeshHandshakeBundle(candidates: Array<{ deviceId: string; instanceId?: string }>, localDeviceId: string,
+    localInstanceId: string): number | null
+  shouldAdvertiseOwnerWorkspaceIds(credentialOwnerPersonId: string, localPersonId: string,
+    remotePersonId: string): boolean
   meshHandshakeFeatures(capabilities: string[]): { heartbeatSupported: boolean;
     ownershipReceiptSupported: boolean; ownerWorkspaceSupported: boolean;
     ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"; blobTransferSupported: boolean }
@@ -66,11 +73,15 @@ export type RustStateCore = {
     "createRevocation" | "mergeRevocation" | "refreshSuccessionPolicy" | "publish" | "reloadCredential" |
     "disconnectRevoked" | "notify" | "leave" | "createPolicy" | "setPolicy" | "createVote" |
     "mergeVote" | "createClaim" | "mergeClaim" | "verifyTarget" | "createTransfer" |
-    "persistProposal" | "confirmDelivery" | "mergeTransfer"
+    "persistProposal" | "confirmDelivery" | "mergeTransfer" | "createGrant" | "persistGrant"
   >
   decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
   validateMeshCatalog(raw: unknown): unknown
   validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
+  encodeMeshHandshake(frameType: "mesh-handshake-request" | "mesh-handshake-response", secret: string, payload: unknown): Uint8Array
+  inspectMeshHandshake(frame: Uint8Array): { type: "mesh-handshake-request" | "mesh-handshake-response"; secret: string }
+  decodeMeshHandshake(frame: Uint8Array, expectedType: "mesh-handshake-request" | "mesh-handshake-response",
+    secret: string, workspaceId: string): unknown
   admitMeshPeer(handshake: unknown, snapshot: unknown, remoteEndpoint: string, nowMs: number): {
     workspaceId: string; personId: string; deviceId: string; endpoint: string; instanceId?: string | null;
     role: "owner" | "editor" | "visitor"
@@ -196,7 +207,7 @@ export type RustLiveWorkspaceSession = {
   receive(frame: Uint8Array): RustLiveSessionAction | null
   receiveWithPlan(frame: Uint8Array): {
     action: RustLiveSessionAction
-    plan: { effects: string[]; control?: unknown }
+    plan: { effects: string[]; serializeDocument: boolean; control?: unknown }
   } | null
   encode(frameType: string, payload: Uint8Array): Uint8Array
   encodeAutomergeFrame(frame: unknown): Uint8Array
@@ -233,6 +244,9 @@ export type RustMeshHandshakeFlow = {
   step(): string
   advance(completed: string, decision?: boolean): string
   isPeerRevoked(credential: unknown, personId: string, grant: unknown, deviceId: string): boolean
+  matchesExpectedPeer(expectedDeviceId: string, verifiedDeviceId: string): boolean
+  matchesAdmittedPeer(verifiedDeviceId: string, verifiedPersonId: string, verifiedEndpoint: string,
+    admittedDeviceId: string, admittedPersonId: string, admittedEndpoint: string): boolean
   free?(): void
 }
 
@@ -278,6 +292,11 @@ export type RustMeshSessionLifecycle = {
   markStable(key: unknown, generation: number, nowMs: number): boolean
   reportFailure(key: unknown, generation: number): boolean
   publishRecovery(key: unknown, generation: number): boolean
+  callbackPlan(key: unknown, generation: number,
+    event: "recovery" | "stable" | "heartbeatFailed" | "receiveSucceeded" | "receiveFailed", nowMs: number): {
+      publishRecovery: boolean; stable: boolean; reportFailure: boolean; evict: boolean
+    }
+  publishPlan(): Array<{ workspaceId: string; connectionIds: string[] }>
   evict(key: unknown, generation: number): { shouldClose: boolean; wasCurrent: boolean; connectionId?: string | null }
   clear(): void
   free?(): void

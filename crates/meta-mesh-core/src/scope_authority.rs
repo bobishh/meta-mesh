@@ -94,6 +94,26 @@ pub struct ScopeGenesisPayloadInput {
     pub creator: ScopeAuthority,
 }
 
+/// Explicit genesis decision for document-backed scopes. The host still signs
+/// the returned payload, but ownership binding stays in platform-neutral core.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeGenesisPlanInput {
+    pub scope_id: String,
+    pub document_owner_person_id: String,
+    pub creator: ScopeAuthority,
+}
+
+pub fn plan_scope_genesis(input: ScopeGenesisPlanInput) -> Result<ScopeGenesisPayload, String> {
+    if input.document_owner_person_id != input.creator.person_id {
+        return Err("Workspace genesis owner does not match scope creator".into());
+    }
+    create_scope_genesis_payload(ScopeGenesisPayloadInput {
+        scope_id: input.scope_id,
+        creator: input.creator,
+    })
+}
+
 pub fn create_scope_genesis_payload(
     input: ScopeGenesisPayloadInput,
 ) -> Result<ScopeGenesisPayload, String> {
@@ -823,13 +843,37 @@ mod tests {
     }
 
     #[test]
+    fn genesis_plan_binds_creator_to_document_owner() {
+        let (creator, _, _) = authority([39; 32], [40; 32]);
+        assert_eq!(
+            plan_scope_genesis(ScopeGenesisPlanInput {
+                scope_id: "scope-a".into(),
+                document_owner_person_id: "different-owner".into(),
+                creator: creator.clone(),
+            })
+            .unwrap_err(),
+            "Workspace genesis owner does not match scope creator"
+        );
+        let payload = plan_scope_genesis(ScopeGenesisPlanInput {
+            scope_id: "scope-a".into(),
+            document_owner_person_id: creator.person_id.clone(),
+            creator,
+        })
+        .unwrap();
+        assert_eq!(payload.control_epoch, 1);
+    }
+
+    #[test]
     fn transfer_payload_uses_validated_controller_epoch() {
         let (creator, seed, device) = authority([35; 32], [36; 32]);
         let (next, _, _) = authority([37; 32], [38; 32]);
         let payload = create_scope_control_transfer_payload(ScopeControlTransferPayloadInput {
             snapshot: ScopeAuthoritySnapshot {
                 genesis: genesis(&creator, &seed, &device),
-                grants: vec![], grant_issuers: vec![], revocations: vec![], control_transfers: vec![],
+                grants: vec![],
+                grant_issuers: vec![],
+                revocations: vec![],
+                control_transfers: vec![],
             },
             to_controller: next,
         })

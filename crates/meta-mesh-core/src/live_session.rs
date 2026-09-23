@@ -53,6 +53,7 @@ pub enum LiveSessionEffect {
 #[serde(rename_all = "camelCase")]
 pub struct LiveSessionReceivePlan {
     pub effects: Vec<LiveSessionEffect>,
+    pub serialize_document: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub control: Option<WorkspaceControlSnapshot>,
 }
@@ -207,6 +208,7 @@ impl LiveWorkspaceSession {
                 effects.push(E::CloseSend);
                 return Ok(LiveSessionReceivePlan {
                     effects,
+                    serialize_document: true,
                     control: Some(control),
                 });
             }
@@ -234,6 +236,7 @@ impl LiveWorkspaceSession {
         };
         Ok(LiveSessionReceivePlan {
             effects,
+            serialize_document: matches!(action, A::AutomergeSync(_)),
             control: None,
         })
     }
@@ -477,7 +480,10 @@ impl LiveWorkspaceSession {
     ) -> Result<LiveSessionSnapshotPlan, String> {
         Ok(LiveSessionSnapshotPlan {
             snapshot: snapshot.to_vec(),
-            frame: self.control_changed(snapshot).then(|| self.encode("sync-update", snapshot)).transpose()?,
+            frame: self
+                .control_changed(snapshot)
+                .then(|| self.encode("sync-update", snapshot))
+                .transpose()?,
         })
     }
 
@@ -572,6 +578,7 @@ mod tests {
             action = receiver.receive(&frame).unwrap().or(action);
         }
         let plan = receiver.receive_plan(action.as_ref().unwrap()).unwrap();
+        assert!(plan.serialize_document);
         assert_eq!(
             plan.effects,
             vec![
@@ -581,6 +588,18 @@ mod tests {
             ]
         );
         assert_eq!(plan.control.unwrap().version, 1);
+
+        let gossip = sender.encode("mesh-iroh-gossip", b"packet").unwrap();
+        let action = receiver.receive(&gossip).unwrap().unwrap();
+        let plan = receiver.receive_plan(&action).unwrap();
+        assert!(!plan.serialize_document);
+        assert_eq!(
+            plan.effects,
+            vec![
+                LiveSessionEffect::HandleGossip,
+                LiveSessionEffect::CloseSend
+            ]
+        );
 
         let batch = sender.encode("mesh-durable-batch", b"document").unwrap();
         let action = receiver.receive(&batch).unwrap().unwrap();
@@ -625,16 +644,33 @@ mod tests {
         let mut sender = LiveWorkspaceSession::new("workspace-set", "secret").unwrap();
         let mut receiver = LiveWorkspaceSession::new("workspace-set", "secret").unwrap();
         let first = sender.prepare_snapshot_publish(b"snapshot").unwrap();
-        assert_eq!(first.frame.as_deref(), Some(&sender.encode("sync-update", b"snapshot").unwrap()[..]));
+        assert_eq!(
+            first.frame.as_deref(),
+            Some(&sender.encode("sync-update", b"snapshot").unwrap()[..])
+        );
         sender.finish_publish(&first.snapshot, false);
-        assert!(sender.prepare_snapshot_publish(b"snapshot").unwrap().frame.is_some());
+        assert!(sender
+            .prepare_snapshot_publish(b"snapshot")
+            .unwrap()
+            .frame
+            .is_some());
         sender.finish_publish(&first.snapshot, true);
-        assert!(sender.prepare_snapshot_publish(b"snapshot").unwrap().frame.is_none());
+        assert!(sender
+            .prepare_snapshot_publish(b"snapshot")
+            .unwrap()
+            .frame
+            .is_none());
 
-        let action = receiver.receive(first.frame.as_ref().unwrap()).unwrap().unwrap();
+        let action = receiver
+            .receive(first.frame.as_ref().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(
             receiver.receive_plan(&action).unwrap().effects,
-            vec![LiveSessionEffect::MergeWorkspaceSnapshot, LiveSessionEffect::CloseSend]
+            vec![
+                LiveSessionEffect::MergeWorkspaceSnapshot,
+                LiveSessionEffect::CloseSend
+            ]
         );
 
         let mut control_sender = LiveWorkspaceSession::new("workspace-set", "secret").unwrap();
@@ -648,7 +684,10 @@ mod tests {
             control_action = control_receiver.receive(&frame).unwrap().or(control_action);
         }
         assert_eq!(
-            control_receiver.receive_plan(control_action.as_ref().unwrap()).unwrap().effects,
+            control_receiver
+                .receive_plan(control_action.as_ref().unwrap())
+                .unwrap()
+                .effects,
             vec![LiveSessionEffect::UnsupportedControl]
         );
     }

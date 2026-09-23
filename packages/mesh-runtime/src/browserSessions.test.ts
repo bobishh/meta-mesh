@@ -44,6 +44,8 @@ describe("BrowserMeshSessions", () => {
       register: vi.fn(() => ({ generation: 2, stableAfterMs: 10_000 })),
       evict: vi.fn(() => ({ shouldClose: true, wasCurrent: true, connectionId: "connection" })),
       reportFailure: vi.fn(() => false), markStable: vi.fn(() => false), publishRecovery: vi.fn(() => false),
+      callbackPlan: vi.fn(() => ({ publishRecovery: false, stable: false, reportFailure: false, evict: false })),
+      publishPlan: vi.fn(() => []),
       clear: vi.fn(),
     }
     const sessions = new BrowserMeshSessions({

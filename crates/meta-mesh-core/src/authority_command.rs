@@ -16,6 +16,12 @@ pub enum AuthorityCommandInput {
     Leave {
         workspace_id: String,
     },
+    Promote {
+        local_person_id: String,
+        owner_person_id: Option<String>,
+        target_person_id: String,
+        has_active_membership: bool,
+    },
     SetSuccessor {
         local_person_id: String,
         owner_person_id: Option<String>,
@@ -73,6 +79,8 @@ pub enum AuthorityAction {
     PersistProposal,
     ConfirmDelivery,
     MergeTransfer,
+    CreateGrant,
+    PersistGrant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -170,6 +178,29 @@ pub fn plan_authority_command(
                 return Err("No active workspace".into());
             }
             Ok(vec![A::Leave, A::Notify])
+        }
+        AuthorityCommandInput::Promote {
+            local_person_id,
+            owner_person_id,
+            target_person_id,
+            has_active_membership,
+        } => {
+            if owner_person_id.as_deref() != Some(&local_person_id) {
+                return Err("Only the workspace owner can change roles".into());
+            }
+            if target_person_id == local_person_id {
+                return Err("The owner is already authorized".into());
+            }
+            if !has_active_membership {
+                return Err("No active membership found for this person".into());
+            }
+            Ok(vec![
+                A::CreateGrant,
+                A::PersistGrant,
+                A::RefreshSuccessionPolicy,
+                A::Notify,
+                A::Publish,
+            ])
         }
         AuthorityCommandInput::SetSuccessor {
             local_person_id,
@@ -320,11 +351,9 @@ mod tests {
             candidate_person_id: "candidate".into(),
             existing_vote_for,
         };
-        assert!(
-            plan_authority_command(make(Some("candidate".into())))
-                .unwrap()
-                .is_empty()
-        );
+        assert!(plan_authority_command(make(Some("candidate".into())))
+            .unwrap()
+            .is_empty());
         assert_eq!(
             plan_authority_command(make(Some("other".into()))).unwrap_err(),
             "Your vote is already recorded for this policy"
@@ -347,5 +376,26 @@ mod tests {
         assert!(!plan.contains(&AuthorityAction::CreateTransfer));
         assert_eq!(plan[0], AuthorityAction::VerifyTarget);
         assert!(plan.contains(&AuthorityAction::ConfirmDelivery));
+    }
+
+    #[test]
+    fn promotion_requires_owner_and_active_membership() {
+        let input = AuthorityCommandInput::Promote {
+            local_person_id: "owner".into(),
+            owner_person_id: Some("owner".into()),
+            target_person_id: "editor".into(),
+            has_active_membership: true,
+        };
+        let plan = plan_authority_command(input).unwrap();
+        assert_eq!(plan[0], AuthorityAction::CreateGrant);
+        assert!(plan.contains(&AuthorityAction::PersistGrant));
+        assert!(plan.contains(&AuthorityAction::RefreshSuccessionPolicy));
+        assert!(plan_authority_command(AuthorityCommandInput::Promote {
+            local_person_id: "editor".into(),
+            owner_person_id: Some("owner".into()),
+            target_person_id: "other".into(),
+            has_active_membership: true,
+        })
+        .is_err());
     }
 }

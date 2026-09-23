@@ -1,4 +1,4 @@
-use meta_mesh_core::{MeshSessionLifecycleState, SessionKey};
+use meta_mesh_core::{MeshSessionLifecycleState, SessionCallbackEvent, SessionKey};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen::prelude::*;
 
@@ -57,6 +57,34 @@ impl WasmMeshSessionLifecycle {
         Ok(self
             .inner
             .publish_recovery(&from_value(key)?, number(generation)?))
+    }
+    #[wasm_bindgen(js_name = callbackPlan)]
+    pub fn callback_plan(
+        &mut self,
+        key: JsValue,
+        generation: f64,
+        event: &str,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let event = match event {
+            "recovery" => SessionCallbackEvent::Recovery,
+            "stable" => SessionCallbackEvent::Stable,
+            "heartbeatFailed" => SessionCallbackEvent::HeartbeatFailed,
+            "receiveSucceeded" => SessionCallbackEvent::ReceiveSucceeded,
+            "receiveFailed" => SessionCallbackEvent::ReceiveFailed,
+            _ => return Err(error("Invalid session callback event")),
+        };
+        to_value(&self.inner.callback_plan(
+            &from_value(key)?,
+            number(generation)?,
+            event,
+            number(now_ms)?,
+        ))
+        .map_err(|value| error(value.to_string()))
+    }
+    #[wasm_bindgen(js_name = publishPlan)]
+    pub fn publish_plan(&self) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.publish_plan()).map_err(|value| error(value.to_string()))
     }
     pub fn evict(&mut self, key: JsValue, generation: f64) -> Result<JsValue, JsValue> {
         to_value(&self.inner.evict(&from_value(key)?, number(generation)?))

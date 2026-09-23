@@ -23,6 +23,36 @@ pub struct SessionEvictionDecision {
     pub connection_id: Option<String>,
 }
 
+/// One asynchronous host callback. Rust chooses which callback effects are
+/// still valid for the generation; hosts only schedule timers and perform I/O.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionCallbackEvent {
+    Recovery,
+    Stable,
+    HeartbeatFailed,
+    ReceiveSucceeded,
+    ReceiveFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCallbackPlan {
+    pub publish_recovery: bool,
+    pub stable: bool,
+    pub report_failure: bool,
+    pub evict: bool,
+}
+
+/// Host publication order. Every active session in a workspace publishes
+/// before that workspace's gossip broadcast; workspaces may run independently.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionWorkspacePublishPlan {
+    pub workspace_id: String,
+    pub connection_ids: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 struct SessionLifecycleEntry {
     connection_id: String,
@@ -145,6 +175,86 @@ impl MeshSessionLifecycleState {
         }
         entry.recovery_published = true;
         true
+    }
+
+    /// Plans callback effects atomically. In particular, a replaced session
+    /// may still need transport cleanup, but cannot publish recovery, become
+    /// stable, or report a new failure for the current session.
+    pub fn callback_plan(
+        &mut self,
+        key: &SessionKey,
+        generation: u64,
+        event: SessionCallbackEvent,
+        now_ms: u64,
+    ) -> SessionCallbackPlan {
+        let is_current = self.current.get(key) == Some(&generation);
+        let Some(entry) = self.entries.get_mut(&(key.clone(), generation)) else {
+            return SessionCallbackPlan::default();
+        };
+        if entry.evicted {
+            return SessionCallbackPlan::default();
+        }
+        match event {
+            SessionCallbackEvent::Recovery if is_current && !entry.recovery_published => {
+                entry.recovery_published = true;
+                SessionCallbackPlan {
+                    publish_recovery: true,
+                    ..Default::default()
+                }
+            }
+            SessionCallbackEvent::Stable
+                if is_current && !entry.stable && now_ms >= entry.stable_at_ms =>
+            {
+                entry.stable = true;
+                SessionCallbackPlan {
+                    stable: true,
+                    ..Default::default()
+                }
+            }
+            SessionCallbackEvent::HeartbeatFailed if is_current && !entry.failure_reported => {
+                entry.failure_reported = true;
+                SessionCallbackPlan {
+                    report_failure: true,
+                    evict: true,
+                    ..Default::default()
+                }
+            }
+            SessionCallbackEvent::ReceiveFailed => {
+                let report_failure = is_current && !entry.failure_reported;
+                entry.failure_reported |= report_failure;
+                SessionCallbackPlan {
+                    report_failure,
+                    evict: true,
+                    ..Default::default()
+                }
+            }
+            SessionCallbackEvent::ReceiveSucceeded => SessionCallbackPlan {
+                evict: true,
+                ..Default::default()
+            },
+            _ => SessionCallbackPlan::default(),
+        }
+    }
+
+    pub fn publish_plan(&self) -> Vec<SessionWorkspacePublishPlan> {
+        let mut workspaces = BTreeMap::<String, Vec<String>>::new();
+        for ((key, generation), entry) in &self.entries {
+            if !entry.evicted && self.current.get(key) == Some(generation) {
+                workspaces
+                    .entry(key.workspace_id.clone())
+                    .or_default()
+                    .push(entry.connection_id.clone());
+            }
+        }
+        workspaces
+            .into_iter()
+            .map(
+                |(workspace_id, connection_ids)| SessionWorkspacePublishPlan {
+                    workspace_id,
+                    connection_ids,
+                },
+            )
+            .collect()
     }
 
     /// Eviction closes each registered transport once and removes runtime
@@ -276,5 +386,115 @@ mod tests {
             "Stale mesh session generation"
         );
         assert!(lifecycle.register(key, "new".into(), 9, 2).is_ok());
+    }
+
+    #[test]
+    fn callback_plan_owns_recovery_stability_failure_and_cleanup_ordering() {
+        let key = key();
+        let mut lifecycle = MeshSessionLifecycleState::new(10);
+        lifecycle.register(key.clone(), "old".into(), 1, 0).unwrap();
+        lifecycle
+            .register(key.clone(), "current".into(), 2, 1)
+            .unwrap();
+
+        assert_eq!(
+            lifecycle.callback_plan(&key, 1, SessionCallbackEvent::Recovery, 1),
+            SessionCallbackPlan::default()
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 1, SessionCallbackEvent::ReceiveFailed, 1),
+            SessionCallbackPlan {
+                evict: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 2, SessionCallbackEvent::Stable, 10),
+            SessionCallbackPlan::default()
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 2, SessionCallbackEvent::Stable, 11),
+            SessionCallbackPlan {
+                stable: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 2, SessionCallbackEvent::Recovery, 11),
+            SessionCallbackPlan {
+                publish_recovery: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 2, SessionCallbackEvent::HeartbeatFailed, 11),
+            SessionCallbackPlan {
+                report_failure: true,
+                evict: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            lifecycle.callback_plan(&key, 2, SessionCallbackEvent::ReceiveFailed, 11),
+            SessionCallbackPlan {
+                evict: true,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn publish_plan_groups_current_sessions_before_workspace_broadcast() {
+        let mut lifecycle = MeshSessionLifecycleState::default();
+        lifecycle
+            .register(
+                SessionKey {
+                    workspace_id: "b".into(),
+                    device_id: "z".into(),
+                    instance_id: "one".into(),
+                },
+                "b-z".into(),
+                1,
+                0,
+            )
+            .unwrap();
+        lifecycle
+            .register(
+                SessionKey {
+                    workspace_id: "a".into(),
+                    device_id: "y".into(),
+                    instance_id: "one".into(),
+                },
+                "a-y".into(),
+                2,
+                0,
+            )
+            .unwrap();
+        lifecycle
+            .register(
+                SessionKey {
+                    workspace_id: "a".into(),
+                    device_id: "x".into(),
+                    instance_id: "one".into(),
+                },
+                "a-x".into(),
+                3,
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(
+            lifecycle.publish_plan(),
+            vec![
+                SessionWorkspacePublishPlan {
+                    workspace_id: "a".into(),
+                    connection_ids: vec!["a-x".into(), "a-y".into()]
+                },
+                SessionWorkspacePublishPlan {
+                    workspace_id: "b".into(),
+                    connection_ids: vec!["b-z".into()]
+                },
+            ]
+        );
     }
 }

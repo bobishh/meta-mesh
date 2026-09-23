@@ -103,6 +103,12 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::create_scope_genesis_payload(input).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = planScopeGenesis)]
+    pub fn plan_scope_genesis(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeGenesisPlanInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_scope_genesis(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = createScopeControlTransferPayload)]
     pub fn create_scope_control_transfer_payload(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::ScopeControlTransferPayloadInput = from_value(raw)?;
@@ -196,6 +202,38 @@ impl WasmStateCore {
         to_value(
             &meta_mesh_core::plan_authority_import(kind, has_revocations, has_transfers)
                 .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planMeshHandshakeAuthorityImport)]
+    pub fn plan_mesh_handshake_authority_import() -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::plan_mesh_handshake_authority_import().map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = selectMeshHandshakeBundle)]
+    pub fn select_mesh_handshake_bundle(
+        candidates: JsValue,
+        local_device_id: &str,
+        local_instance_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        let candidates: Vec<meta_mesh_core::MeshHandshakeBundleCandidate> = from_value(candidates)?;
+        to_value(&meta_mesh_core::select_mesh_handshake_bundle(
+            &candidates,
+            local_device_id,
+            local_instance_id,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = shouldAdvertiseOwnerWorkspaceIds)]
+    pub fn should_advertise_owner_workspace_ids(
+        credential_owner_person_id: &str,
+        local_person_id: &str,
+        remote_person_id: &str,
+    ) -> bool {
+        meta_mesh_core::should_advertise_owner_workspace_ids(
+            credential_owner_person_id,
+            local_person_id,
+            remote_person_id,
         )
     }
 
@@ -479,6 +517,39 @@ impl WasmStateCore {
         let handshake =
             meta_mesh_core::validate_mesh_handshake(raw, expected_workspace_id.as_deref())
                 .map_err(js_error)?;
+        to_value(&handshake)
+    }
+
+    #[wasm_bindgen(js_name = encodeMeshHandshake)]
+    pub fn encode_mesh_handshake(
+        frame_type: &str,
+        secret: &str,
+        raw: JsValue,
+    ) -> Result<Vec<u8>, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        meta_mesh_core::encode_mesh_handshake(frame_type, secret, raw).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = inspectMeshHandshake)]
+    pub fn inspect_mesh_handshake(frame: &[u8]) -> Result<JsValue, JsValue> {
+        let header = meta_mesh_core::inspect_mesh_handshake(frame).map_err(js_error)?;
+        to_value(&serde_json::json!({ "type": header.frame_type, "secret": header.secret }))
+    }
+
+    #[wasm_bindgen(js_name = decodeMeshHandshake)]
+    pub fn decode_mesh_handshake(
+        frame: &[u8],
+        expected_type: &str,
+        secret: &str,
+        workspace_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        let handshake = meta_mesh_core::decode_mesh_handshake(
+            frame,
+            expected_type,
+            secret,
+            workspace_id,
+        )
+        .map_err(js_error)?;
         to_value(&handshake)
     }
 

@@ -189,55 +189,65 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     this.host.diagnosticCleared()
     if (previous && lifecycleInstall.replacedConnectionId === previous.connectionId) void previous.evict("replaced")
     queueMicrotask(() => {
-      if (this.lifecycle.publishRecovery(sessionKey, generation)) {
+      const plan = this.lifecycle.callbackPlan(sessionKey, generation, "recovery", Date.now())
+      if (plan.publishRecovery) {
         this.host.trace("session.recovery.started", { connectionId: input.connectionId, peerId: short(input.deviceId) })
         void this.host.publishRecovered(key, entry)
       }
     })
     stableTimer = setTimeout(() => {
-      if (this.lifecycle.markStable(sessionKey, generation, Date.now()) && this.entries.get(key) === entry) {
+      const plan = this.lifecycle.callbackPlan(sessionKey, generation, "stable", Date.now())
+      if (plan.stable && this.entries.get(key) === entry) {
         this.host.stableSession?.(key, entry)
       }
     }, lifecycleInstall.stableAfterMs)
     if (input.heartbeatSupported) {
       stopHeartbeat = startMeshHeartbeat(created.session, error => {
-        if (!this.lifecycle.reportFailure(sessionKey, generation)) return
+        const plan = this.lifecycle.callbackPlan(sessionKey, generation, "heartbeatFailed", Date.now())
+        if (!plan.reportFailure) return
         this.host.networkFailure(key, error)
         this.host.trace("session.heartbeat.failed", { connectionId: input.connectionId, peerId: short(input.deviceId), reason: message(error) }, "warn")
         this.host.protocolFailure(`Heartbeat ${short(input.deviceId, 6)}`, error)
-        void entry.evict("heartbeat failed")
+        if (plan.evict) void entry.evict("heartbeat failed")
       })
     }
-    void created.session.done.catch(error => {
-      if (!this.lifecycle.reportFailure(sessionKey, generation)) return
-      this.host.networkFailure(key, error)
-      this.host.trace("session.receive.failed", { connectionId: input.connectionId, peerId: short(input.deviceId),
-        workspaceId: short(input.workspaceId), instanceId: short(input.instanceId), reason: message(error) }, "warn")
-      this.host.protocolFailure(`Receive ${short(input.deviceId, 6)}`, error)
-    }).finally(() => entry.evict("receive loop ended"))
+    void created.session.done.then(
+      () => this.finishReceive(sessionKey, generation, entry, "receiveSucceeded"),
+      error => this.finishReceive(sessionKey, generation, entry, "receiveFailed", error),
+    )
     await this.host.notify()
     return true
   }
 
   async publishAll(broadcast: (workspaceId: string) => Promise<void>, onFailure: (key: string, entry: BrowserMeshSessionEntry<C, S>, error: unknown) => Promise<void>): Promise<void> {
-    const byWorkspace = new Map<string, Array<[string, BrowserMeshSessionEntry<C, S>]>>()
-    for (const item of this.entries) {
-      const entries = byWorkspace.get(item[1].workspaceId) ?? []
-      entries.push(item)
-      byWorkspace.set(item[1].workspaceId, entries)
-    }
-    await Promise.allSettled([...byWorkspace].map(async ([workspaceId, entries]) => {
-      await Promise.all(entries.map(async ([key, entry]) => {
+    const entries = new Map([...this.entries].map(([key, entry]) => [entry.connectionId, [key, entry] as const]))
+    await Promise.allSettled(this.lifecycle.publishPlan().map(async workspace => {
+      await Promise.all(workspace.connectionIds.map(async connectionId => {
+        const item = entries.get(connectionId)
+        if (!item) return
+        const [key, entry] = item
         try { await entry.session.publish() }
         catch (error) { await onFailure(key, entry, error) }
       }))
-      await broadcast(workspaceId)
+      await broadcast(workspace.workspaceId)
     }))
   }
 
   async closeAll(cause = "runtime stopped"): Promise<void> {
     await Promise.allSettled([...this.entries.values()].map(entry => entry.evict(cause)))
     this.lifecycle.clear()
+  }
+
+  private finishReceive(sessionKey: SessionLifecycleKey, generation: number,
+    entry: BrowserMeshSessionEntry<C, S>, event: "receiveSucceeded" | "receiveFailed", error?: unknown): void {
+    const plan = this.lifecycle.callbackPlan(sessionKey, generation, event, Date.now())
+    if (plan.reportFailure && error !== undefined) {
+      this.host.networkFailure(this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId), error)
+      this.host.trace("session.receive.failed", { connectionId: entry.connectionId, peerId: short(entry.deviceId),
+        workspaceId: short(entry.workspaceId), instanceId: short(entry.instanceId), reason: message(error) }, "warn")
+      this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, error)
+    }
+    if (plan.evict) void entry.evict("receive loop ended")
   }
 }
 

@@ -93,7 +93,12 @@ pub use gossip_lifecycle::{
     GossipReceiveAction, DEFAULT_GOSSIP_TOPIC_PREFIX,
 };
 pub use gossip_payload::{encode_workspace_update, is_workspace_update};
-pub use handshake::{validate_mesh_handshake, MeshHandshake};
+pub use handshake::{
+    decode_mesh_handshake, encode_mesh_handshake, inspect_mesh_handshake,
+    plan_mesh_handshake_authority_import, select_mesh_handshake_bundle,
+    should_advertise_owner_workspace_ids, validate_mesh_handshake,
+    MeshHandshake, MeshHandshakeBundleCandidate,
+};
 pub use handshake_flow::{HandshakeStep, MeshHandshakeFlow};
 pub use identity::{
     canonicalize_json, certificate_hash, derive_device_seed, public_key_from_seed, public_key_id,
@@ -160,18 +165,19 @@ pub use runtime::{
 };
 pub use runtime::{mesh_handshake_features, MeshHandshakeFeatures};
 pub use scope_authority::{
-    create_scope_control_transfer_payload, create_scope_genesis, create_scope_genesis_payload, sign_scope_record,
+    create_scope_control_transfer_payload, create_scope_genesis, create_scope_genesis_payload, plan_scope_genesis, sign_scope_record,
     validate_scope_authority, verify_scope_capability_grant, verify_scope_capability_revocation,
     verify_scope_control_transfer, verify_scope_genesis, ScopeAuthority, ScopeAuthoritySnapshot,
     ScopeCapability, ScopeCapabilityGrant, ScopeCapabilityGrantPayload, ScopeCapabilityRevocation,
     ScopeCapabilityRevocationPayload, ScopeControlTransfer, ScopeControlTransferPayload,
-    ScopeControlTransferPayloadInput,
-    ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload, ScopeGenesisPayloadInput,
-    ScopeGrantIssuerEvidence, SignedScopeGenesis, ValidatedScopeAuthority,
+    ScopeControlTransferPayloadInput, ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload,
+    ScopeGenesisPayloadInput, ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, SignedScopeGenesis,
+    ValidatedScopeAuthority,
 };
 pub use session_admission::{admit_mesh_peer, MeshAuthenticatedSessions, MeshPeerAdmission};
 pub use session_lifecycle::{
-    MeshSessionLifecycleState, SessionEvictionDecision, SessionInstallDecision,
+    MeshSessionLifecycleState, SessionCallbackEvent, SessionCallbackPlan, SessionEvictionDecision, SessionInstallDecision,
+    SessionWorkspacePublishPlan,
     DEFAULT_SESSION_STABLE_AFTER_MS,
 };
 pub use state::{
