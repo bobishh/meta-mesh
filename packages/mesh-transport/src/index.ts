@@ -5,6 +5,7 @@ export type IrohStream = {
 }
 
 export type IrohConnection = {
+  readonly remoteEndpointId?: string
   openStream(): Promise<IrohStream>
   acceptStream(): Promise<IrohStream>
   close(): Promise<void>
@@ -97,6 +98,7 @@ export type IrohModule = {
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
   WasmMeshRuntimeState?: { new(): any }
   WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
+  WasmMeshAuthenticatedSessions?: { new(): any }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
@@ -108,6 +110,7 @@ export type MeshStream = {
 }
 
 export type MeshConnection = {
+  readonly remoteEndpointId?: string
   openStream(): Promise<MeshStream>
   acceptStream(): Promise<MeshStream>
   close(): Promise<void>
@@ -134,6 +137,7 @@ export function meshNetworkConnection<TConnection extends MeshConnection>(connec
   })
   return {
     ...connection,
+    remoteEndpointId: connection.remoteEndpointId,
     openStream: async () => stream(await meshNetworkIO(connection.openStream())),
     acceptStream: async () => stream(await meshNetworkIO(connection.acceptStream())),
     close: () => connection.close().catch(() => undefined),

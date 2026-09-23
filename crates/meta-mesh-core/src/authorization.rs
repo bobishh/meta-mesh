@@ -220,7 +220,7 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         }
         validate_authority(&raw.genesis_owner)?;
         validate_authority(&raw.expected_current_owner)?;
-        let (current_owner, historical_owners, _) = verified_ownership_chain(raw, now_ms, &std::collections::HashSet::new())?;
+        let (current_owner, historical_owners, _) = verified_ownership_chain(raw, now_ms, &std::collections::HashSet::new(), true)?;
         if current_owner.person_id != raw.expected_current_owner.person_id
             || current_owner.public_key != raw.expected_current_owner.public_key
         {
@@ -230,7 +230,7 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         authorities.push(current_owner.clone());
         let revocation_boundaries = verified_revocation_boundaries(raw, &authorities, now_ms)?;
         let revoked_people = revocation_boundaries.keys().cloned().collect::<std::collections::HashSet<_>>();
-        let (current_owner, historical_owners, historical_hashes) = verified_ownership_chain(raw, now_ms, &revoked_people)?;
+        let (current_owner, historical_owners, historical_hashes) = verified_ownership_chain(raw, now_ms, &revoked_people, true)?;
         let mut revoked_devices = std::collections::HashMap::<(String, String), Vec<std::collections::HashSet<String>>>::new();
         let by_hash = document_hashes(&raw.document)?;
         for evidence in &raw.device_revocations {
@@ -299,7 +299,7 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
     }
 }
 
-fn validate_authority(authority: &WorkspaceAuthority) -> Result<(), String> {
+pub(crate) fn validate_authority(authority: &WorkspaceAuthority) -> Result<(), String> {
     if authority.person_id.is_empty() || authority.public_key.is_empty()
         || public_key_id(&authority.public_key)? != authority.person_id
     {
@@ -332,13 +332,10 @@ impl OwnershipTransition {
     }
 }
 
-fn verified_ownership_chain(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128,
-    revoked_people: &std::collections::HashSet<String>) -> Result<(WorkspaceAuthority, Vec<WorkspaceAuthority>, std::collections::HashMap<String, std::collections::HashSet<String>>), String> {
-    let mut document = automerge::AutoCommit::load(&raw.document)
-        .map_err(|_| "Invalid workspace authority document".to_string())?;
-    let changes = document.get_changes(&[]);
-    let by_hash = changes.iter().map(|change| (change.hash().to_string(), change.deps().iter()
-        .map(ToString::to_string).collect::<Vec<_>>())).collect::<std::collections::HashMap<_, _>>();
+pub(crate) fn verified_ownership_chain(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128,
+    revoked_people: &std::collections::HashSet<String>, require_document_heads: bool)
+    -> Result<(WorkspaceAuthority, Vec<WorkspaceAuthority>, std::collections::HashMap<String, std::collections::HashSet<String>>), String> {
+    let by_hash = if require_document_heads { document_hashes(&raw.document)? } else { std::collections::HashMap::new() };
     let mut transitions = raw.ownership_transfers.iter().cloned().map(OwnershipTransition::Transfer)
         .chain(raw.succession_claims.iter().cloned().map(OwnershipTransition::Succession)).collect::<Vec<_>>();
     let mut current = raw.genesis_owner.clone();
@@ -361,7 +358,7 @@ fn verified_ownership_chain(raw: &WorkspaceWriteAuthorizationSnapshot, now_ms: i
             OwnershipTransition::Succession(record) => crate::authority::verify_workspace_succession_claim(record,
                 &raw.workspace_id, &current, epoch, revoked_people, now_ms)?,
         }
-        let allowed = ancestry(transition.heads(), &by_hash)?;
+        let allowed = if require_document_heads { ancestry(transition.heads(), &by_hash)? } else { std::collections::HashSet::new() };
         historical_hashes.entry(current.person_id.clone()).or_insert_with(std::collections::HashSet::new).extend(allowed);
         history.push(current);
         current = transition.next_authority();

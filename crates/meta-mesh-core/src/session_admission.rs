@@ -1,14 +1,63 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    WorkspaceAccessDecisionInput, WorkspaceAuthority, WorkspaceRole,
-    WorkspaceWriteAuthorizationSnapshot, access,
-    authorization::ValidatedWorkspaceWriteAuthorizationContext, decide_workspace_access,
+    WorkspaceAuthority, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
+    authorization::{validate_authority, verified_ownership_chain},
     member::VerifyWorkspaceMemberOptions, validate_mesh_handshake, verify_workspace_member_bundle,
 };
+
+struct SessionAuthority {
+    current_owner: WorkspaceAuthority,
+    historical_owners: Vec<WorkspaceAuthority>,
+    revoked_devices: HashSet<(String, String)>,
+}
+
+/// Session admission must work while a peer is still missing document heads.
+/// Signed authority records decide current access; change admission separately
+/// checks their exact Automerge ancestry before accepting writes.
+fn session_authority(snapshot: &WorkspaceWriteAuthorizationSnapshot, now_ms: i128) -> Result<SessionAuthority, String> {
+    if snapshot.workspace_id.is_empty() || snapshot.ownership_transfers.len() > 32
+        || snapshot.succession_claims.len() > 32 || snapshot.revocations.len() > 512
+        || snapshot.departures.len() > 512 || snapshot.device_revocations.len() > 512
+    {
+        return Err("Invalid workspace session authority".into());
+    }
+    validate_authority(&snapshot.genesis_owner)?;
+    validate_authority(&snapshot.expected_current_owner)?;
+    let (owner, history, _) = verified_ownership_chain(snapshot, now_ms, &HashSet::new(), false)?;
+    let authorities = history.iter().chain(std::iter::once(&owner)).collect::<Vec<_>>();
+    let mut revoked_people = HashSet::new();
+    for record in &snapshot.revocations {
+        let signer = authorities.iter().find(|authority| authority.person_id == record.payload.owner_person_id)
+            .ok_or("Workspace revocation has an unknown owner")?;
+        crate::authority::verify_workspace_revocation(record, &snapshot.workspace_id, signer, now_ms)?;
+        revoked_people.insert(record.payload.person_id.clone());
+    }
+    let (current_owner, historical_owners, _) = verified_ownership_chain(snapshot, now_ms, &revoked_people, false)?;
+    if current_owner.person_id != snapshot.expected_current_owner.person_id
+        || current_owner.public_key != snapshot.expected_current_owner.public_key
+    {
+        return Err("Workspace ownership chain does not match the expected owner".into());
+    }
+    let mut revoked_devices = HashSet::new();
+    for evidence in &snapshot.device_revocations {
+        validate_authority(&evidence.signer)?;
+        let owner_signed = crate::authority::verify_workspace_device_revocation(&evidence.record,
+            &snapshot.workspace_id, &current_owner.person_id, &current_owner, now_ms).is_ok();
+        let subject_signed = !owner_signed && crate::authority::verify_workspace_device_revocation(&evidence.record,
+            &snapshot.workspace_id, &current_owner.person_id, &evidence.signer, now_ms).is_ok();
+        if !owner_signed && !subject_signed { return Err("Invalid workspace device revocation".into()); }
+        revoked_devices.insert((evidence.record.payload.person_id.clone(), evidence.record.payload.device_id.clone()));
+    }
+    for evidence in &snapshot.departures {
+        validate_authority(&evidence.authority)?;
+        crate::authority::verify_workspace_departure(&evidence.record, &snapshot.workspace_id, &evidence.authority, now_ms)?;
+    }
+    Ok(SessionAuthority { current_owner, historical_owners, revoked_devices })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,7 +101,7 @@ impl MeshAuthenticatedSessions {
         snapshot: &WorkspaceWriteAuthorizationSnapshot,
         now_ms: i128,
     ) -> Result<Vec<String>, String> {
-        ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(snapshot, now_ms)?;
+        session_authority(snapshot, now_ms)?;
         let mut evicted = Vec::new();
         for ((workspace_id, endpoint), (handshake, peer)) in &mut self.peers {
             if workspace_id != &snapshot.workspace_id { continue; }
@@ -88,16 +137,16 @@ pub fn admit_mesh_peer(
     if remote_endpoint.is_empty() {
         return Err("Missing mesh transport endpoint".into());
     }
-    let context = ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(snapshot, now_ms)?;
+    let authority = session_authority(snapshot, now_ms)?;
     let handshake = validate_mesh_handshake(handshake, Some(&snapshot.workspace_id))?;
     let verified = verify_workspace_member_bundle(
         handshake.peer,
         VerifyWorkspaceMemberOptions {
             workspace_id: Some(snapshot.workspace_id.clone()),
-            owner_person_id: Some(context.current_owner.person_id.clone()),
-            owner_public_key: Some(context.current_owner.public_key.clone()),
-            owner_certificates: context.current_owner.certificates.clone(),
-            owner_history: context.historical_owners.clone(),
+            owner_person_id: Some(authority.current_owner.person_id.clone()),
+            owner_public_key: Some(authority.current_owner.public_key.clone()),
+            owner_certificates: authority.current_owner.certificates.clone(),
+            owner_history: authority.historical_owners.clone(),
             ..Default::default()
         },
         now_ms,
@@ -105,41 +154,13 @@ pub fn admit_mesh_peer(
     if verified.payload.endpoint != remote_endpoint {
         return Err("Mesh peer endpoint does not match transport".into());
     }
-    let identity = WorkspaceAuthority {
-        person_id: verified.payload.person_id.clone(),
-        public_key: verified.public_key,
-        certificates: verified.certificates,
-    };
-    let access = decide_workspace_access(
-        &WorkspaceAccessDecisionInput {
-            snapshot: snapshot.clone(),
-            identity,
-            device_id: verified.payload.device_id.clone(),
-            grant: verified.grant.clone(),
-            departures: snapshot
-                .departures
-                .iter()
-                .map(|evidence| access::WorkspaceDepartureEvidence {
-                    record: evidence.record.clone(),
-                    authority: evidence.authority.clone(),
-                })
-                .collect(),
-            legacy_authority_evidence: vec![],
-        },
-        now_ms,
-    )?;
-    if access != verified.role
-        || context.device_was_revoked(&verified.payload.person_id, &verified.payload.device_id)
+    if authority.revoked_devices.contains(&(verified.payload.person_id.clone(), verified.payload.device_id.clone()))
+        || (verified.role == WorkspaceRole::Owner && verified.payload.person_id != authority.current_owner.person_id)
     {
         return Err("Mesh peer access is revoked".into());
     }
-    if verified.role == WorkspaceRole::Visitor {
-        let epoch = verified
-            .grant
-            .as_ref()
-            .ok_or("Missing visitor grant")?
-            .payload
-            .effective_access_epoch();
+    if verified.role != WorkspaceRole::Owner {
+        let epoch = verified.grant.as_ref().ok_or("Missing workspace grant")?.payload.effective_access_epoch();
         if snapshot.revocations.iter().any(|record| {
             record.payload.person_id == verified.payload.person_id && record.payload.epoch >= epoch
         }) || snapshot.departures.iter().any(|evidence| {
@@ -326,6 +347,9 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect();
+        // The receiving peer has the signed revocation but not its Automerge head yet.
+        // It must still deny this device during handshake, without blocking sync.
+        let stale_document = AutoCommit::new().save();
         snapshot.document = document.save();
         let payload = WorkspaceDeviceRevocationPayload {
             kind: "workspace-device-revocation".into(),
@@ -356,6 +380,10 @@ mod tests {
                 },
                 signer: owner,
             });
+        snapshot.document = stale_document;
+        assert!(crate::authorization::ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(
+            &snapshot, 0
+        ).is_err());
         assert_eq!(
             admit_mesh_peer(handshake, &snapshot, "remote-endpoint", 0).unwrap_err(),
             "Mesh peer access is revoked"

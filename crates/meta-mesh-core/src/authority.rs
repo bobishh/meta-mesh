@@ -230,7 +230,10 @@ pub fn plan_ownership_transitions(
     let mut planned = Vec::new();
 
     loop {
-        let Some(next_epoch) = epoch.checked_add(1) else {
+        let Some(next_epoch) = records.iter().filter(|record|
+            record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(owner_person_id))
+            .filter_map(|record| record.pointer("/payload/epoch").and_then(Value::as_u64))
+            .filter(|candidate| *candidate > epoch).min() else {
             return OwnershipTransitionPlan { records: planned, conflicted: false };
         };
         let mut candidates = records
@@ -787,5 +790,14 @@ mod tests {
         assert_eq!(plan.records.len(), 2);
         assert_eq!(plan.records[0].get("signature").unwrap(), "a");
         assert_eq!(plan.records[1].get("signature").unwrap(), "c");
+    }
+
+    #[test]
+    fn ownership_transition_plan_allows_access_epoch_gaps() {
+        let records = vec![json!({ "signature": "a", "payload": {
+            "epoch": 4, "fromOwnerPersonId": "alice", "toOwnerPersonId": "bob" } })];
+        let plan = super::plan_ownership_transitions(&records, "alice", 1);
+        assert!(!plan.conflicted);
+        assert_eq!(plan.records, records);
     }
 }

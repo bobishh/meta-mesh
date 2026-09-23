@@ -600,7 +600,7 @@ export class PeerStore {
       if (!current) throw new Error("Missing workspace mesh credential")
       validateWorkspaceCredential(current.credential)
       if (current.credential.ownerPersonId !== expectedOwnerPersonId) throw new Error("Workspace owner changed before transfer")
-      if (credential.ownerPersonId === expectedOwnerPersonId || credential.epoch <= current.credential.epoch) {
+      if (credential.ownerPersonId === expectedOwnerPersonId || credential.epoch < current.credential.epoch) {
         throw new Error("Invalid workspace ownership transfer")
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))

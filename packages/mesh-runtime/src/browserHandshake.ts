@@ -9,6 +9,7 @@ export type BrowserMeshHandshakeStream = {
 }
 
 export type BrowserMeshHandshakeConnection<S extends BrowserMeshHandshakeStream> = {
+  remoteEndpointId?: string
   acceptStream(): Promise<S>
   close(): Promise<void>
 }
@@ -28,6 +29,7 @@ export type BrowserMeshHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
   workspaceId(credential: C): string
   mergeAuthority(credential: C, request: MeshHandshakePayload): Promise<C>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
+  admit(credential: C, request: MeshHandshakePayload, remoteEndpointId: string): Promise<Pick<P, "deviceId" | "personId" | "endpoint">>
   revoked(credential: C, personId: string, grant: unknown, deviceId: string): boolean
   revocations(credential: C): MeshHandshakePayload["revocations"]
   ownBundle(credential: C): Promise<WorkspaceMemberBundle>
@@ -91,6 +93,7 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
             break
           }
           case "persistPeer":
+            assertAdmittedPeer(remote, await this.host.admit(credential, request, transportEndpoint(connection)))
             await this.host.putVerifiedBundle(credential, request.peer)
             break
           case "installSession": {
@@ -128,7 +131,19 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
 
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 
+function transportEndpoint(connection: { remoteEndpointId?: string }): string {
+  if (!connection.remoteEndpointId) throw new Error("Mesh transport endpoint unavailable")
+  return connection.remoteEndpointId
+}
+
+function assertAdmittedPeer(peer: BrowserMeshHandshakePeer, admitted: Pick<BrowserMeshHandshakePeer, "deviceId" | "personId" | "endpoint">): void {
+  if (peer.deviceId !== admitted.deviceId || peer.personId !== admitted.personId || peer.endpoint !== admitted.endpoint) {
+    throw new Error("Rust mesh admission does not match verified peer")
+  }
+}
+
 export type BrowserMeshOutgoingConnection<S extends BrowserMeshHandshakeStream> = {
+  remoteEndpointId?: string
   openStream(): Promise<S>
 }
 
@@ -138,6 +153,7 @@ export type BrowserMeshOutgoingHandshakeHost<C, P extends BrowserMeshHandshakePe
   request(credential: C, context: Q): Promise<MeshHandshakePayload>
   mergeAuthority(credential: C, response: MeshHandshakePayload): Promise<C>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
+  admit(credential: C, response: MeshHandshakePayload, remoteEndpointId: string): Promise<Pick<P, "deviceId" | "personId" | "endpoint">>
   putVerifiedBundle(credential: C, bundle: WorkspaceMemberBundle): Promise<void>
   trace(event: string, detail?: Record<string, unknown>, level?: "info" | "warn"): void
 }
@@ -174,6 +190,7 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
             flow.advance(step, remote.deviceId === peerId)
             continue
           case "persistPeer":
+            assertAdmittedPeer(remote, await this.host.admit(credential, response, transportEndpoint(connection)))
             await this.host.putVerifiedBundle(credential, response.peer)
             this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
             break

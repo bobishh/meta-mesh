@@ -107,12 +107,27 @@ export type RustMeshHandshakeFlow = {
   free?(): void
 }
 
+export type RustMeshAuthenticatedSessions = {
+  admit(handshake: unknown, snapshot: unknown, remoteEndpoint: string, nowMs: number): {
+    workspaceId: string; personId: string; deviceId: string; endpoint: string; instanceId?: string | null;
+    role: "owner" | "editor" | "visitor"
+  }
+  peer(workspaceId: string, remoteEndpoint: string): {
+    workspaceId: string; personId: string; deviceId: string; endpoint: string; role: "owner" | "editor" | "visitor"
+  } | null
+  refresh(snapshot: unknown, nowMs: number): string[]
+  remove(workspaceId: string, remoteEndpoint: string): boolean
+  clear(): void
+  free?(): void
+}
+
 export type MeshRustRuntime = {
   state: RustStateCore
   createDeviceRouteCatalog(): RustDeviceRouteCatalog
   createAutomergeSyncEngine(localDeviceId: string, maximumFrameBytes?: number): RustAutomergeSyncEngine
   createMeshRuntimeState(): RustMeshRuntimeState
   createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow
+  createMeshAuthenticatedSessions(): RustMeshAuthenticatedSessions
 }
 
 let installed: MeshRustRuntime | undefined

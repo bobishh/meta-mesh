@@ -6,6 +6,7 @@ import type { RuntimeWorkspaceCredential } from "./succession"
 export type OwnershipTransferHost<TCredential extends RuntimeWorkspaceCredential = RuntimeWorkspaceCredential> = {
   getProfile: () => Promise<LocalProfile>
   transfers: (credential: TCredential) => WorkspaceOwnershipTransfer[]
+  ownershipEpoch: (credential: TCredential) => number
   catalog: (credential: TCredential) => Record<string, unknown>
   authorities: (credential: TCredential) => WorkspaceAuthority[]
   revokedPeople: (credential: TCredential) => Set<string>
@@ -29,24 +30,27 @@ export async function mergeOwnershipTransfers<TCredential extends RuntimeWorkspa
     await host.putCredential(credential)
   }
   for (const value of known.values()) {
-    if (accepted.has(value.signature) || (value.payload?.epoch ?? 0) > credential.epoch) continue
+    if (accepted.has(value.signature) || (value.payload?.epoch ?? 0) > host.ownershipEpoch(credential)) continue
     const authority = host.authorities(credential).find(owner => owner.personId === value.payload?.fromOwnerPersonId)
     if (!authority) continue
     accepted.set(value.signature, await verifyWorkspaceOwnershipTransfer(value, credential.workspaceId, authority, value.payload.epoch - 1))
   }
   if (meshRustRuntime().state.hasConflictingOwnershipTransfers(ordered(accepted.values()))) return persist().then(() => credential)
   while (true) {
-    const candidates = [...known.values()].filter(value => value.payload?.epoch === credential.epoch + 1 &&
+    const ownerEpoch = host.ownershipEpoch(credential)
+    const nextEpoch = Math.min(...[...known.values()].filter(value => value.payload?.epoch > ownerEpoch &&
+      value.payload.fromOwnerPersonId === credential.ownerPersonId).map(value => value.payload.epoch))
+    const candidates = [...known.values()].filter(value => value.payload?.epoch === nextEpoch &&
       value.payload.fromOwnerPersonId === credential.ownerPersonId).sort((a, b) => a.signature.localeCompare(b.signature))
     if (!candidates.length) return credential
     const authority: WorkspaceAuthority = { personId: credential.ownerPersonId, publicKey: credential.ownerPublicKey,
       certificates: credential.ownerCertificates as DeviceCertificate[] }
     for (const value of candidates) {
-      const record = await verifyWorkspaceOwnershipTransfer(value, credential.workspaceId, authority, credential.epoch)
+      const record = await verifyWorkspaceOwnershipTransfer(value, credential.workspaceId, authority, ownerEpoch)
       if (host.revokedPeople(credential).has(record.payload.toOwnerPersonId)) throw new Error("New owner access is revoked")
       accepted.set(record.signature, record)
     }
-    const plan = meshRustRuntime().state.planOwnershipTransitions(ordered(accepted.values()), credential.ownerPersonId, credential.epoch) as {
+    const plan = meshRustRuntime().state.planOwnershipTransitions(ordered(accepted.values()), credential.ownerPersonId, ownerEpoch) as {
       records: WorkspaceOwnershipTransfer[]; conflicted: boolean
     }
     if (plan.conflicted || !plan.records.length) return persist().then(() => credential)
@@ -58,7 +62,8 @@ export async function mergeOwnershipTransfers<TCredential extends RuntimeWorkspa
     const localGrant = profile.identity.personId === payload.toOwnerPersonId ? payload.toOwnerGrant :
       profile.identity.personId === payload.fromOwnerPersonId ? payload.formerOwnerGrant : credential.localGrant
     const next = { ...credential, ownerPersonId: payload.toOwnerPersonId, ownerPublicKey: payload.toOwnerPublicKey,
-      ownerCertificates: payload.toOwnerCertificates, ownerHistory: authorityHistory, localGrant, epoch: payload.epoch,
+      ownerCertificates: payload.toOwnerCertificates, ownerHistory: authorityHistory, localGrant,
+      epoch: Math.max(credential.epoch, payload.epoch),
       updatedAt: payload.transferredAt, catalog: { ...host.catalog(credential), ownershipTransfers: ordered(accepted.values()), successionPolicy: undefined, successionVotes: [] } } as TCredential
     await host.transferCredential(credential.ownerPersonId, next)
     await host.updateTransferredPeers(next, payload)
