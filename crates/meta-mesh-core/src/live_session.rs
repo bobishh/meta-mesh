@@ -2,7 +2,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{ControlFrameReceiver, PairingCodec, control_frames};
+use crate::{AutomergeSyncFrame, ControlFrameReceiver, PairingCodec, control_frames};
 
 const MAX_OWNER_OFFER_BYTES: usize = 24 * 1024 * 1024;
 const MAX_GOSSIP_PACKET_BYTES: usize = 256 * 1024;
@@ -92,6 +92,25 @@ impl LiveWorkspaceSession {
         }
     }
 
+    pub fn encode_automerge_frame(&self, frame: &AutomergeSyncFrame) -> Result<Vec<u8>, String> {
+        let mut value = serde_json::to_value(frame).map_err(|_| "Invalid Automerge sync frame".to_string())?;
+        value.as_object_mut().ok_or_else(|| "Invalid Automerge sync frame".to_string())?
+            .insert("message".to_string(), URL_SAFE_NO_PAD.encode(&frame.message).into());
+        let payload = serde_json::to_vec(&value).map_err(|_| "Invalid Automerge sync frame".to_string())?;
+        self.encode("mesh-automerge-sync", &payload)
+    }
+
+    pub fn decode_automerge_payload(&self, payload: &[u8]) -> Result<AutomergeSyncFrame, String> {
+        let mut value: serde_json::Value = serde_json::from_slice(payload)
+            .map_err(|_| "Invalid Automerge sync frame".to_string())?;
+        let object = value.as_object_mut().ok_or_else(|| "Invalid Automerge sync frame".to_string())?;
+        let message = object.get("message").and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "Invalid Automerge sync frame".to_string())?;
+        let bytes = URL_SAFE_NO_PAD.decode(message).map_err(|_| "Invalid Automerge sync frame".to_string())?;
+        object.insert("message".to_string(), serde_json::to_value(bytes).map_err(|_| "Invalid Automerge sync frame".to_string())?);
+        serde_json::from_value(value).map_err(|_| "Invalid Automerge sync frame".to_string())
+    }
+
     pub fn control_changed(&self, snapshot: &[u8]) -> bool {
         self.last_control_sent.as_deref() != Some(snapshot)
     }
@@ -170,5 +189,20 @@ mod tests {
         assert!(session.encode("mesh-iroh-gossip", &vec![0; MAX_GOSSIP_PACKET_BYTES + 1]).is_err());
         let oversized = PairingCodec::encode("mesh-iroh-gossip", "secret", &vec![0; MAX_GOSSIP_PACKET_BYTES + 1]).unwrap();
         assert!(session.receive(&oversized).is_err());
+    }
+
+    #[test]
+    fn automerge_wire_format_round_trips_through_live_session() {
+        let mut session = LiveWorkspaceSession::new("board", "secret").unwrap();
+        let frame = AutomergeSyncFrame {
+            version: 1, scope_id: "board".to_string(), document_id: "board".to_string(),
+            from_device_id: "left".to_string(), to_device_id: "right".to_string(),
+            message: vec![1, 2, 255], proof: None,
+        };
+        let encoded = session.encode_automerge_frame(&frame).unwrap();
+        let Some(LiveSessionAction::AutomergeSync(payload)) = session.receive(&encoded).unwrap() else { panic!("expected Automerge sync"); };
+        let wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(wire["message"], "AQL_");
+        assert_eq!(session.decode_automerge_payload(&payload).unwrap(), frame);
     }
 }

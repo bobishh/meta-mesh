@@ -651,6 +651,15 @@ impl MobileLiveWorkspaceSession {
         self.with_inner(|session| session.encode(&frame_type, &payload).map_err(MobileMeshError::from_display))
     }
 
+    pub fn encode_automerge_frame(&self, frame_json: String) -> Result<Vec<u8>, MobileMeshError> {
+        let frame: AutomergeSyncFrame = from_json(&frame_json)?;
+        self.with_inner(|session| session.encode_automerge_frame(&frame).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn decode_automerge_payload_json(&self, payload: Vec<u8>) -> Result<String, MobileMeshError> {
+        self.with_inner(|session| to_json(&session.decode_automerge_payload(&payload).map_err(MobileMeshError::from_display)?))
+    }
+
     pub fn control_changed(&self, snapshot: Vec<u8>) -> Result<bool, MobileMeshError> {
         self.with_inner(|session| Ok(session.control_changed(&snapshot)))
     }

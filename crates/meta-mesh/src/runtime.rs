@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    ControlFrameReceiver, DialMode, LiveWorkspaceSession, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
+    AutomergeSyncFrame, ControlFrameReceiver, DialMode, LiveWorkspaceSession, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
     control_frames,
 };
 use serde::Serialize;
@@ -25,6 +25,17 @@ impl WasmLiveWorkspaceSession {
 
     pub fn encode(&self, frame_type: &str, payload: &[u8]) -> Result<Vec<u8>, JsValue> {
         self.inner.encode(frame_type, payload).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = encodeAutomergeFrame)]
+    pub fn encode_automerge_frame(&self, frame: JsValue) -> Result<Vec<u8>, JsValue> {
+        let frame: AutomergeSyncFrame = from_value(frame)?;
+        self.inner.encode_automerge_frame(&frame).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = decodeAutomergePayload)]
+    pub fn decode_automerge_payload(&self, payload: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.decode_automerge_payload(payload).map_err(js_error)?)
     }
 
     #[wasm_bindgen(js_name = controlChanged)]

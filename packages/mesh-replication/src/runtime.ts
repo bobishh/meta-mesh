@@ -115,6 +115,8 @@ export type RustLiveSessionAction = {
 export type RustLiveWorkspaceSession = {
   receive(frame: Uint8Array): RustLiveSessionAction | null
   encode(frameType: string, payload: Uint8Array): Uint8Array
+  encodeAutomergeFrame(frame: unknown): Uint8Array
+  decodeAutomergePayload(payload: Uint8Array): unknown
   controlChanged(snapshot: Uint8Array): boolean
   controlFrames(snapshot: Uint8Array): Uint8Array[]
   markControlSent(snapshot: Uint8Array): void

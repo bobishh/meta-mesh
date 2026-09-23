@@ -988,7 +988,11 @@ public protocol MobileLiveWorkspaceSessionProtocol: AnyObject, Sendable {
 
     func controlFrames(snapshot: Data) throws  -> [Data]
 
+    func decodeAutomergePayloadJson(payload: Data) throws  -> String
+
     func encode(frameType: String, payload: Data) throws  -> Data
+
+    func encodeAutomergeFrame(frameJson: String) throws  -> Data
 
     func markControlSent(snapshot: Data) throws
 
@@ -1092,6 +1096,16 @@ open func controlFrames(snapshot: Data)throws  -> [Data]  {
 })
 }
 
+open func decodeAutomergePayloadJson(payload: Data)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_decode_automerge_payload_json(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(payload),uniffiCallStatus
+    )
+})
+}
+
 open func encode(frameType: String, payload: Data)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -1099,6 +1113,16 @@ open func encode(frameType: String, payload: Data)throws  -> Data  {
             self.uniffiCloneHandle(),
         FfiConverterString.lower(frameType),
         FfiConverterData.lower(payload),uniffiCallStatus
+    )
+})
+}
+
+open func encodeAutomergeFrame(frameJson: String)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(frameJson),uniffiCallStatus
     )
 })
 }
@@ -3261,7 +3285,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames() != 45796) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_decode_automerge_payload_json() != 15012) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode() != 4622) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame() != 60700) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() != 21253) {

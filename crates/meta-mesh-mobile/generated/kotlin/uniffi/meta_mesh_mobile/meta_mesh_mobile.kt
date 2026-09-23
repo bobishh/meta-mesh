@@ -773,7 +773,11 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_decode_automerge_payload_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent(
     ): Int
@@ -947,7 +951,11 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_frames(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_decode_automerge_payload_json(`ptr`: Long,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode(`ptr`: Long,`frameType`: RustBuffer.ByValue,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(`ptr`: Long,`frameJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
@@ -1416,7 +1424,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames() and 0xFFFF) != 45796) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_decode_automerge_payload_json() and 0xFFFF) != 15012) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode() and 0xFFFF) != 4622) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame() and 0xFFFF) != 60700) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() and 0xFFFF) != 21253) {
@@ -2726,7 +2740,11 @@ public interface MobileLiveWorkspaceSessionInterface {
 
     fun `controlFrames`(`snapshot`: kotlin.ByteArray): List<kotlin.ByteArray>
 
+    fun `decodeAutomergePayloadJson`(`payload`: kotlin.ByteArray): kotlin.String
+
     fun `encode`(`frameType`: kotlin.String, `payload`: kotlin.ByteArray): kotlin.ByteArray
+
+    fun `encodeAutomergeFrame`(`frameJson`: kotlin.String): kotlin.ByteArray
 
     fun `markControlSent`(`snapshot`: kotlin.ByteArray)
 
@@ -2896,6 +2914,21 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
 
 
 
+    @Throws(MobileMeshException::class)override fun `decodeAutomergePayloadJson`(`payload`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_decode_automerge_payload_json(
+        it,
+
+        FfiConverterByteArray.lower(`payload`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileMeshException::class)override fun `encode`(`frameType`: kotlin.String, `payload`: kotlin.ByteArray): kotlin.ByteArray {
             return FfiConverterByteArray.lift(
     callWithHandle {
@@ -2905,6 +2938,21 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
 
         FfiConverterString.lower(`frameType`),
         FfiConverterByteArray.lower(`payload`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `encodeAutomergeFrame`(`frameJson`: kotlin.String): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(
+        it,
+
+        FfiConverterString.lower(`frameJson`),_status)
 }
     }
     )
