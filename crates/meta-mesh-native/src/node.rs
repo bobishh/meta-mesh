@@ -92,6 +92,35 @@ pub struct NativeNode {
     rpc_inbox: Arc<NativeRpcInbox>,
 }
 
+/// One browser-compatible Iroh connection for multi-stream protocols such as
+/// workspace invitation and handoff. A normal `request` opens a new connection
+/// for every frame, which the browser invitation host cannot accept.
+pub struct NativeBrowserConnection {
+    connection: Connection,
+}
+
+impl NativeBrowserConnection {
+    pub async fn exchange(&self, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, BoxError> {
+        if payload.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC request exceeds size limit"));
+        }
+        tokio::time::timeout(timeout, async {
+            let (mut send, mut receive) = self.connection.open_bi().await?;
+            send.write_all(payload).await?;
+            send.finish()?;
+            let response = receive.read_to_end(MAX_RPC_BYTES).await?;
+            Ok(response)
+        })
+        .await
+        .map_err(|_| io_error("Browser RPC request timed out"))?
+    }
+
+    pub fn close(&self) {
+        self.connection
+            .close(0u32.into(), b"browser session complete");
+    }
+}
+
 #[derive(Debug)]
 pub struct NativeRpcRequest {
     remote_endpoint_id: EndpointId,
@@ -322,6 +351,20 @@ impl NativeNode {
         self.rpc_inbox.clone()
     }
 
+    pub async fn connect_browser(
+        &self,
+        endpoint_addr: EndpointAddr,
+        timeout: Duration,
+    ) -> Result<NativeBrowserConnection, BoxError> {
+        let connection = tokio::time::timeout(
+            timeout,
+            self.endpoint.connect(endpoint_addr, BROWSER_RPC_ALPN),
+        )
+        .await
+        .map_err(|_| io_error("Browser RPC connection timed out"))??;
+        Ok(NativeBrowserConnection { connection })
+    }
+
     pub async fn request(
         &self,
         endpoint_addr: EndpointAddr,
@@ -457,5 +500,44 @@ mod tests {
         let restarted = NativeNode::start(Some(secret), vec![]).await.unwrap();
         assert_eq!(restarted.endpoint_id(), endpoint_id);
         restarted.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn browser_session_exchanges_invitation_and_ack_on_one_connection() {
+        let guest = NativeNode::start(Some([17; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([18; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let session = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let first = inbox.receive().await.unwrap();
+            assert_eq!(first.payload(), b"workspace-join-request");
+            first.respond(b"workspace-join-response".to_vec()).unwrap();
+            let second = inbox.receive().await.unwrap();
+            assert_eq!(second.payload(), b"sync-ack");
+            second.respond(Vec::new()).unwrap();
+        });
+        assert_eq!(
+            session
+                .exchange(b"workspace-join-request", Duration::from_secs(5))
+                .await
+                .unwrap(),
+            b"workspace-join-response"
+        );
+        assert!(
+            session
+                .exchange(b"sync-ack", Duration::from_secs(5))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        responder.await.unwrap();
+        session.close();
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
     }
 }

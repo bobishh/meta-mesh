@@ -13,8 +13,8 @@ pub use meta_mesh_core::{
     control_frames,
 };
 pub use node::{
-    GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeNode, NativeNodeOptions,
-    NativeRpcInbox, NativeRpcRequest,
+    GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeBrowserConnection,
+    NativeNode, NativeNodeOptions, NativeRpcInbox, NativeRpcRequest,
 };
 pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
 pub use scope_admission::NativeScopeAdmission;
