@@ -180,6 +180,7 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - MetaMesh `bc9dbc9` merges signed peer advertisements in Rust. It admits each route against the current workspace authority, drops unverified bundles, and selects the latest route sequence per device and instance. Focused core test passes.
 - Match `81ffdac` persists the verified catalog in the lighthouse state, seeds it from a one-board invitation, publishes it with scope snapshots, and updates Iroh transport admission for newly verified devices. Focused restart/catalog test and Rust build pass. The separate `mesh-lighthouse` repo has the same changes under local check; no production pairing or multi-device exchange is claimed by this check.
 - The native node still actively dials only the invitation issuer. Other devices can connect if they discover its signed route. Native authority-control catalog merge remains explicitly unsupported, so this is not yet complete keeper replication or a full two-device sync result.
+- Standalone `mesh-lighthouse` `ff0118b` was deployed on Hetzner with its own image version. Kamal reported the new container healthy; external `GET https://ingest.meta-uber-engineer.dev/health` returned HTTP 200. The existing `/data/inbox` volume survived. `/data/config.json` is absent, so this is still HTTP-only; no production mesh join or card delivery has been tested.
 
 ### Dependency status (2026-09-20)
 
