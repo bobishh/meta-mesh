@@ -227,11 +227,11 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       byWorkspace.set(item[1].workspaceId, entries)
     }
     await Promise.allSettled([...byWorkspace].map(async ([workspaceId, entries]) => {
-      await broadcast(workspaceId)
       await Promise.all(entries.map(async ([key, entry]) => {
         try { await entry.session.publish() }
         catch (error) { await onFailure(key, entry, error) }
       }))
+      await broadcast(workspaceId)
     }))
   }
 
