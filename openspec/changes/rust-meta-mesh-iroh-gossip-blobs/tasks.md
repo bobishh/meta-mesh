@@ -103,6 +103,7 @@ The original 6.7 completion mark overstated the consumer boundary. Rust now owns
 - [x] 7.1 Add a platform-neutral Rust runtime state machine for lifecycle, route attempts, session admission/replacement, reconnect scheduling, and bounded control transfers.
 - [x] 7.2 Expose the runtime through the browser WASM adapter and native/mobile adapters with equivalent observable behavior.
 - [ ] 7.3 Move authenticated handshake, gossip-session orchestration, Automerge session lifecycle, and ownership/recovery commands behind the Rust runtime API.
+  - [ ] Define signed scope genesis and capability grants in Rust, with no authority escalation through cached product records; map Match and Twang role labels at product boundaries.
   - [x] `LiveWorkspaceSession` in `meta-mesh-core` owns authenticated live frame dispatch, bounded control reassembly, durable receipt/heartbeat checks, and transactional Automerge sync state. WASM and Rust UniFFI wrappers expose it; Match uses it for its live document transaction.
   - [x] Match calls Rust for live frame parsing/encoding and document prepare/commit/abort/reset. Delete superseded `browserDocumentSessions.ts`.
   - [x] Rust encodes and validates workspace-set snapshots, control payloads, and workspace-update gossip messages; Match supplies document/chat/mesh storage and transport I/O.

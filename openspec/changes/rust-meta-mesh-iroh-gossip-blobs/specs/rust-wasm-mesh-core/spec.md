@@ -28,3 +28,18 @@ The system SHALL own connection lifecycle, route attempts, authenticated session
 #### Scenario: Consumer uses the browser runtime
 - **WHEN** Match starts workspace synchronization
 - **THEN** it constructs the WASM runtime with host callbacks and does not implement handshake, dialing, reconnect, session ownership, or gossip topology itself
+
+### Requirement: Signed scope authority
+The platform-neutral Rust core SHALL verify an immutable scope genesis, capability grants, revocations, and explicit control transfers before accepting an operation. A grant SHALL be bound to one scope and authority epoch. A delegate SHALL NOT grant capabilities beyond its own delegable authority. Product role labels SHALL be projections of verified capabilities.
+
+The verified controller from signed genesis or an explicit signed control-transfer chain SHALL have the complete base capability set. This base set SHALL NOT be reconstructed from product documents, cached roles, or participant records.
+
+#### Scenario: Channel-style delegation
+- **GIVEN** a scope creator grants publish and invite capabilities to one administrator
+- **WHEN** that administrator grants publish to an editor
+- **THEN** Rust accepts the editor grant but rejects a control-transfer grant from that administrator unless transfer was explicitly delegated
+
+#### Scenario: Missing authority history
+- **GIVEN** a local board or conversation has content but lacks a verifiable authority chain
+- **WHEN** the user opens or syncs that scope
+- **THEN** Rust does not infer creator or owner rights from cached profiles, local grants, or UI state; the product may create a new scope with a new signed genesis and copied content

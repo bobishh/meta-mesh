@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    AutomergeSyncFrame, ControlFrameReceiver, DialMode, LiveWorkspaceSession, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
-    control_frames, encode_workspace_update, is_workspace_update,
+    AutomergeSyncFrame, ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput,
+    LiveWorkspaceSession, MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState, RelayDialPolicy,
+    SessionCandidate, SessionDirection, SessionKey, control_frames, encode_workspace_update,
+    is_workspace_update,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -16,7 +18,9 @@ pub struct WasmLiveWorkspaceSession {
 impl WasmLiveWorkspaceSession {
     #[wasm_bindgen(constructor)]
     pub fn new(workspace_id: &str, secret: &str) -> Result<Self, JsValue> {
-        Ok(Self { inner: LiveWorkspaceSession::new(workspace_id, secret).map_err(js_error)? })
+        Ok(Self {
+            inner: LiveWorkspaceSession::new(workspace_id, secret).map_err(js_error)?,
+        })
     }
 
     pub fn receive(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
@@ -35,39 +39,85 @@ impl WasmLiveWorkspaceSession {
 
     #[wasm_bindgen(js_name = decodeAutomergePayload)]
     pub fn decode_automerge_payload(&self, payload: &[u8]) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.decode_automerge_payload(payload).map_err(js_error)?)
+        to_value(
+            &self
+                .inner
+                .decode_automerge_payload(payload)
+                .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = startDocumentSync)]
-    pub fn start_document_sync(&mut self, local_device_id: &str, remote_device_id: &str) -> Result<(), JsValue> {
-        self.inner.start_document_sync(local_device_id, remote_device_id).map_err(js_error)
+    pub fn start_document_sync(
+        &mut self,
+        local_device_id: &str,
+        remote_device_id: &str,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .start_document_sync(local_device_id, remote_device_id)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = generateDocument)]
-    pub fn generate_document(&mut self, document: &[u8], proof: JsValue) -> Result<Option<Vec<u8>>, JsValue> {
-        self.inner.generate_document(document, optional_value(proof)?).map_err(js_error)
+    pub fn generate_document(
+        &mut self,
+        document: &[u8],
+        proof: JsValue,
+    ) -> Result<Option<Vec<u8>>, JsValue> {
+        self.inner
+            .generate_document(document, optional_value(proof)?)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = prepareDocument)]
-    pub fn prepare_document(&mut self, payload: &[u8], document: &[u8], response_proof: JsValue) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.prepare_document(payload, document, optional_value(response_proof)?).map_err(js_error)?)
+    pub fn prepare_document(
+        &mut self,
+        payload: &[u8],
+        document: &[u8],
+        response_proof: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .prepare_document(payload, document, optional_value(response_proof)?)
+                .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = commitDocument)]
-    pub fn commit_document(&mut self) -> Result<(), JsValue> { self.inner.commit_document().map_err(js_error) }
+    pub fn commit_document(&mut self) -> Result<(), JsValue> {
+        self.inner.commit_document().map_err(js_error)
+    }
 
     #[wasm_bindgen(js_name = abortDocument)]
-    pub fn abort_document(&mut self) { self.inner.abort_document(); }
+    pub fn abort_document(&mut self) {
+        self.inner.abort_document();
+    }
 
     #[wasm_bindgen(js_name = resetDocument)]
-    pub fn reset_document(&mut self) { self.inner.reset_document(); }
+    pub fn reset_document(&mut self) {
+        self.inner.reset_document();
+    }
 
     #[wasm_bindgen(js_name = controlChanged)]
-    pub fn control_changed(&self, snapshot: &[u8]) -> bool { self.inner.control_changed(snapshot) }
+    pub fn control_changed(&self, snapshot: &[u8]) -> bool {
+        self.inner.control_changed(snapshot)
+    }
 
     #[wasm_bindgen(js_name = encodeControl)]
-    pub fn encode_control(&self, authorization: JsValue, chat: JsValue, mesh: JsValue) -> Result<Vec<u8>, JsValue> {
-        self.inner.encode_control(optional_value(authorization)?, optional_value(chat)?, optional_value(mesh)?).map_err(js_error)
+    pub fn encode_control(
+        &self,
+        authorization: JsValue,
+        chat: JsValue,
+        mesh: JsValue,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.inner
+            .encode_control(
+                optional_value(authorization)?,
+                optional_value(chat)?,
+                optional_value(mesh)?,
+            )
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = decodeControl)]
@@ -81,7 +131,9 @@ impl WasmLiveWorkspaceSession {
     }
 
     #[wasm_bindgen(js_name = markControlSent)]
-    pub fn mark_control_sent(&mut self, snapshot: &[u8]) { self.inner.mark_control_sent(snapshot.to_vec()); }
+    pub fn mark_control_sent(&mut self, snapshot: &[u8]) {
+        self.inner.mark_control_sent(snapshot.to_vec());
+    }
 
     #[wasm_bindgen(js_name = acknowledgeSaved)]
     pub fn acknowledge_saved(&self, bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
@@ -90,7 +142,9 @@ impl WasmLiveWorkspaceSession {
 
     #[wasm_bindgen(js_name = verifySavedReceipt)]
     pub fn verify_saved_receipt(&self, frame: &[u8], bytes: &[u8]) -> Result<(), JsValue> {
-        self.inner.verify_saved_receipt(frame, bytes).map_err(js_error)
+        self.inner
+            .verify_saved_receipt(frame, bytes)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = verifyHeartbeatAck)]
@@ -108,13 +162,207 @@ pub struct WasmMeshHandshakeFlow {
 impl WasmMeshHandshakeFlow {
     #[wasm_bindgen(constructor)]
     pub fn new(direction_name: &str) -> Result<Self, JsValue> {
-        Ok(Self { inner: MeshHandshakeFlow::new(direction(direction_name)?) })
+        Ok(Self {
+            inner: MeshHandshakeFlow::new(direction(direction_name)?),
+        })
     }
 
-    pub fn step(&self) -> String { self.inner.step().as_str().to_string() }
+    pub fn step(&self) -> String {
+        self.inner.step().as_str().to_string()
+    }
+
+    #[wasm_bindgen(js_name = isPeerRevoked)]
+    pub fn is_peer_revoked(
+        &self,
+        credential: JsValue,
+        person_id: &str,
+        grant: JsValue,
+        device_id: &str,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        let grant: Option<serde_json::Value> = optional_value(grant)?;
+        Ok(MeshHandshakeFlow::is_peer_revoked(
+            &credential,
+            person_id,
+            grant.as_ref(),
+            device_id,
+        ))
+    }
 
     pub fn advance(&mut self, completed: &str, decision: Option<bool>) -> Result<String, JsValue> {
-        self.inner.advance(completed, decision).map(|step| step.as_str().to_string()).map_err(js_error)
+        self.inner
+            .advance(completed, decision)
+            .map(|step| step.as_str().to_string())
+            .map_err(js_error)
+    }
+}
+
+#[wasm_bindgen]
+pub struct WasmMeshLifecycleState {
+    inner: MeshLifecycleState,
+}
+
+#[wasm_bindgen]
+impl WasmMeshLifecycleState {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            inner: MeshLifecycleState::default(),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn stopped(&self) -> bool {
+        self.inner.stopped()
+    }
+
+    #[wasm_bindgen(getter, js_name = externallyPaused)]
+    pub fn externally_paused(&self) -> bool {
+        self.inner.externally_paused()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn disposed(&self) -> bool {
+        self.inner.disposed()
+    }
+
+    #[wasm_bindgen(js_name = beginStart)]
+    pub fn begin_start(&mut self) -> bool {
+        self.inner.begin_start()
+    }
+
+    #[wasm_bindgen(js_name = canContinueStart)]
+    pub fn can_continue_start(&self) -> bool {
+        self.inner.can_continue_start()
+    }
+
+    #[wasm_bindgen(js_name = completeStart)]
+    pub fn complete_start(&mut self) -> bool {
+        self.inner.complete_start()
+    }
+
+    #[wasm_bindgen(js_name = cancelStart)]
+    pub fn cancel_start(&mut self) {
+        self.inner.cancel_start();
+    }
+
+    pub fn stop(&mut self) -> bool {
+        self.inner.stop()
+    }
+    #[wasm_bindgen(js_name = finishStop)]
+    pub fn finish_stop(&mut self) {
+        self.inner.finish_stop();
+    }
+    pub fn pause(&mut self) {
+        self.inner.pause();
+    }
+    pub fn resume(&mut self) -> bool {
+        self.inner.resume()
+    }
+    pub fn dispose(&mut self) {
+        self.inner.dispose();
+    }
+}
+
+#[wasm_bindgen]
+pub struct WasmGossipLifecycleState {
+    inner: GossipLifecycleState,
+}
+
+#[wasm_bindgen]
+impl WasmGossipLifecycleState {
+    #[wasm_bindgen(constructor)]
+    pub fn new(topic_prefix: Option<String>) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: GossipLifecycleState::new(
+                topic_prefix.unwrap_or_else(|| meta_mesh_core::DEFAULT_GOSSIP_TOPIC_PREFIX.into()),
+            )
+            .map_err(js_error)?,
+        })
+    }
+
+    pub fn topic(&self, workspace_id: &str) -> Result<String, JsValue> {
+        self.inner.topic(workspace_id).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = planRebuild)]
+    pub fn plan_rebuild(&mut self, raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: GossipRebuildInput = from_value(raw)?;
+        to_value(&self.inner.plan_rebuild(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = startFailed)]
+    pub fn start_failed(&mut self, workspace_id: &str) -> Result<(), JsValue> {
+        self.inner.start_failed(workspace_id).map_err(js_error)
+    }
+    pub fn started(&mut self, workspace_id: &str) -> Result<(), JsValue> {
+        self.inner.started(workspace_id).map_err(js_error)
+    }
+    pub fn close(&mut self, workspace_id: &str) -> Result<(), JsValue> {
+        self.inner.close(workspace_id).map_err(js_error)
+    }
+    #[wasm_bindgen(js_name = closeAll)]
+    pub fn close_all(&mut self) {
+        self.inner.close_all();
+    }
+
+    #[wasm_bindgen(js_name = receiveAction)]
+    pub fn receive_action(
+        &self,
+        workspace_id: &str,
+        driver_available: bool,
+        session_available: bool,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .receive_action(workspace_id, driver_available, session_available)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = deliveryAction)]
+    pub fn delivery_action(
+        &self,
+        workspace_id: &str,
+        topic: &str,
+        session_available: bool,
+        packet_valid: bool,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .delivery_action(workspace_id, topic, session_available, packet_valid)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = observeNeighbors)]
+    pub fn observe_neighbors(
+        &mut self,
+        workspace_id: &str,
+        count: u32,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .observe_neighbors(workspace_id, count as usize)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = broadcastPlan)]
+    pub fn broadcast_plan(
+        &self,
+        workspace_id: &str,
+        driver_available: bool,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .broadcast_plan(workspace_id, driver_available)
+                .map_err(js_error)?,
+        )
     }
 }
 
@@ -250,23 +498,6 @@ impl WasmMeshRuntimeState {
         to_value(&self.inner.connected_devices(workspace_id))
     }
 
-    #[wasm_bindgen(js_name = setGossipEndpoints)]
-    pub fn set_gossip_endpoints(&mut self, workspace_id: String, endpoints: JsValue) -> Result<JsValue, JsValue> {
-        let endpoints: Vec<String> = from_value(endpoints)?;
-        to_value(&self.inner.set_gossip_endpoints(workspace_id, endpoints))
-    }
-
-    #[wasm_bindgen(js_name = clearGossip)]
-    pub fn clear_gossip(&mut self, workspace_id: &str) { self.inner.clear_gossip(workspace_id); }
-
-    #[wasm_bindgen(js_name = observeGossipNeighbors)]
-    pub fn observe_gossip_neighbors(&mut self, workspace_id: &str, count: u32) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.observe_gossip_neighbors(workspace_id, count as usize))
-    }
-
-    #[wasm_bindgen(js_name = clearGossipNeighbors)]
-    pub fn clear_gossip_neighbors(&mut self, workspace_id: &str) { self.inner.clear_gossip_neighbors(workspace_id); }
-
     #[wasm_bindgen(js_name = encodeWorkspaceUpdate)]
     pub fn encode_workspace_update(&self, workspace_id: &str, nonce: &str) -> Vec<u8> {
         encode_workspace_update(workspace_id, nonce)
@@ -298,7 +529,12 @@ impl WasmMeshRuntimeState {
     }
 
     #[wasm_bindgen(js_name = planDial)]
-    pub fn plan_dial(&mut self, peer_key: &str, relay_available: bool, now_ms: f64) -> Result<JsValue, JsValue> {
+    pub fn plan_dial(
+        &mut self,
+        peer_key: &str,
+        relay_available: bool,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
         to_value(&self.relay_policy.plan(
             peer_key,
             relay_available,
@@ -308,18 +544,30 @@ impl WasmMeshRuntimeState {
 
     #[wasm_bindgen(js_name = recordNetworkFailure)]
     pub fn record_network_failure(&mut self, peer_key: String, now_ms: f64) -> Result<(), JsValue> {
-        self.relay_policy.record_network_failure(peer_key, unsigned_integer(now_ms, "Invalid dial timestamp")?);
+        self.relay_policy.record_network_failure(
+            peer_key,
+            unsigned_integer(now_ms, "Invalid dial timestamp")?,
+        );
         Ok(())
     }
 
     #[wasm_bindgen(js_name = recordDialSuccess)]
-    pub fn record_dial_success(&mut self, peer_key: &str, mode: &str, now_ms: f64) -> Result<(), JsValue> {
+    pub fn record_dial_success(
+        &mut self,
+        peer_key: &str,
+        mode: &str,
+        now_ms: f64,
+    ) -> Result<(), JsValue> {
         let mode = match mode {
             "direct" => DialMode::Direct,
             "relay" => DialMode::Relay,
             _ => return Err(js_error("Invalid dial mode")),
         };
-        self.relay_policy.record_success(peer_key, mode, unsigned_integer(now_ms, "Invalid dial timestamp")?);
+        self.relay_policy.record_success(
+            peer_key,
+            mode,
+            unsigned_integer(now_ms, "Invalid dial timestamp")?,
+        );
         Ok(())
     }
 }
@@ -343,7 +591,11 @@ fn from_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsVal
 }
 
 fn optional_value(value: JsValue) -> Result<Option<serde_json::Value>, JsValue> {
-    if value.is_null() || value.is_undefined() { Ok(None) } else { from_value(value).map(Some) }
+    if value.is_null() || value.is_undefined() {
+        Ok(None)
+    } else {
+        from_value(value).map(Some)
+    }
 }
 
 fn to_value(value: &impl Serialize) -> Result<JsValue, JsValue> {

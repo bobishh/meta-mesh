@@ -30,7 +30,6 @@ export type BrowserMeshHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
   mergeAuthority(credential: C, request: MeshHandshakePayload): Promise<C>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
   admit(credential: C, request: MeshHandshakePayload, remoteEndpointId: string): Promise<Pick<P, "deviceId" | "personId" | "endpoint">>
-  revoked(credential: C, personId: string, grant: unknown, deviceId: string): boolean
   revocations(credential: C): MeshHandshakePayload["revocations"]
   ownBundle(credential: C): Promise<WorkspaceMemberBundle>
   response(credential: C, remotePersonId: string): Promise<MeshHandshakePayload>
@@ -80,7 +79,7 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
               workspaceId: this.host.workspaceId(credential).slice(0, 8) })
             break
           case "checkRevocation":
-            flow.advance(step, this.host.revoked(credential, remote.personId, request.peer?.grant, remote.deviceId))
+            flow.advance(step, flow.isPeerRevoked(credential, remote.personId, request.peer?.grant, remote.deviceId))
             continue
           case "sendRevocation": {
             await stream.send(this.codec.encodeResponse(this.host.secret(credential), {
@@ -186,6 +185,9 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
           case "verifyPeer":
             remote = await this.host.verifyPeer(credential, response.peer)
             break
+          case "checkRevocation":
+            flow.advance(step, flow.isPeerRevoked(credential, remote.personId, response.peer?.grant, remote.deviceId))
+            continue
           case "checkExpectedPeer":
             flow.advance(step, remote.deviceId === peerId)
             continue
@@ -194,6 +196,7 @@ export class BrowserMeshOutgoingHandshake<C, P extends BrowserMeshHandshakePeer,
             await this.host.putVerifiedBundle(credential, response.peer)
             this.host.trace("handshake.outgoing.verified", { connectionId, peerId: remote.deviceId.slice(0, 8) })
             break
+          case "revoked": throw new Error("Device access revoked")
           case "peerMismatch": throw new Error("Unexpected mesh peer")
           case "complete": return { credential, response, remote, features: this.codec.features(response.capabilities) }
           default: throw new Error(`Unexpected outgoing mesh handshake step: ${step}`)

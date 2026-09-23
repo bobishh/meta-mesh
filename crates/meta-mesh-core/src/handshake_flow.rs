@@ -1,4 +1,5 @@
 use crate::SessionDirection;
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandshakeStep {
@@ -62,6 +63,19 @@ impl MeshHandshakeFlow {
         self.step
     }
 
+    /// Apply current workspace authority to a verified handshake peer. The
+    /// transport host supplies credential data; revocation policy stays in
+    /// the platform-independent core.
+    pub fn is_peer_revoked(
+        credential: &Value,
+        person_id: &str,
+        grant: Option<&Value>,
+        device_id: &str,
+    ) -> bool {
+        crate::is_grant_revoked(credential, person_id, grant)
+            || crate::is_device_revoked(credential, person_id, device_id)
+    }
+
     /// Advance only after the host completed the current I/O action. A decision
     /// is required for access, peer identity, and session admission branches.
     pub fn advance(
@@ -87,13 +101,19 @@ impl MeshHandshakeFlow {
                 HandshakeStep::CheckRevocation
             }
             (SessionDirection::Outgoing, HandshakeStep::VerifyPeer, None) => {
-                HandshakeStep::CheckExpectedPeer
+                HandshakeStep::CheckRevocation
             }
             (SessionDirection::Incoming, HandshakeStep::CheckRevocation, Some(true)) => {
                 HandshakeStep::SendRevocation
             }
             (SessionDirection::Incoming, HandshakeStep::CheckRevocation, Some(false)) => {
                 HandshakeStep::PersistPeer
+            }
+            (SessionDirection::Outgoing, HandshakeStep::CheckRevocation, Some(true)) => {
+                HandshakeStep::Revoked
+            }
+            (SessionDirection::Outgoing, HandshakeStep::CheckRevocation, Some(false)) => {
+                HandshakeStep::CheckExpectedPeer
             }
             (SessionDirection::Outgoing, HandshakeStep::CheckExpectedPeer, Some(true)) => {
                 HandshakeStep::PersistPeer
@@ -179,6 +199,20 @@ mod tests {
             outbound.advance(step, None).unwrap();
         }
         assert_eq!(
+            outbound.advance("checkRevocation", Some(true)).unwrap(),
+            HandshakeStep::Revoked
+        );
+        let mut outbound = MeshHandshakeFlow::new(SessionDirection::Outgoing);
+        for step in [
+            "sendRequest",
+            "readResponse",
+            "mergeAuthority",
+            "verifyPeer",
+        ] {
+            outbound.advance(step, None).unwrap();
+        }
+        outbound.advance("checkRevocation", Some(false)).unwrap();
+        assert_eq!(
             outbound.advance("checkExpectedPeer", Some(false)).unwrap(),
             HandshakeStep::PeerMismatch
         );
@@ -205,5 +239,24 @@ mod tests {
             flow.advance("afterInstalled", None).unwrap(),
             HandshakeStep::Complete
         );
+    }
+
+    #[test]
+    fn outgoing_revocation_is_checked_before_expected_identity_and_persistence() {
+        let mut flow = MeshHandshakeFlow::new(SessionDirection::Outgoing);
+        for step in [
+            "sendRequest",
+            "readResponse",
+            "mergeAuthority",
+            "verifyPeer",
+        ] {
+            flow.advance(step, None).unwrap();
+        }
+        assert_eq!(flow.step(), HandshakeStep::CheckRevocation);
+        assert_eq!(
+            flow.advance("checkRevocation", Some(true)).unwrap(),
+            HandshakeStep::Revoked
+        );
+        assert!(flow.advance("persistPeer", None).is_err());
     }
 }

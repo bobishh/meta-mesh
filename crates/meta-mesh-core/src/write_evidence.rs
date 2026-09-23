@@ -5,6 +5,64 @@ use serde_json::{Value, json};
 
 use crate::has_conflicting_ownership_transfers;
 
+/// Require an authorization record to cover every change in a document
+/// history. Cryptographic admission happens on the receiving side; this check
+/// prevents exporting a history that omits signed proof for any change.
+pub fn require_change_authorization_coverage(
+    change_hashes: &[String],
+    records: &[Value],
+) -> Result<(), String> {
+    let mut covered = std::collections::HashSet::<&str>::new();
+    for record in records {
+        let signed = record
+            .get("signed")
+            .ok_or("Invalid workspace change authorization")?;
+        let payload = signed
+            .get("payload")
+            .ok_or("Invalid workspace change authorization")?;
+        if signed
+            .get("signature")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+            || signed
+                .get("signerKeyId")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            || payload.get("kind").and_then(Value::as_str) != Some("workspace-changes")
+            || payload.get("version").and_then(Value::as_u64) != Some(1)
+            || ["workspaceId", "personId", "deviceId"].iter().any(|field| {
+                payload
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .is_none_or(str::is_empty)
+            })
+        {
+            return Err("Invalid workspace change authorization".into());
+        }
+        let hashes = payload
+            .get("hashes")
+            .and_then(Value::as_array)
+            .ok_or("Invalid workspace change authorization")?;
+        for hash in hashes {
+            let hash = hash
+                .as_str()
+                .filter(|hash| !hash.is_empty())
+                .ok_or("Invalid workspace change authorization")?;
+            covered.insert(hash);
+        }
+    }
+    if change_hashes
+        .iter()
+        .any(|hash| hash.is_empty() || !covered.contains(hash.as_str()))
+    {
+        return Err(
+            "Workspace history lacks signed authorization. Import this board as a new board."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 pub fn has_authority_conflict(credential: &Value) -> bool {
     let epoch = credential.get("epoch").and_then(Value::as_u64);
     let catalog = credential.get("catalog");
@@ -14,7 +72,11 @@ pub fn has_authority_conflict(credential: &Value) -> bool {
     let candidates = claims
         .iter()
         .filter(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == epoch)
-        .filter_map(|claim| claim.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
+        .filter_map(|claim| {
+            claim
+                .pointer("/payload/toOwnerPersonId")
+                .and_then(Value::as_str)
+        })
         .collect::<std::collections::HashSet<_>>();
     let transfers = catalog
         .map(|value| array(value, "ownershipTransfers"))
@@ -203,9 +265,56 @@ fn merge_certificates(left: Option<&Vec<Value>>, right: Option<&Vec<Value>>) -> 
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    use super::{WriteEvidenceInput, prepare_write_evidence};
+    use super::{
+        WriteEvidenceInput, prepare_write_evidence, require_change_authorization_coverage,
+    };
+
+    fn authorization(hashes: &[&str]) -> Value {
+        json!({ "signed": {
+            "payload": { "kind": "workspace-changes", "version": 1, "hashes": hashes,
+                "workspaceId": "workspace", "personId": "person", "deviceId": "device" },
+            "signerKeyId": "device", "signature": "signature"
+        } })
+    }
+
+    #[test]
+    fn requires_complete_hash_coverage_across_signed_authorization_records() {
+        let records = vec![
+            authorization(&["change-a", "change-b"]),
+            authorization(&["change-c"]),
+        ];
+        let complete = vec!["change-a".into(), "change-b".into(), "change-c".into()];
+        assert_eq!(
+            require_change_authorization_coverage(&complete, &records),
+            Ok(())
+        );
+
+        let incomplete = vec!["change-a".into(), "change-d".into()];
+        assert!(
+            require_change_authorization_coverage(&incomplete, &records)
+                .unwrap_err()
+                .contains("lacks signed authorization")
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_unsigned_authorization_records() {
+        let hashes = vec!["change-a".into()];
+        for record in [
+            json!({ "signed": { "payload": { "hashes": ["change-a"] } } }),
+            json!({ "signed": { "payload": { "kind": "workspace-changes", "version": 1,
+                "hashes": ["change-a"] }, "signerKeyId": "device", "signature": "signature" } }),
+        ] {
+            assert!(require_change_authorization_coverage(&hashes, &[record]).is_err());
+        }
+    }
+
+    #[test]
+    fn empty_history_needs_no_authorization_records() {
+        assert_eq!(require_change_authorization_coverage(&[], &[]), Ok(()));
+    }
 
     #[test]
     fn keeps_known_signed_transitions_and_updates_owner_candidate() {
@@ -222,19 +331,40 @@ mod tests {
             "ownershipTransfers": [{ "payload": { "epoch": 2, "toOwnerPersonId": "editor", "toOwnerPublicKey": "key-b", "toOwnerCertificates": [] } }],
             "successionClaims": [], "revocations": [], "deviceRevocations": [], "departures": []
         });
-        let result = prepare_write_evidence(WriteEvidenceInput { incoming, known: Some(known), records: vec![],
-            genesis_person_id: "genesis".into(), remote_owner_person_id: "genesis".into() }).unwrap();
+        let result = prepare_write_evidence(WriteEvidenceInput {
+            incoming,
+            known: Some(known),
+            records: vec![],
+            genesis_person_id: "genesis".into(),
+            remote_owner_person_id: "genesis".into(),
+        })
+        .unwrap();
         assert_eq!(result["currentOwner"]["personId"], "editor");
         assert_eq!(result["currentEpoch"], 2);
-        assert_eq!(result["genesisOwner"]["certificates"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            result["genesisOwner"]["certificates"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
     fn rejects_conflicting_genesis_anchor_before_merging_evidence() {
-        let incoming = json!({ "genesisOwner": { "personId": "genesis", "publicKey": "untrusted" } });
+        let incoming =
+            json!({ "genesisOwner": { "personId": "genesis", "publicKey": "untrusted" } });
         let known = json!({ "genesisOwner": { "personId": "genesis", "publicKey": "trusted" } });
-        assert!(prepare_write_evidence(WriteEvidenceInput { incoming, known: Some(known), records: vec![],
-            genesis_person_id: "genesis".into(), remote_owner_person_id: "genesis".into() })
-            .unwrap_err().contains("trusted genesis anchor"));
+        assert!(
+            prepare_write_evidence(WriteEvidenceInput {
+                incoming,
+                known: Some(known),
+                records: vec![],
+                genesis_person_id: "genesis".into(),
+                remote_owner_person_id: "genesis".into()
+            })
+            .unwrap_err()
+            .contains("trusted genesis anchor")
+        );
     }
 }

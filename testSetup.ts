@@ -6,6 +6,9 @@ import {
   WasmAutomergeSyncEngine,
   WasmDeviceRouteCatalog,
   WasmMeshRuntimeState,
+  WasmGossipLifecycleState,
+  WasmMeshLifecycleState,
+  WasmMeshSessionLifecycle,
   WasmMeshHandshakeFlow,
   WasmStateCore,
 } from "@meta-uber/mesh-transport/wasm"
@@ -18,5 +21,8 @@ installMeshRustRuntime({
   createAutomergeSyncEngine: (localDeviceId, maximumFrameBytes) =>
     new WasmAutomergeSyncEngine(localDeviceId, maximumFrameBytes),
   createMeshRuntimeState: () => new WasmMeshRuntimeState(),
+  createGossipLifecycleState: topicPrefix => new WasmGossipLifecycleState(topicPrefix),
+  createMeshLifecycleState: () => new WasmMeshLifecycleState(),
+  createMeshSessionLifecycleState: stableAfterMs => new WasmMeshSessionLifecycle(stableAfterMs),
   createMeshHandshakeFlow: direction => new WasmMeshHandshakeFlow(direction),
 })

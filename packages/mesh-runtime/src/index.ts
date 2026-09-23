@@ -3,7 +3,7 @@ import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
 export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
 export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
-export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
+export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
 export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJoinHandoffGuest,
   BrowserWorkspaceJoinHandoffHost, WorkspaceJoinHandoffRollbackError, WorkspaceJoinRejectedError,

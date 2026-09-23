@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
 import type { GossipStateMachine, GossipStep } from "@meta-uber/mesh-replication/gossip"
-import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import { BrowserMeshGossip } from "./browserGossip"
 
 const step = (value: Partial<GossipStep> = {}): GossipStep => ({
@@ -24,16 +23,12 @@ describe("BrowserMeshGossip", () => {
       peerDisconnected: vi.fn(() => step()),
       activeNeighbors: vi.fn(() => ["remote"]),
     }
-    const runtime = meshRustRuntime().createMeshRuntimeState()
     const gossip = new BrowserMeshGossip({
       isStopped: () => false,
       createEngine: () => engine,
       endpoints: () => ["remote"],
-      setEndpoints: (_workspaceId, endpoints) => ({ changed: true, endpoints }),
-      observeNeighbors: (workspaceId, count) => runtime.observeGossipNeighbors(workspaceId, count),
-      clearNeighbors: workspaceId => runtime.clearGossipNeighbors(workspaceId),
-      encodeWorkspaceUpdate: (workspaceId, nonce) => runtime.encodeWorkspaceUpdate(workspaceId, nonce),
-      isWorkspaceUpdate: (content, workspaceId) => runtime.isWorkspaceUpdate(content, workspaceId),
+      encodeWorkspaceUpdate: (workspaceId, nonce) => new TextEncoder().encode(JSON.stringify({ version: 1, kind: "workspace-update", workspaceId, nonce })),
+      isWorkspaceUpdate: (content, workspaceId) => new TextDecoder().decode(content).includes(`"workspaceId":"${workspaceId}"`),
       transportSecret: async () => "secret",
       session: () => ({ endpoint: "remote", deviceId: "device", publish }),
       send,
@@ -50,6 +45,5 @@ describe("BrowserMeshGossip", () => {
     expect(publish).toHaveBeenCalledOnce()
     expect(trace).toHaveBeenCalledWith("gossip.delivered", expect.objectContaining({ peerId: "device" }))
     gossip.closeAll()
-    runtime.free?.()
   })
 })

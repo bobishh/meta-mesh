@@ -11,14 +11,19 @@ pub mod invitation;
 pub mod node;
 pub mod pairing;
 pub mod runtime;
+pub mod session_lifecycle;
 #[cfg(target_family = "wasm")]
 pub mod state;
 
 pub use blobs::{BlobDescriptor, BlobEngine, ParsedTicket, WasmBlobEngine};
 pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
-pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandshake, WasmWorkspaceJoinHandoff};
-pub use runtime::{WasmLiveWorkspaceSession, WasmMeshHandshakeFlow, WasmMeshRuntimeState};
+pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandoff, WasmWorkspaceJoinHandshake};
+pub use runtime::{
+    WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshHandshakeFlow,
+    WasmMeshLifecycleState, WasmMeshRuntimeState,
+};
+pub use session_lifecycle::WasmMeshSessionLifecycle;
 
 #[cfg(target_family = "wasm")]
 pub use automerge::WasmAutomergeSyncEngine;

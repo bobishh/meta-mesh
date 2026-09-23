@@ -1,4 +1,8 @@
 export type RustStateCore = {
+  validateScopeAuthority(snapshot: unknown): unknown
+  requireChangeAuthorizationCoverage(changeHashes: string[], records: unknown[]): void
+  createScopeGenesis(input: unknown): { scopeId: string; creatorPersonId: string;
+    creatorPublicKey: string; creatorCertificates: unknown[] }
   preferredSessionDirection(localDeviceId: string, remoteDeviceId: string): "incoming" | "outgoing"
   hasAuthorityConflict(credential: unknown): boolean
   prepareWriteEvidence(input: unknown): unknown
@@ -29,6 +33,9 @@ export type RustStateCore = {
   planCatalogMerge(): Array<"ownership" | "revocations" | "refreshCredential" | "succession" | "peers" | "notify">
   selectOwnershipTransfer(input: unknown): { peerIndices: number[]; advertisementIndex: number | null;
     pendingIndex: number | null; targetOnline: boolean }
+  planOwnershipAuthorityFlow(input: unknown): { selection: { peerIndices: number[];
+    advertisementIndex: number | null; pendingIndex: number | null; targetOnline: boolean };
+    actions: Array<"verifyTarget" | "createTransfer" | "persistProposal" | "confirmDelivery" | "mergeTransfer" | "notify" | "publish"> }
   isWorkspaceEnvelope(raw: unknown): boolean
   hasLeftWorkspace(credential: unknown, personId: string, grant: unknown): boolean
   isGrantRevoked(credential: unknown, personId: string, grant: unknown): boolean
@@ -154,10 +161,6 @@ export type RustMeshRuntimeState = {
   }
   removeSession(key: unknown, generation: number): string | null
   connectedDevices(workspaceId: string): string[]
-  setGossipEndpoints(workspaceId: string, endpoints: string[]): { changed: boolean; endpoints: string[] }
-  observeGossipNeighbors(workspaceId: string, count: number): "up" | "down" | "same"
-  clearGossipNeighbors(workspaceId: string): void
-  clearGossip(workspaceId: string): void
   encodeWorkspaceUpdate(workspaceId: string, nonce: string): Uint8Array
   isWorkspaceUpdate(payload: Uint8Array, workspaceId: string): boolean
   controlFrames(workspaceId: string, bytes: Uint8Array): Uint8Array[]
@@ -208,8 +211,57 @@ export type RustLiveWorkspaceSession = {
 export type RustMeshHandshakeFlow = {
   step(): string
   advance(completed: string, decision?: boolean): string
+  isPeerRevoked(credential: unknown, personId: string, grant: unknown, deviceId: string): boolean
   free?(): void
 }
+
+export type RustMeshLifecycleState = {
+  readonly stopped: boolean
+  readonly externallyPaused: boolean
+  readonly disposed: boolean
+  beginStart(): boolean
+  canContinueStart(): boolean
+  completeStart(): boolean
+  cancelStart(): void
+  stop(): boolean
+  finishStop(): void
+  pause(): void
+  resume(): boolean
+  dispose(): void
+  free?(): void
+}
+
+export type RustGossipLifecycleState = {
+  topic(workspaceId: string): string
+  planRebuild(input: { workspaceId: string; endpoints: string[]; stopped: boolean;
+    engineAvailable: boolean; transportSecretAvailable: boolean }): {
+    action: "reuse" | "start" | "close" | "idle"; closePrevious: boolean; topic: string;
+    endpoints: string[]; topologyChanged: boolean
+  }
+  started(workspaceId: string): void
+  startFailed(workspaceId: string): void
+  close(workspaceId: string): void
+  closeAll(): void
+  receiveAction(workspaceId: string, driverAvailable: boolean, sessionAvailable: boolean): "refresh" | "handle" | "drop"
+  deliveryAction(workspaceId: string, topic: string, sessionAvailable: boolean, packetValid: boolean):
+    "publish" | "ignoreTopic" | "rejectSession" | "ignorePayload"
+  observeNeighbors(workspaceId: string, count: number): { change: "up" | "down" | "same"; publishAll: boolean }
+  broadcastPlan(workspaceId: string, driverAvailable: boolean): { broadcast: boolean; topic: string }
+  free?(): void
+}
+
+export type RustMeshSessionLifecycle = {
+  register(key: unknown, connectionId: string, generation: number, nowMs: number): {
+    generation: number; replacedGeneration?: number | null; replacedConnectionId?: string | null; stableAfterMs: number
+  }
+  markStable(key: unknown, generation: number, nowMs: number): boolean
+  reportFailure(key: unknown, generation: number): boolean
+  publishRecovery(key: unknown, generation: number): boolean
+  evict(key: unknown, generation: number): { shouldClose: boolean; wasCurrent: boolean; connectionId?: string | null }
+  clear(): void
+  free?(): void
+}
+export type RustMeshSessionLifecycleState = RustMeshSessionLifecycle
 
 export type RustMeshAuthenticatedSessions = {
   admit(handshake: unknown, snapshot: unknown, remoteEndpoint: string, nowMs: number): {
@@ -232,6 +284,9 @@ export type MeshRustRuntime = {
   createMeshRuntimeState(): RustMeshRuntimeState
   createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession
   createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow
+  createMeshLifecycleState(): RustMeshLifecycleState
+  createGossipLifecycleState(topicPrefix?: string): RustGossipLifecycleState
+  createMeshSessionLifecycleState(stableAfterMs?: number): RustMeshSessionLifecycle
   createMeshAuthenticatedSessions(): RustMeshAuthenticatedSessions
 }
 

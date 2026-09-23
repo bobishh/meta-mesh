@@ -44,4 +44,25 @@ describe("BrowserMeshLifecycle", () => {
     expect(runOnce).not.toHaveBeenCalled()
     expect(lifecycle.stopped).toBe(true)
   })
+
+  it("does not revive a stopped runtime after an in-flight start check", async () => {
+    let finishCheck!: (allowed: boolean) => void
+    const checked = new Promise<boolean>(resolve => { finishCheck = resolve })
+    const acquireInstance = vi.fn(async () => {})
+    const runOnce = vi.fn(async () => {})
+    const lifecycle = new BrowserMeshLifecycle({
+      canStart: () => checked,
+      acquireInstance, runOnce, shutdown: vi.fn(async () => {}),
+      trace: vi.fn(), reportRestart: vi.fn(), notify: vi.fn(async () => {}), retryChanged: vi.fn(),
+    })
+
+    const starting = lifecycle.start()
+    await lifecycle.stop()
+    finishCheck(true)
+    await starting
+
+    expect(acquireInstance).not.toHaveBeenCalled()
+    expect(runOnce).not.toHaveBeenCalled()
+    expect(lifecycle.stopped).toBe(true)
+  })
 })

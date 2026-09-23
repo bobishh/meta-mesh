@@ -2,7 +2,8 @@ pub mod node;
 
 pub use meta_mesh_core::{
     CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, MAX_CONTROL_FRAME_BYTES,
-    MAX_CONTROL_SNAPSHOT_BYTES, MeshRuntimeState, PAIRING_VERSION, PairingCodec,
+    MAX_CONTROL_SNAPSHOT_BYTES, GossipLifecycleState, MeshLifecycleState,
+    MeshRuntimeState, MeshSessionLifecycleState, PAIRING_VERSION, PairingCodec,
     PairingFrameHeader, ReconnectState, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames,
 };

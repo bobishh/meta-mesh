@@ -1,3 +1,5 @@
+import { meshRustRuntime, type RustMeshLifecycleState } from "@meta-uber/mesh-replication/runtime"
+
 export type BrowserMeshLifecycleHost = {
   canStart(): Promise<boolean>
   acquireInstance(): Promise<void>
@@ -17,60 +19,65 @@ export class BrowserMeshLifecycle {
   private task: Promise<void> | undefined
   private abortController: AbortController | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
-  private _stopped = true
-  private _externallyPaused = false
-  private _disposed = false
+  private readonly state: RustMeshLifecycleState
 
-  constructor(private readonly host: BrowserMeshLifecycleHost) {}
+  constructor(private readonly host: BrowserMeshLifecycleHost) {
+    this.state = meshRustRuntime().createMeshLifecycleState()
+  }
 
-  get stopped(): boolean { return this._stopped }
-  get externallyPaused(): boolean { return this._externallyPaused }
-  get disposed(): boolean { return this._disposed }
+  get stopped(): boolean { return this.state.stopped }
+  get externallyPaused(): boolean { return this.state.externallyPaused }
+  get disposed(): boolean { return this.state.disposed }
 
   async start(): Promise<void> {
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    if (!await this.host.canStart()) return
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    await this.host.acquireInstance()
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    this._stopped = false
+    if (!this.state.beginStart()) return
+    try {
+      if (!await this.host.canStart()) { this.state.cancelStart(); return }
+      if (!this.state.canContinueStart()) return
+      await this.host.acquireInstance()
+      if (!this.state.completeStart()) return
+    } catch (error) {
+      this.state.cancelStart()
+      throw error
+    }
     this.host.trace("mesh.start")
     await this.host.notify()
+    if (this.state.stopped) return
     this.abortController = new AbortController()
     this.task = this.run(this.abortController.signal)
   }
 
   async stop(releaseInstance = true, release?: () => Promise<void>): Promise<void> {
-    if (this._stopped) {
+    if (!this.state.stop()) {
       if (releaseInstance) await release?.()
       return
     }
-    this._stopped = true
     this.host.trace("mesh.stop")
     this.clearWait()
     this.abortController?.abort()
     this.abortController = undefined
     this.host.retryChanged()
-    await this.host.shutdown()
-    await this.task?.catch(() => {})
-    this.task = undefined
-    await this.host.shutdown()
-    if (releaseInstance) await release?.()
+    try {
+      await this.host.shutdown()
+      await this.task?.catch(() => {})
+      this.task = undefined
+      await this.host.shutdown()
+      if (releaseInstance) await release?.()
+    } finally { this.state.finishStop() }
   }
 
   async pause(release?: () => Promise<void>): Promise<void> {
-    this._externallyPaused = true
+    this.state.pause()
     await this.stop(false, release)
   }
 
   async resume(start: () => Promise<void>): Promise<void> {
-    if (this._disposed) return
-    this._externallyPaused = false
+    if (!this.state.resume()) return
     await start()
   }
 
   async dispose(stop: () => Promise<void>): Promise<void> {
-    this._disposed = true
+    this.state.dispose()
     await stop()
   }
 
