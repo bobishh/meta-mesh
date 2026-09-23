@@ -1,3 +1,5 @@
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
+
 export type BrowserMeshOwnerCredential = { workspaceId: string; ownerPersonId: string }
 export type BrowserMeshOwnerProfile = { personId: string; publicKey: string }
 
@@ -16,9 +18,9 @@ export class BrowserMeshCredentials<C extends BrowserMeshOwnerCredential, P exte
     const existing = await this.host.credential(workspaceId)
     const action = meshRustRuntime().state.decideOwnerCredential(existing?.ownerPersonId, profile.personId)
     if (action === "refresh") return this.host.refreshOwnerCertificates(existing!, profile, certificates)
+    if (action !== "create") throw new Error("Invalid owner credential decision")
     const credential = this.host.createCredential(workspaceId, profile, certificates)
     await this.host.putCredential(credential)
     return credential
   }
 }
-import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"

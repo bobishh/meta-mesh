@@ -32,7 +32,7 @@ export type RustStateCore = {
   isDeviceRevoked(credential: unknown, personId: string, deviceId: string): boolean
   planDialSchedule(input: unknown): { readyGroups: number[][]; retries: Record<string, number> }
   planOwnerCertificateRefresh(credential: unknown, localPersonId: string, certificates: unknown[], updatedAt: string): unknown | null
-  decideOwnerCredential(existingOwnerPersonId: string | undefined, localPersonId: string): "create" | "refresh"
+  decideOwnerCredential(existingOwnerPersonId: string | undefined, localPersonId: string): string
   planInvitation(input: unknown): Array<{ workspaceId: string; envelopeIndex: number; grantIndex: number | null }>
   planMemberGrant(input: unknown): { bundle?: unknown; credential?: unknown; grant?: unknown; grantId?: string }
   planAuthorityMerge(input: unknown): { credential: unknown; peers: unknown[]; evictDeviceIds: string[];
