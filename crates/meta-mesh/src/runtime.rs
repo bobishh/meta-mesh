@@ -259,6 +259,14 @@ impl WasmMeshRuntimeState {
     #[wasm_bindgen(js_name = clearGossip)]
     pub fn clear_gossip(&mut self, workspace_id: &str) { self.inner.clear_gossip(workspace_id); }
 
+    #[wasm_bindgen(js_name = observeGossipNeighbors)]
+    pub fn observe_gossip_neighbors(&mut self, workspace_id: &str, count: u32) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.observe_gossip_neighbors(workspace_id, count as usize))
+    }
+
+    #[wasm_bindgen(js_name = clearGossipNeighbors)]
+    pub fn clear_gossip_neighbors(&mut self, workspace_id: &str) { self.inner.clear_gossip_neighbors(workspace_id); }
+
     #[wasm_bindgen(js_name = encodeWorkspaceUpdate)]
     pub fn encode_workspace_update(&self, workspace_id: &str, nonce: &str) -> Vec<u8> {
         encode_workspace_update(workspace_id, nonce)

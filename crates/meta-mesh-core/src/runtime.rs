@@ -53,6 +53,10 @@ pub enum SessionDirection {
     Outgoing,
 }
 
+pub fn preferred_session_direction(local_device_id: &str, remote_device_id: &str) -> SessionDirection {
+    if local_device_id < remote_device_id { SessionDirection::Outgoing } else { SessionDirection::Incoming }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionKey {
@@ -184,6 +188,7 @@ pub struct MeshRuntimeState {
     attempts: BTreeMap<String, RouteAttempt>,
     reconnects: BTreeMap<String, ReconnectState>,
     gossip_peers: BTreeMap<String, Vec<String>>,
+    gossip_neighbor_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +197,10 @@ pub struct GossipTopology {
     pub changed: bool,
     pub endpoints: Vec<String>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GossipNeighborChange { Up, Down, Same }
 
 impl MeshRuntimeState {
     pub fn start(&mut self) {
@@ -203,6 +212,7 @@ impl MeshRuntimeState {
         self.attempts.clear();
         self.reconnects.clear();
         self.gossip_peers.clear();
+        self.gossip_neighbor_counts.clear();
         let connections = self
             .sessions
             .values()
@@ -363,7 +373,19 @@ impl MeshRuntimeState {
         GossipTopology { changed, endpoints }
     }
 
-    pub fn clear_gossip(&mut self, workspace_id: &str) { self.gossip_peers.remove(workspace_id); }
+    pub fn observe_gossip_neighbors(&mut self, workspace_id: &str, count: usize) -> GossipNeighborChange {
+        let previous = self.gossip_neighbor_counts.insert(workspace_id.to_string(), count).unwrap_or(0);
+        if count > previous { GossipNeighborChange::Up }
+        else if count < previous { GossipNeighborChange::Down }
+        else { GossipNeighborChange::Same }
+    }
+
+    pub fn clear_gossip_neighbors(&mut self, workspace_id: &str) { self.gossip_neighbor_counts.remove(workspace_id); }
+
+    pub fn clear_gossip(&mut self, workspace_id: &str) {
+        self.gossip_peers.remove(workspace_id);
+        self.clear_gossip_neighbors(workspace_id);
+    }
 }
 
 fn should_replace_session(

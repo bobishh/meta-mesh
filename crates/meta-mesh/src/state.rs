@@ -51,6 +51,17 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = preferredSessionDirection)]
+    pub fn preferred_session_direction(local_device_id: &str, remote_device_id: &str) -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::preferred_session_direction(local_device_id, remote_device_id))
+    }
+
+    #[wasm_bindgen(js_name = hasAuthorityConflict)]
+    pub fn has_authority_conflict(raw: JsValue) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(raw)?;
+        Ok(meta_mesh_core::has_authority_conflict(&credential))
+    }
+
     #[wasm_bindgen(js_name = prepareWriteEvidence)]
     pub fn prepare_write_evidence(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::WriteEvidenceInput = from_value(raw)?;

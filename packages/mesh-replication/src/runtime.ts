@@ -1,4 +1,6 @@
 export type RustStateCore = {
+  preferredSessionDirection(localDeviceId: string, remoteDeviceId: string): "incoming" | "outgoing"
+  hasAuthorityConflict(credential: unknown): boolean
   prepareWriteEvidence(input: unknown): unknown
   planSuccessionCatalog(input: unknown): { credential: unknown; persist: boolean; publish: boolean }
   planOwnershipMerge(input: unknown): { accepted: unknown[];
@@ -153,6 +155,8 @@ export type RustMeshRuntimeState = {
   removeSession(key: unknown, generation: number): string | null
   connectedDevices(workspaceId: string): string[]
   setGossipEndpoints(workspaceId: string, endpoints: string[]): { changed: boolean; endpoints: string[] }
+  observeGossipNeighbors(workspaceId: string, count: number): "up" | "down" | "same"
+  clearGossipNeighbors(workspaceId: string): void
   clearGossip(workspaceId: string): void
   encodeWorkspaceUpdate(workspaceId: string, nonce: string): Uint8Array
   isWorkspaceUpdate(payload: Uint8Array, workspaceId: string): boolean

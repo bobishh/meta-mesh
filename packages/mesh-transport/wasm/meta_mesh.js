@@ -1737,6 +1737,14 @@ export class WasmMeshRuntimeState {
         wasm.wasmmeshruntimestate_clearGossip(this.__wbg_ptr, ptr0, len0);
     }
     /**
+     * @param {string} workspace_id
+     */
+    clearGossipNeighbors(workspace_id) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmmeshruntimestate_clearGossipNeighbors(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @param {string} route_key
      */
     clearReconnect(route_key) {
@@ -1847,6 +1855,20 @@ export class WasmMeshRuntimeState {
         this.__wbg_ptr = ret >>> 0;
         WasmMeshRuntimeStateFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {number} count
+     * @returns {any}
+     */
+    observeGossipNeighbors(workspace_id, count) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshruntimestate_observeGossipNeighbors(this.__wbg_ptr, ptr0, len0, count);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * @param {string} peer_key
@@ -2300,6 +2322,17 @@ export class WasmStateCore {
         return v1;
     }
     /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static hasAuthorityConflict(raw) {
+        const ret = wasm.wasmstatecore_hasAuthorityConflict(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {any} records
      * @returns {boolean}
      */
@@ -2710,6 +2743,22 @@ export class WasmStateCore {
      */
     static planSuccessionPolicyRefresh(current, eligible, epoch) {
         const ret = wasm.wasmstatecore_planSuccessionPolicyRefresh(current, eligible, epoch);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} local_device_id
+     * @param {string} remote_device_id
+     * @returns {any}
+     */
+    static preferredSessionDirection(local_device_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_preferredSessionDirection(ptr0, len0, ptr1, len1);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -4298,7 +4347,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6283, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6282, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
             return ret;
         },

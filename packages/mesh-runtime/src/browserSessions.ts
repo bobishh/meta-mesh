@@ -1,5 +1,6 @@
 import { startMeshHeartbeat, type MeshConnection } from "@meta-uber/mesh-transport"
 import type { MeshHandshakeFeatures } from "./handshake"
+import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 
 export type BrowserMeshSession = {
   publish(): Promise<void>
@@ -98,7 +99,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     const profile = await this.host.profile()
     const credential = await this.host.credential(input.workspaceId)
     if (!credential) { await input.connection.close(); return false }
-    const preferred = this.host.deviceId(profile) < input.deviceId ? "outgoing" : "incoming"
+    const preferred = meshRustRuntime().state.preferredSessionDirection(this.host.deviceId(profile), input.deviceId)
     const previous = this.entries.get(key)
     const admission = this.host.runtime().admitSession({
       key: { workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId },

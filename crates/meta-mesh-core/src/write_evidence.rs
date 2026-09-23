@@ -3,6 +3,25 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::has_conflicting_ownership_transfers;
+
+pub fn has_authority_conflict(credential: &Value) -> bool {
+    let epoch = credential.get("epoch").and_then(Value::as_u64);
+    let catalog = credential.get("catalog");
+    let claims = catalog
+        .map(|value| array(value, "successionClaims"))
+        .unwrap_or_default();
+    let candidates = claims
+        .iter()
+        .filter(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == epoch)
+        .filter_map(|claim| claim.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
+        .collect::<std::collections::HashSet<_>>();
+    let transfers = catalog
+        .map(|value| array(value, "ownershipTransfers"))
+        .unwrap_or_default();
+    candidates.len() > 1 || has_conflicting_ownership_transfers(&transfers)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteEvidenceInput {

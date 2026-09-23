@@ -99,10 +99,11 @@ pub use replication::{
     verify_device_route, verify_durable_batch_ack,
 };
 pub use runtime::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan, GossipTopology,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan, GossipTopology, GossipNeighborChange,
     MAX_CONTROL_FRAME_BYTES, MAX_CONTROL_SNAPSHOT_BYTES, MESH_CAPABILITIES, MeshRuntimeState,
     ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames, validate_mesh_capabilities,
+    preferred_session_direction,
 };
 pub use runtime::{MeshHandshakeFeatures, mesh_handshake_features};
 pub use session_admission::{MeshAuthenticatedSessions, MeshPeerAdmission, admit_mesh_peer};
@@ -132,4 +133,4 @@ pub use ownership_merge::{OwnershipMergeInput, OwnershipMergePlan, OwnershipMerg
     plan_ownership_merge};
 mod authority_merge;
 pub use authority_merge::{AuthorityMergeInput, AuthorityMergePlan, AuthorityMergeRecords, SignedDeparture, SignedDeviceRevocation, plan_authority_merge};
-pub use write_evidence::{WriteEvidenceInput, prepare_write_evidence};
+pub use write_evidence::{WriteEvidenceInput, prepare_write_evidence, has_authority_conflict};

@@ -13,6 +13,8 @@ export type BrowserGossipHost = {
   createEngine(): GossipStateMachine | undefined
   endpoints(workspaceId: string): string[]
   setEndpoints(workspaceId: string, endpoints: string[]): BrowserGossipTopology
+  observeNeighbors(workspaceId: string, count: number): "up" | "down" | "same"
+  clearNeighbors(workspaceId: string): void
   encodeWorkspaceUpdate(workspaceId: string, nonce: string): Uint8Array
   isWorkspaceUpdate(payload: Uint8Array, workspaceId: string): boolean
   transportSecret(workspaceId: string): Promise<string | undefined>
@@ -30,7 +32,6 @@ export type BrowserGossipHost = {
 export class BrowserMeshGossip {
   private readonly drivers = new Map<string, BrowserGossipDriver>()
   private readonly refreshes = new Map<string, Promise<void>>()
-  private readonly neighborCounts = new Map<string, number>()
 
   constructor(private readonly host: BrowserGossipHost, private readonly topicPrefix = "mesh-workspace-") {}
 
@@ -70,7 +71,6 @@ export class BrowserMeshGossip {
       deliver: delivery => this.receive(workspaceId, delivery),
     })
     this.drivers.set(workspaceId, driver)
-    this.neighborCounts.set(workspaceId, 0)
     try {
       await driver.joinTopic(topic, topology.endpoints)
       this.host.trace("gossip.started", { workspaceId: short(workspaceId), peers: topology.endpoints.length })
@@ -90,13 +90,12 @@ export class BrowserMeshGossip {
     if (!driver || !this.host.session(workspaceId, endpoint)) return
     await driver.handleMessage(endpoint, packet)
     const neighbors = driver.activeNeighbors(this.topic(workspaceId)).length
-    const previous = this.neighborCounts.get(workspaceId) ?? 0
-    this.neighborCounts.set(workspaceId, neighbors)
+    const change = this.host.observeNeighbors(workspaceId, neighbors)
     this.host.trace("gossip.packet", { workspaceId: short(workspaceId), neighbors })
-    if (neighbors > previous) {
+    if (change === "up") {
       this.host.trace("gossip.neighbor.up", { workspaceId: short(workspaceId), neighbors })
       queueMicrotask(() => { void this.host.publishAll() })
-    } else if (neighbors < previous) this.host.trace("gossip.neighbor.down", { workspaceId: short(workspaceId), neighbors })
+    } else if (change === "down") this.host.trace("gossip.neighbor.down", { workspaceId: short(workspaceId), neighbors })
   }
 
   async broadcast(workspaceId: string): Promise<Set<string> | undefined> {
@@ -112,7 +111,7 @@ export class BrowserMeshGossip {
   close(workspaceId: string): void {
     this.drivers.get(workspaceId)?.close()
     this.drivers.delete(workspaceId)
-    this.neighborCounts.delete(workspaceId)
+    this.host.clearNeighbors(workspaceId)
   }
 
   closeAll(): void {
