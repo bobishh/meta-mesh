@@ -5,7 +5,7 @@ export type BrowserMeshAuthorityHost<C extends BrowserMeshAuthorityCredential, P
   profile(): Promise<P>
   credential(workspaceId: string): Promise<C | undefined>
   createRevocation(profile: P, workspaceId: string, personId: string, nextEpoch: number): Promise<R>
-  epoch(credential: C): number
+  nextAccessEpoch(workspaceId: string): Promise<number>
   mergeRevocations(credential: C, records: R[], disconnect: boolean): Promise<void>
   refreshSuccessionPolicy(workspaceId: string): Promise<void>
   publishAll(): Promise<void>
@@ -58,7 +58,7 @@ export class BrowserMeshAuthority<C extends BrowserMeshAuthorityCredential, P ex
     const profile = await this.host.profile()
     const credential = await this.host.credential(workspaceId)
     if (!credential || credential.ownerPersonId !== profile.personId) throw new Error("Only the workspace owner can revoke access")
-    const record = await this.host.createRevocation(profile, workspaceId, personId, this.host.epoch(credential) + 1)
+    const record = await this.host.createRevocation(profile, workspaceId, personId, await this.host.nextAccessEpoch(workspaceId))
     await this.host.mergeRevocations(credential, [record], false)
     await this.host.refreshSuccessionPolicy(workspaceId)
     // Publish the signed tombstone before severing the revoked session.
