@@ -186,7 +186,7 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 
 - MetaMesh `5e6fdcc` permits an unlisted device to open only the browser sync RPC transport when explicitly enabled; document admission still requires a valid signed handshake. Blob and gossip access remain restricted. The focused native access test passed.
 - Match `5a06d51` enables that transport path for its lighthouse and adds a Playwright scenario using the real browser and native peer: owner invites the lighthouse and another editor, owner closes, editor sends a card, lighthouse receives it, lighthouse restarts, and an offline edit catches up. The targeted scenario passed locally. This does not establish a production pairing or Twang sync.
-- Standalone lighthouse must use the same native transport option before deployment. The production image remains HTTP-only until an owner-issued invitation pairs it; no production card delivery is claimed.
+- Standalone lighthouse `3417dbd` uses the same native transport option. Hetzner/Kamal deployed its image (`b031443d2cd76579b4329746b658d80ec606b6d0`); the new container is running, external `/health` returned HTTP 200, and `/data/inbox` persists. `/data/config.json` is still absent, so it remains HTTP-only until an owner-issued invitation pairs it. No production card delivery is claimed.
 - Iroh relay is available to the native node as a client through its default relay mode. Lighthouse does not host an `iroh-relay` server; self-hosting relay would require a separate service.
 
 ### Dependency status (2026-09-20)
