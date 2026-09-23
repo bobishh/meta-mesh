@@ -142,6 +142,14 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - Rust core: 138 tests pass. Meta-mesh WASM build and TypeScript check pass. Twang TypeScript check passes after changing the room RPC tag from `room-sync-v2` to `room-sync` and deleting unused `direct-sync`/`group-sync` receivers. No Twang consumer/runtime migration, final E2E, production deployment, or lighthouse process is claimed by these checks.
 - Match and Twang already use the same Rust `AutomergeSyncEngine`. Match's authenticated stream and Twang's request/response ACK are transport envelopes, not separate Automerge algorithms. An unused second `MeshDocumentRuntime` wrapper was removed. Twang still has TypeScript document delivery orchestration; `6.7`, `7.3`–`7.6` remain open.
 
+### Consumer and native checkpoint (2026-09-23, after targeted sync checks)
+
+- Canonical Meta-mesh `582ff27` serializes live frame decode/application with document publication and reads fresh storage inside that queue. Rust enum fields now reach WASM as `shouldPersist` and `closeSend` (`ed4092f`). Rust core had 138 passing tests; WASM build and Meta-mesh TypeScript check passed.
+- Match `codex/rust-live-sync` pins `582ff27`. Typecheck, production build, and 20 workspace-set unit tests passed. One browser↔browser card test failed once before the receive-queue fix; the same targeted test then passed twice after the fix. The complete E2E suite and production deployment have **not** been verified for this revision.
+- Twang `codex/rust-live-sync` pins `582ff27`. Its old `direct-sync`/`group-sync` receivers are gone; the RPC tag is `room-sync`. Typecheck and targeted direct/group chat E2E passed after replacing stale public WASM assets. This does not prove reconnect, native sync, or the complete Twang E2E suite.
+- Native `be7ccbe` adds `NativeScopePeer`, a host adapter over the same `MeshScopeRuntime` used by Match. It compiles; a focused test confirms failed persistence does not emit a document acknowledgement and can retry. This is **not** a runnable lighthouse, durable scope store, Match-authorized card writer, or homepage form.
+- Remaining for this goal: consolidate signed scope genesis/authority command boundaries, remove duplicated protocol decisions where still present in Match/Twang host code, verify full browser and native sync/reconnect after final integration, then build and wire an authorized native lighthouse. Browser and product storage/network callbacks necessarily remain in TypeScript.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
