@@ -5,7 +5,7 @@ export type MeshScopeStream = {
   read(): Promise<Uint8Array>
   closeSend(): Promise<void>
 }
-export type MeshScopeSendFrame = (frame: Uint8Array) => Promise<boolean>
+export type MeshScopeSendFrame = (frame: Uint8Array, kind: "document" | "control") => Promise<boolean>
 
 export type MeshScopeHost = {
   readDocument(): Promise<Uint8Array>
@@ -62,9 +62,9 @@ export class BrowserMeshScopeSync {
         this.host.readMesh ? await this.host.readMesh() : undefined)
       let allFramesSent = false
       try {
-        if (plan.documentFrame && !await sendFrame(toBytes(plan.documentFrame))) return false
+        if (plan.documentFrame && !await sendFrame(toBytes(plan.documentFrame), "document")) return false
         for (const frame of plan.controlFrames) {
-          if (!await sendFrame(toBytes(frame))) return false
+          if (!await sendFrame(toBytes(frame), "control")) return false
         }
         allFramesSent = true
         this.knownChat = nextKnownChat
