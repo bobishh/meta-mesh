@@ -482,6 +482,9 @@ fn should_replace_session(
     candidate: &SessionCandidate,
     preferred: SessionDirection,
 ) -> bool {
+    if candidate.direction != previous.direction {
+        return candidate.direction == preferred;
+    }
     if candidate.remote_route_sequence != previous.remote_route_sequence {
         return match (
             candidate.remote_route_sequence,
@@ -493,7 +496,7 @@ fn should_replace_session(
             (None, None) => false,
         };
     }
-    candidate.direction != previous.direction && candidate.direction == preferred
+    false
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -695,7 +698,7 @@ mod tests {
         );
         let replacement = runtime.admit_session(
             candidate("one", "replacement", 2, SessionDirection::Outgoing),
-            SessionDirection::Incoming,
+            SessionDirection::Outgoing,
         );
         let SessionAdmission::Accepted {
             generation: old_generation,
@@ -716,6 +719,27 @@ mod tests {
             None
         );
         assert_eq!(runtime.sessions().count(), 2);
+    }
+
+    #[test]
+    fn canonical_direction_wins_over_conflicting_route_sequences() {
+        let mut runtime = MeshRuntimeState::default();
+        let first = runtime.admit_session(
+            candidate("one", "nonpreferred", 99, SessionDirection::Incoming),
+            SessionDirection::Outgoing,
+        );
+        assert!(matches!(first, SessionAdmission::Accepted { .. }));
+        let preferred = runtime.admit_session(
+            candidate("one", "preferred", 1, SessionDirection::Outgoing),
+            SessionDirection::Outgoing,
+        );
+        assert!(matches!(preferred, SessionAdmission::Accepted { replaced_connection_id: Some(value), .. }
+            if value == "nonpreferred"));
+        let stale = runtime.admit_session(
+            candidate("one", "stale", 100, SessionDirection::Incoming),
+            SessionDirection::Outgoing,
+        );
+        assert!(matches!(stale, SessionAdmission::Rejected { retained_connection_id } if retained_connection_id == "preferred"));
     }
 
     #[test]
