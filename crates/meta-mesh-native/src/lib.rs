@@ -1,6 +1,7 @@
 pub mod node;
 pub mod scope;
 pub mod scope_admission;
+pub mod scope_service;
 pub mod scope_store;
 
 pub use meta_mesh_core::{
@@ -16,6 +17,7 @@ pub use node::{
 };
 pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
 pub use scope_admission::NativeScopeAdmission;
+pub use scope_service::{NativeScopeCredential, NativeScopeService, NativeScopeServiceHost};
 pub use scope_store::FileScopeStore;
 
 pub const IROH_VERSION: &str = "1.2.0";
