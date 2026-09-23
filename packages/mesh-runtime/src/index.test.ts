@@ -42,7 +42,7 @@ describe("MeshHandshakeCodec", () => {
     const codec = new MeshHandshakeCodec()
     const payload = { workspaceId: "board-1", peer: { advertisement: { payload: {
       deviceId: "device-123456789", deviceName: "Bo's laptop",
-    } } }, capabilities: ["iroh-gossip-v1"], breakGlassClaims: [] }
+    } } }, capabilities: ["iroh-gossip-v1", "automerge-sync-v1"], breakGlassClaims: [] }
     expect(codec.validate(payload, "board-1").workspaceId).toBe("board-1")
     expect(() => codec.validate({ ...payload, breakGlassClaims: [{}] }, "board-1"))
       .toThrow(/Reported device \(unverified\): "Bo's laptop" \(device-123\); workspace: board-1/)
@@ -50,7 +50,7 @@ describe("MeshHandshakeCodec", () => {
   it("exposes negotiated features", () => {
     const codec = new MeshHandshakeCodec()
     expect(codec.features(["heartbeat-v1", "automerge-sync-v1", "blob-transfer-v1"])).toEqual({
-      heartbeatSupported: true, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
+      heartbeatSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
       ownerWorkspaceOfferFrame: undefined,
       blobTransferSupported: true,
     })

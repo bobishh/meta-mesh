@@ -22,7 +22,7 @@ describe("BrowserMeshHandshake", () => {
       trace: vi.fn(), failed: vi.fn(),
     }
     const codec = { inspect: vi.fn(() => ({ type: "mesh-handshake-request", secret: "secret" })), readRequest: vi.fn(() => request),
-      features: vi.fn(() => ({ heartbeatSupported: true, incrementalSupported: false, ownershipReceiptSupported: false, ownerWorkspaceSupported: false })),
+      features: vi.fn(() => ({ heartbeatSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false })),
       encodeResponse: vi.fn(() => new Uint8Array([2])) } as never
     const handshake = new BrowserMeshHandshake(host, codec)
 
@@ -70,7 +70,7 @@ describe("BrowserMeshOutgoingHandshake", () => {
       putVerifiedBundle: vi.fn(async () => {}), trace: vi.fn(),
     }
     const codec = { encodeRequest: vi.fn(() => new Uint8Array([2])), readResponse: vi.fn(() => response),
-      features: vi.fn(() => ({ heartbeatSupported: false, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false })) }
+      features: vi.fn(() => ({ heartbeatSupported: false, ownershipReceiptSupported: false, ownerWorkspaceSupported: false })) }
     const handshake = new BrowserMeshOutgoingHandshake(host, codec as never)
 
     const result = await handshake.exchange(connection, credential, "out-1", "remote")

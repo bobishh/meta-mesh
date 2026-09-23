@@ -11,7 +11,6 @@ export type BrowserDocumentSessionInput<C, Credential, Profile> = {
   deviceId: string
   instanceId: string
   profile: Profile
-  incrementalSupported: boolean
   connectionId: string
   remotePersonId: string
   ownerWorkspaceSupported: boolean
@@ -35,10 +34,6 @@ export type BrowserMeshDocumentSessionHost<C, S, Credential, Profile, Engine ext
   localPersonId(profile: Profile): string
   secret(credential: Credential): string
   createEngine(input: { localDeviceId: string; workspaceId: string; deviceId: string; instanceId: string }): Engine
-  legacy(input: BrowserDocumentSessionInput<C, Credential, Profile> & {
-    secret: string
-    onGossipPacket?: (packet: Uint8Array) => Promise<void>
-  }): S
   incremental(input: BrowserIncrementalDocumentSessionInput<C, Credential, Profile, Engine>): S
   ownerWorkspaceOffer(bytes: Uint8Array, remotePersonId: string): Promise<void>
   gossipPacket(workspaceId: string, remoteEndpoint: string, packet: Uint8Array): Promise<void>
@@ -61,10 +56,6 @@ export class BrowserMeshDocumentSessions<C, S, Credential, Profile, Engine exten
     const onGossipPacket = input.remoteEndpoint
       ? (packet: Uint8Array) => this.host.gossipPacket(input.workspaceId, input.remoteEndpoint, packet)
       : undefined
-    if (!input.incrementalSupported) {
-      return { session: this.host.legacy({ ...input, secret, onGossipPacket }) }
-    }
-
     const localDeviceId = this.host.localDeviceId(input.profile)
     const engine = this.engine(input.workspaceId, input.deviceId, input.instanceId, localDeviceId)
     const stage = `Workspace ${short(input.workspaceId)} from ${short(input.deviceId)}`

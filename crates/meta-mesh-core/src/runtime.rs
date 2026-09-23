@@ -12,8 +12,13 @@ pub const MESH_CAPABILITIES: [&str; 6] = [
 ];
 
 pub fn validate_mesh_capabilities(capabilities: &[String]) -> Result<(), String> {
-    if capabilities.iter().any(|capability| capability == "iroh-gossip-v1") { Ok(()) }
-    else { Err("Peer does not support required iroh gossip".to_string()) }
+    if !capabilities.iter().any(|capability| capability == "iroh-gossip-v1") {
+        return Err("Peer does not support required iroh gossip".to_string());
+    }
+    if !capabilities.iter().any(|capability| capability == "automerge-sync-v1") {
+        return Err("Peer does not support required Automerge sync".to_string());
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

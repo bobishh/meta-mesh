@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { BrowserMeshDocumentSessions } from "./browserDocumentSessions"
 
 type Engine = { reset: ReturnType<typeof vi.fn> }
-type Session = { mode: "legacy" | "incremental" }
+type Session = { mode: "incremental" }
 type Profile = { deviceId: string; personId: string }
 type Credential = { secret: string }
 
@@ -17,7 +17,6 @@ function fixture() {
       engines.push(engine)
       return engine
     }),
-    legacy: vi.fn((_input: unknown): Session => ({ mode: "legacy" })),
     incremental: vi.fn((_input: any): Session => ({ mode: "incremental" })),
     ownerWorkspaceOffer: vi.fn(async () => undefined),
     gossipPacket: vi.fn(async () => undefined),
@@ -36,19 +35,11 @@ const base = {
 }
 
 describe("BrowserMeshDocumentSessions", () => {
-  it("keeps legacy peers out of the incremental engine", () => {
-    const { runtime, host } = fixture()
-    const created = runtime.create({ ...base, incrementalSupported: false })
-    expect(created.session).toEqual({ mode: "legacy" })
-    expect(created.reset).toBeUndefined()
-    expect(host.createEngine).not.toHaveBeenCalled()
-  })
-
   it("owns one incremental engine per remote instance and resets it on eviction", () => {
     const { runtime, host, engines } = fixture()
-    const first = runtime.create({ ...base, incrementalSupported: true })
-    const again = runtime.create({ ...base, connectionId: "out-2", incrementalSupported: true })
-    const sibling = runtime.create({ ...base, instanceId: "instance-b", incrementalSupported: true })
+    const first = runtime.create(base)
+    const again = runtime.create({ ...base, connectionId: "out-2" })
+    const sibling = runtime.create({ ...base, instanceId: "instance-b" })
 
     expect(host.createEngine).toHaveBeenCalledTimes(2)
     expect(host.incremental.mock.calls[0]![0].engine).toBe(host.incremental.mock.calls[1]![0].engine)
@@ -61,7 +52,7 @@ describe("BrowserMeshDocumentSessions", () => {
 
   it("routes document status, owner offers and gossip through runtime policy", async () => {
     const { runtime, host } = fixture()
-    runtime.create({ ...base, incrementalSupported: true })
+    runtime.create(base)
     const input = host.incremental.mock.calls[0]![0]
     const rejection = new Error("unsigned change")
 
@@ -78,7 +69,7 @@ describe("BrowserMeshDocumentSessions", () => {
 
   it("does not expose owner or gossip handlers without the v2 owner-offer capability", () => {
     const { runtime, host } = fixture()
-    runtime.create({ ...base, incrementalSupported: true, ownerWorkspaceSupported: true,
+    runtime.create({ ...base, ownerWorkspaceSupported: true,
       ownerWorkspaceOfferFrame: undefined, remoteEndpoint: "" })
     const input = host.incremental.mock.calls[0]![0]
     expect(input.onOwnerWorkspaceOffer).toBeUndefined()

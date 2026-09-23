@@ -48,7 +48,6 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
     deviceId: string
     instanceId: string
     profile: P
-    incrementalSupported: boolean
     connectionId: string
     remotePersonId: string
     ownerWorkspaceSupported: boolean
@@ -87,7 +86,6 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     direction: "incoming" | "outgoing"
     connection: C
     heartbeatSupported?: boolean
-    incrementalSupported?: boolean
     connectionId: string
     ownershipReceiptSupported?: boolean
     remotePersonId?: string
@@ -114,7 +112,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     }
     const created = this.host.create({
       connection: input.connection, credential, workspaceId: input.workspaceId, deviceId: input.deviceId, instanceId: input.instanceId,
-      profile, incrementalSupported: input.incrementalSupported ?? false, connectionId: input.connectionId,
+      profile, connectionId: input.connectionId,
       remotePersonId: input.remotePersonId ?? "", ownerWorkspaceSupported: input.ownerWorkspaceSupported ?? false,
       ownerWorkspaceOfferFrame: input.ownerWorkspaceOfferFrame,
       blobTransferSupported: input.blobTransferSupported ?? false,
@@ -153,7 +151,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     this.host.trace("session.started", {
       connectionId: input.connectionId, peerId: short(input.deviceId), instanceId: short(input.instanceId),
       workspaceId: short(input.workspaceId), direction: input.direction, heartbeat: Boolean(input.heartbeatSupported),
-      incremental: Boolean(input.incrementalSupported), replaced: Boolean(previous),
+      incremental: true, replaced: Boolean(previous),
       blobTransfer: Boolean(input.blobTransferSupported),
     })
     this.host.diagnosticCleared()

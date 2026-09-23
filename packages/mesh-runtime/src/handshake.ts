@@ -21,7 +21,6 @@ export type MeshHandshakePayload = {
 
 export type MeshHandshakeFeatures = {
   heartbeatSupported: boolean
-  incrementalSupported: boolean
   ownershipReceiptSupported: boolean
   ownerWorkspaceSupported: boolean
   ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"
@@ -45,7 +44,6 @@ export class MeshHandshakeCodec {
     const values = Array.isArray(capabilities) ? capabilities : []
     return {
       heartbeatSupported: values.includes("heartbeat-v1"),
-      incrementalSupported: values.includes("automerge-sync-v1"),
       ownershipReceiptSupported: values.includes("ownership-receipt-v1"),
       ownerWorkspaceSupported: values.includes("owner-workspace-v2"),
       ownerWorkspaceOfferFrame: values.includes("owner-workspace-v2") ? "mesh-owner-workspace-offer" : undefined,
