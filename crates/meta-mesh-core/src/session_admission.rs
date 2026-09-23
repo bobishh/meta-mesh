@@ -83,9 +83,8 @@ impl MeshAuthenticatedSessions {
         remote_endpoint: &str,
         now_ms: i128,
     ) -> Result<MeshPeerAdmission, String> {
-        let key = (snapshot.workspace_id.clone(), remote_endpoint.to_string());
-        self.peers.remove(&key);
         let peer = admit_mesh_peer(handshake.clone(), snapshot, remote_endpoint, now_ms)?;
+        let key = (snapshot.workspace_id.clone(), remote_endpoint.to_string());
         self.peers.insert(key, (handshake, peer.clone()));
         Ok(peer)
     }
@@ -326,6 +325,17 @@ mod tests {
         assert!(sessions.remove("first", "remote-endpoint"));
         assert!(sessions.peer("first", "remote-endpoint").is_none());
         assert!(sessions.peer("second", "remote-endpoint").is_some());
+    }
+
+    #[test]
+    fn rejected_replacement_does_not_evict_authenticated_session() {
+        let (handshake, snapshot, _, device_id) = signed_editor("workspace");
+        let mut sessions = MeshAuthenticatedSessions::default();
+        sessions.admit(handshake.clone(), &snapshot, "remote-endpoint", 0).unwrap();
+        let mut invalid = handshake;
+        invalid["peer"].as_object_mut().unwrap().remove("grant");
+        assert!(sessions.admit(invalid, &snapshot, "remote-endpoint", 0).is_err());
+        assert_eq!(sessions.peer("workspace", "remote-endpoint").unwrap().device_id, device_id);
     }
 
     #[test]
