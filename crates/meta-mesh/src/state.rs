@@ -51,6 +51,12 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = prepareWriteEvidence)]
+    pub fn prepare_write_evidence(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::WriteEvidenceInput = from_value(raw)?;
+        to_value(&meta_mesh_core::prepare_write_evidence(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = planSuccessionCatalog)]
     pub fn plan_succession_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::SuccessionCatalogInput = from_value(raw)?;

@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  prepareWriteEvidence(input: unknown): unknown
   planSuccessionCatalog(input: unknown): { credential: unknown; persist: boolean; publish: boolean }
   planOwnershipMerge(input: unknown): { accepted: unknown[];
     steps: Array<{ record: unknown; accepted: unknown[]; previousOwnerEpoch: number }>;

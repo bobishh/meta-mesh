@@ -28,6 +28,7 @@ pub mod session_admission;
 pub mod state;
 pub mod succession_merge;
 pub mod workspace_set;
+pub mod write_evidence;
 
 pub use access::{WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access};
 
@@ -131,3 +132,4 @@ pub use ownership_merge::{OwnershipMergeInput, OwnershipMergePlan, OwnershipMerg
     plan_ownership_merge};
 mod authority_merge;
 pub use authority_merge::{AuthorityMergeInput, AuthorityMergePlan, AuthorityMergeRecords, SignedDeparture, SignedDeviceRevocation, plan_authority_merge};
+pub use write_evidence::{WriteEvidenceInput, prepare_write_evidence};

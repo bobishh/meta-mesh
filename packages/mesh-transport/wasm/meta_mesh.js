@@ -2716,6 +2716,17 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static prepareWriteEvidence(raw) {
+        const ret = wasm.wasmstatecore_prepareWriteEvidence(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} left
      * @param {any} right
      * @returns {any}
