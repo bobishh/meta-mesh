@@ -14,7 +14,12 @@ pub struct NativeScopeSnapshot {
 /// Product validation and persistence stay outside the mesh protocol.
 pub trait NativeScopeHost {
     fn snapshot(&mut self) -> Result<NativeScopeSnapshot, String>;
-    fn persist_document(&mut self, document: &[u8], proof: Option<&Value>) -> Result<(), String>;
+    fn persist_document(
+        &mut self,
+        document: &[u8],
+        proof: Option<&Value>,
+        accepted_hashes: &[String],
+    ) -> Result<(), String>;
     fn merge_authorization(&mut self, value: &Value) -> Result<(), String>;
     fn merge_chat(&mut self, value: &Value) -> Result<(), String>;
     fn merge_mesh(&mut self, value: &Value) -> Result<(), String>;
@@ -81,8 +86,9 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                         document,
                         proof,
                         should_persist,
+                        accepted_hashes,
                         ..
-                    }) => (document, proof, should_persist),
+                    }) => (document, proof, should_persist, accepted_hashes),
                     Ok(_) => {
                         self.runtime.reject_document_receive()?;
                         return Err("Invalid document receive plan".into());
@@ -93,7 +99,9 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                     }
                 };
                 if prepared.2 {
-                    if let Err(error) = self.host.persist_document(&prepared.0, prepared.1.as_ref())
+                    if let Err(error) =
+                        self.host
+                            .persist_document(&prepared.0, prepared.1.as_ref(), &prepared.3)
                     {
                         self.runtime.reject_document_receive()?;
                         return Err(error);
@@ -206,7 +214,12 @@ mod tests {
             })
         }
 
-        fn persist_document(&mut self, document: &[u8], _: Option<&Value>) -> Result<(), String> {
+        fn persist_document(
+            &mut self,
+            document: &[u8],
+            _: Option<&Value>,
+            _: &[String],
+        ) -> Result<(), String> {
             if self.fail_persist {
                 return Err("disk unavailable".into());
             }

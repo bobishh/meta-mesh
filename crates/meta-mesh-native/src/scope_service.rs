@@ -162,7 +162,12 @@ mod tests {
         fn snapshot(&mut self) -> Result<NativeScopeSnapshot, String> {
             panic!("not admitted")
         }
-        fn persist_document(&mut self, _: &[u8], _: Option<&Value>) -> Result<(), String> {
+        fn persist_document(
+            &mut self,
+            _: &[u8],
+            _: Option<&Value>,
+            _: &[String],
+        ) -> Result<(), String> {
             panic!("not admitted")
         }
         fn merge_authorization(&mut self, _: &Value) -> Result<(), String> {
