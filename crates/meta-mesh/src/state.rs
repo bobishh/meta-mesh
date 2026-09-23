@@ -39,6 +39,15 @@ impl WasmStateCore {
         to_value(&handshake)
     }
 
+    #[wasm_bindgen(js_name = admitMeshPeer)]
+    pub fn admit_mesh_peer(handshake: JsValue, snapshot: JsValue, remote_endpoint: &str, now_ms: f64) -> Result<JsValue, JsValue> {
+        let handshake: serde_json::Value = from_value(handshake)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let admitted = meta_mesh_core::admit_mesh_peer(handshake, &snapshot, remote_endpoint,
+            i128::from(integer(now_ms, "Invalid member timestamp")?)).map_err(js_error)?;
+        to_value(&admitted)
+    }
+
     #[wasm_bindgen(js_name = meshCapabilities)]
     pub fn mesh_capabilities() -> Result<JsValue, JsValue> {
         to_value(&meta_mesh_core::MESH_CAPABILITIES)

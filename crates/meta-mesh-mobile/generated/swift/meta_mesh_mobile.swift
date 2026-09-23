@@ -2313,6 +2313,17 @@ fileprivate struct FfiConverterSequenceData: FfiConverterRustBuffer {
         return seq
     }
 }
+public func meshAdmitPeerJson(handshakeJson: String, snapshotJson: String, remoteEndpoint: String, nowMs: Int64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_func_mesh_admit_peer_json(
+        FfiConverterString.lower(handshakeJson),
+        FfiConverterString.lower(snapshotJson),
+        FfiConverterString.lower(remoteEndpoint),
+        FfiConverterInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
 public func meshCoreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -2658,6 +2669,9 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_meta_mesh_mobile_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_func_mesh_admit_peer_json() != 10383) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_func_mesh_core_version() != 45672) {
         return InitializationResult.apiChecksumMismatch

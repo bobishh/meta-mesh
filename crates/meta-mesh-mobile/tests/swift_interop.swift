@@ -36,6 +36,10 @@ do {
     expect(try handshake.advance(completed: "mergeAuthority", decision: nil) == "verifyPeer", "Swift handshake lost peer verification")
     expect(try handshake.advance(completed: "verifyPeer", decision: nil) == "checkRevocation", "Swift handshake lost revocation check")
     expect(try handshake.advance(completed: "checkRevocation", decision: true) == "sendRevocation", "Swift handshake admitted revoked peer")
+    do {
+        _ = try meshAdmitPeerJson(handshakeJson: "{}", snapshotJson: "{}", remoteEndpoint: "peer", nowMs: 0)
+        expect(false, "Swift admitted a peer without signed workspace authority")
+    } catch {}
     let running = try runtime.isRunning()
     expect(running, "Swift runtime did not start")
     let attempt = try runtime.beginRouteAttemptJson(routeKey: "peer-1", nowMs: 100)

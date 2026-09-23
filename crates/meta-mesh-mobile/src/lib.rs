@@ -242,6 +242,20 @@ pub fn mesh_parse_invitation_json(
 }
 
 #[uniffi::export]
+pub fn mesh_admit_peer_json(
+    handshake_json: String,
+    snapshot_json: String,
+    remote_endpoint: String,
+    now_ms: i64,
+) -> Result<String, MobileMeshError> {
+    let handshake = serde_json::from_str(&handshake_json).map_err(MobileMeshError::from_display)?;
+    let snapshot = serde_json::from_str(&snapshot_json).map_err(MobileMeshError::from_display)?;
+    let admitted = meta_mesh_core::admit_mesh_peer(handshake, &snapshot, &remote_endpoint, i128::from(now_ms))
+        .map_err(MobileMeshError::from_display)?;
+    serde_json::to_string(&admitted).map_err(MobileMeshError::from_display)
+}
+
+#[uniffi::export]
 pub fn mesh_merge_peer_records_json(
     existing_json: String,
     incoming_json: String,

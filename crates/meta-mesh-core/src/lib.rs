@@ -13,6 +13,7 @@ pub mod persistence;
 pub mod recovery;
 pub mod replication;
 pub mod runtime;
+pub mod session_admission;
 pub mod state;
 
 pub use access::{WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access};
@@ -84,6 +85,7 @@ pub use runtime::{
     ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission,
     SessionCandidate, SessionDirection, SessionKey, control_frames, validate_mesh_capabilities,
 };
+pub use session_admission::{MeshPeerAdmission, admit_mesh_peer};
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
     ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,

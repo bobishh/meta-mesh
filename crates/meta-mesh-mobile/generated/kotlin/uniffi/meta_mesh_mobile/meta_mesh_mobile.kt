@@ -673,6 +673,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_admit_peer_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_core_version(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_derive_device_seed(
@@ -991,6 +993,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_respond_json(`ptr`: Long,`responseJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_admit_peer_json(`handshakeJson`: RustBuffer.ByValue,`snapshotJson`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_core_version(uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_derive_device_seed(`entropy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1178,6 +1182,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_admit_peer_json() and 0xFFFF) != 10383) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_core_version() and 0xFFFF) != 45672) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -4528,7 +4535,22 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
             FfiConverterByteArray.write(it, buf)
         }
     }
-} fun `meshCoreVersion`(): kotlin.String {
+}
+    @Throws(MobileMeshException::class) fun `meshAdmitPeerJson`(`handshakeJson`: kotlin.String, `snapshotJson`: kotlin.String, `remoteEndpoint`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_admit_peer_json(
+
+
+        FfiConverterString.lower(`handshakeJson`),
+        FfiConverterString.lower(`snapshotJson`),
+        FfiConverterString.lower(`remoteEndpoint`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+ fun `meshCoreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_core_version(
