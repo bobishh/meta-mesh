@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use meta_mesh_core::{
     AutomergeSyncFrame, ControlFrameReceiver, DialMode, LiveWorkspaceSession, MeshHandshakeFlow, MeshRuntimeState, RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
-    control_frames,
+    control_frames, encode_workspace_update, is_workspace_update,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -64,6 +64,16 @@ impl WasmLiveWorkspaceSession {
 
     #[wasm_bindgen(js_name = controlChanged)]
     pub fn control_changed(&self, snapshot: &[u8]) -> bool { self.inner.control_changed(snapshot) }
+
+    #[wasm_bindgen(js_name = encodeControl)]
+    pub fn encode_control(&self, authorization: JsValue, chat: JsValue, mesh: JsValue) -> Result<Vec<u8>, JsValue> {
+        self.inner.encode_control(optional_value(authorization)?, optional_value(chat)?, optional_value(mesh)?).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = decodeControl)]
+    pub fn decode_control(&self, bytes: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.decode_control(bytes).map_err(js_error)?)
+    }
 
     #[wasm_bindgen(js_name = controlFrames)]
     pub fn control_frames(&mut self, snapshot: &[u8]) -> Result<JsValue, JsValue> {
@@ -248,6 +258,16 @@ impl WasmMeshRuntimeState {
 
     #[wasm_bindgen(js_name = clearGossip)]
     pub fn clear_gossip(&mut self, workspace_id: &str) { self.inner.clear_gossip(workspace_id); }
+
+    #[wasm_bindgen(js_name = encodeWorkspaceUpdate)]
+    pub fn encode_workspace_update(&self, workspace_id: &str, nonce: &str) -> Vec<u8> {
+        encode_workspace_update(workspace_id, nonce)
+    }
+
+    #[wasm_bindgen(js_name = isWorkspaceUpdate)]
+    pub fn is_workspace_update(&self, payload: &[u8], workspace_id: &str) -> bool {
+        is_workspace_update(payload, workspace_id)
+    }
 
     #[wasm_bindgen(js_name = controlFrames)]
     pub fn control_frames(&mut self, workspace_id: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {

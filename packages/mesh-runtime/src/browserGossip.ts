@@ -13,6 +13,8 @@ export type BrowserGossipHost = {
   createEngine(): GossipStateMachine | undefined
   endpoints(workspaceId: string): string[]
   setEndpoints(workspaceId: string, endpoints: string[]): BrowserGossipTopology
+  encodeWorkspaceUpdate(workspaceId: string, nonce: string): Uint8Array
+  isWorkspaceUpdate(payload: Uint8Array, workspaceId: string): boolean
   transportSecret(workspaceId: string): Promise<string | undefined>
   session(workspaceId: string, endpoint: string): BrowserGossipSession | undefined
   send(workspaceId: string, endpoint: string, secret: string, packet: Uint8Array): Promise<void>
@@ -101,9 +103,7 @@ export class BrowserMeshGossip {
     const driver = this.drivers.get(workspaceId)
     if (!driver) return undefined
     const topic = this.topic(workspaceId)
-    await driver.broadcast(topic, new TextEncoder().encode(JSON.stringify({
-      version: 1, kind: "workspace-update", workspaceId, nonce: crypto.randomUUID(),
-    })))
+    await driver.broadcast(topic, this.host.encodeWorkspaceUpdate(workspaceId, crypto.randomUUID()))
     const neighbors = new Set(driver.activeNeighbors(topic))
     this.host.trace("gossip.broadcast", { workspaceId: short(workspaceId), neighbors: neighbors.size })
     return neighbors
@@ -128,10 +128,7 @@ export class BrowserMeshGossip {
       this.host.trace("gossip.rejected", { workspaceId: short(workspaceId), endpoint: short(delivery.deliveredFrom) }, "warn")
       return
     }
-    let value: { version?: unknown; kind?: unknown; workspaceId?: unknown }
-    try { value = JSON.parse(new TextDecoder().decode(delivery.content)) }
-    catch { return }
-    if (value.version !== 1 || value.kind !== "workspace-update" || value.workspaceId !== workspaceId) return
+    if (!this.host.isWorkspaceUpdate(delivery.content, workspaceId)) return
     this.host.trace("gossip.delivered", { workspaceId: short(workspaceId), peerId: short(session.deviceId) })
     await session.publish()
   }

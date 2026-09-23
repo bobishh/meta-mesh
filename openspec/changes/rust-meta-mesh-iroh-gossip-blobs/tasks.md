@@ -104,8 +104,10 @@ The original 6.7 completion mark overstated the consumer boundary. Rust now owns
 - [ ] 7.3 Move authenticated handshake, gossip-session orchestration, Automerge session lifecycle, and ownership/recovery commands behind the Rust runtime API.
   - [x] `LiveWorkspaceSession` in `meta-mesh-core` owns authenticated live frame dispatch, bounded control reassembly, durable receipt/heartbeat checks, and transactional Automerge sync state. WASM and Rust UniFFI wrappers expose it; Match uses it for its live document transaction.
   - [x] Match calls Rust for live frame parsing/encoding and document prepare/commit/abort/reset. Delete superseded `browserDocumentSessions.ts`.
+  - [x] Rust encodes and validates workspace-set snapshots, control payloads, and workspace-update gossip messages; Match supplies document/chat/mesh storage and transport I/O.
+  - [x] Rust plans revocation, succession, recovery, and ownership-transfer command order. Browser host still signs, persists, and publishes each planned step.
   - [ ] Move remaining handshake I/O sequencing and gossip/session lifecycle decisions out of TypeScript where they are protocol policy. Browser transport and persistence remain host callbacks.
-  - [ ] Move ownership transfer, revocation, succession, and recovery command workflows into Rust. Rust currently verifies signed records and selects ownership transitions, while `browserAuthority.ts`, `browserOwnership.ts`, `succession.ts`, and `ownership.ts` still coordinate commands and persistence.
+  - [ ] Finish ownership transfer, revocation, succession, and recovery consolidation: Rust owns command order and signed-record verification, while `browserAuthority.ts`/`browserOwnership.ts` still interpret plans and `succession.ts`/`ownership.ts` still coordinate catalog persistence.
 - [ ] 7.4 Replace Match's `DurableMesh` hierarchy with a thin host adapter for persistence, browser lifecycle signals, and UI notifications; remove the superseded TypeScript runtime.
 - [ ] 7.5 Integrate the same runtime in Twang without product-specific forks.
 - [ ] 7.6 Verify browser↔browser, browser↔native, reconnect, duplicate-session, multi-tab, ownership transfer, and oversized-control scenarios through consumer E2E tests.
@@ -114,10 +116,10 @@ The original 6.7 completion mark overstated the consumer boundary. Rust now owns
 
 ### Current implementation boundary (2026-09-23)
 
-- Meta-mesh branch `codex/rust-workspace-sync` at `63a6b37`: platform-neutral Rust live session, WASM/native bindings, and deletion of the duplicate browser document-session engine. Rust core verification and sync state are implemented; the full native lighthouse process is not.
-- Match branch `codex/rust-live-sync` at `c78ec1b`: Rust live protocol wired into `workspaceSet.ts` and `durableMeshSessions.ts`. Branch has not been deployed. The six Match sync files (`durableMeshAuthority.ts`, `durableMeshBase.ts`, `durableMeshCredentials.ts`, `durableMeshHandshake.ts`, `durableMeshSessions.ts`, `workspaceSet.ts`) still total 2,536 lines; much is storage, browser transport, or product integration, but protocol decisions remain.
+- Meta-mesh branch `codex/rust-workspace-sync`: platform-neutral Rust live session, WASM/native bindings, authority command plans, and deletion of the duplicate browser document-session engine. Rust core verification and sync state are implemented; the full native lighthouse process is not.
+- Match branch `codex/rust-live-sync`: Rust live protocol wired into `workspaceSet.ts` and `durableMeshSessions.ts`; authority plans wired through vendored Meta-mesh. Branch has not been deployed. At the start of this checkpoint, the six Match sync files (`durableMeshAuthority.ts`, `durableMeshBase.ts`, `durableMeshCredentials.ts`, `durableMeshHandshake.ts`, `durableMeshSessions.ts`, `workspaceSet.ts`) totaled 2,536 lines; much is storage, browser transport, or product integration, but protocol decisions remain.
 - Shared `mesh-runtime` still has 1,181 lines across authority, ownership, succession, handshake, gossip, session, lifecycle, and dial modules. Do not infer completion from Rust line count; remove duplicated decisions and retain only necessary host I/O.
-- Verification at this checkpoint: Rust core live-session tests, native/WASM build, Match quality checks and 20 `workspaceSet` tests, and the four Playwright scenarios above passed. No final post-migration full E2E run or production sync verification has occurred.
+- Verification at this checkpoint: Rust core live-session tests, native/WASM build, Match quality checks and 20 `workspaceSet` tests, and the four Playwright scenarios above passed. After the authority-plan change, Match quality plus three targeted Playwright scenarios (revocation, ownership transfer, unsigned-change rejection) also passed. Workspace-set/control/gossip migration has compiled in Rust/WASM and passed Meta-mesh TypeScript checking; its Match E2E remains pending until the rest of the transfer is wired. No final post-migration full E2E run or production sync verification has occurred.
 
 ### Dependency status (2026-09-20)
 

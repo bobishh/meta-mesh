@@ -1,5 +1,6 @@
 pub mod authority;
 pub mod authority_command;
+pub mod gossip_payload;
 pub mod access;
 pub mod authorization;
 pub mod automerge;
@@ -17,6 +18,7 @@ pub mod replication;
 pub mod runtime;
 pub mod session_admission;
 pub mod state;
+pub mod workspace_set;
 
 pub use access::{WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access};
 
@@ -32,6 +34,7 @@ pub use authority::{
     verify_workspace_succession_policy, verify_workspace_succession_vote,
 };
 pub use authority_command::{AuthorityAction, AuthorityCommandInput, plan_authority_command};
+pub use gossip_payload::{encode_workspace_update, is_workspace_update};
 pub use authorization::{
     AuthorizedWorkspaceChange, IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
     WorkspaceChangeAuthorizationPayload, WorkspaceDeviceRevocationEvidence, WorkspaceGrant,
@@ -57,7 +60,7 @@ pub use invitation::{
     WorkspaceJoinInvitation, create_device_enrollment_invitation, create_workspace_join_invitation,
     invitation_url, pairing_invite_url, parse_invitation, parse_pairing_invite,
 };
-pub use live_session::{LiveSessionAction, LiveWorkspaceSession, PreparedLiveDocument};
+pub use live_session::{LiveSessionAction, LiveWorkspaceSession, PreparedLiveDocument, WorkspaceControlSnapshot};
 pub use member::{
     PeerAdvertisement, PeerAdvertisementPayload, VerifiedWorkspaceMember,
     VerifyWorkspaceMemberOptions, verify_workspace_member_bundle,
@@ -95,3 +98,4 @@ pub use state::{
     ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,
     select_scoped_neighbors, validate_peer_record,
 };
+pub use workspace_set::{WorkspaceSetEntry, decode_workspace_set, encode_workspace_set};

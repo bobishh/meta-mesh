@@ -51,6 +51,18 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = encodeWorkspaceSet)]
+    pub fn encode_workspace_set(entries: JsValue) -> Result<Vec<u8>, JsValue> {
+        let entries: Vec<meta_mesh_core::WorkspaceSetEntry> = from_value(entries)?;
+        meta_mesh_core::encode_workspace_set(&entries).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = decodeWorkspaceSet)]
+    pub fn decode_workspace_set(bytes: &[u8], allowed_ids: JsValue) -> Result<JsValue, JsValue> {
+        let allowed_ids: Vec<String> = from_value(allowed_ids)?;
+        to_value(&meta_mesh_core::decode_workspace_set(bytes, &allowed_ids).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = planAuthorityCommand)]
     pub fn plan_authority_command(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::AuthorityCommandInput = from_value(raw)?;

@@ -1,4 +1,8 @@
 export type RustStateCore = {
+  encodeWorkspaceSet(entries: unknown[]): Uint8Array
+  decodeWorkspaceSet(bytes: Uint8Array, allowedIds: string[]): Array<{
+    id: string; bytes: string; authorization?: unknown; chat?: unknown; mesh?: unknown
+  }>
   planAuthorityCommand(input: unknown): Array<
     "createRevocation" | "mergeRevocation" | "refreshSuccessionPolicy" | "publish" | "reloadCredential" |
     "disconnectRevoked" | "notify" | "leave" | "createPolicy" | "setPolicy" | "createVote" |
@@ -102,6 +106,8 @@ export type RustMeshRuntimeState = {
   connectedDevices(workspaceId: string): string[]
   setGossipEndpoints(workspaceId: string, endpoints: string[]): { changed: boolean; endpoints: string[] }
   clearGossip(workspaceId: string): void
+  encodeWorkspaceUpdate(workspaceId: string, nonce: string): Uint8Array
+  isWorkspaceUpdate(payload: Uint8Array, workspaceId: string): boolean
   controlFrames(workspaceId: string, bytes: Uint8Array): Uint8Array[]
   receiveControlFrame(workspaceId: string, frame: Uint8Array): Uint8Array | undefined
   planDial(peerKey: string, relayAvailable: boolean, nowMs: number): {
@@ -136,6 +142,8 @@ export type RustLiveWorkspaceSession = {
   commitDocument(): void
   abortDocument(): void
   resetDocument(): void
+  encodeControl(authorization: unknown, chat: unknown, mesh: unknown): Uint8Array
+  decodeControl(bytes: Uint8Array): { version: number; workspaceId: string; authorization?: unknown; chat?: unknown; mesh?: unknown }
   controlChanged(snapshot: Uint8Array): boolean
   controlFrames(snapshot: Uint8Array): Uint8Array[]
   markControlSent(snapshot: Uint8Array): void

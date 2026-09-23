@@ -33,6 +33,19 @@ pub struct PreparedLiveDocument {
     pub proof: Option<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceControlSnapshot {
+    pub version: u8,
+    pub workspace_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<Value>,
+}
+
 struct LiveDocumentSync {
     engine: AutomergeSyncEngine,
     remote_device_id: String,
@@ -186,6 +199,25 @@ impl LiveWorkspaceSession {
 
     pub fn control_changed(&self, snapshot: &[u8]) -> bool {
         self.last_control_sent.as_deref() != Some(snapshot)
+    }
+
+    pub fn encode_control(&self, authorization: Option<Value>, chat: Option<Value>, mesh: Option<Value>) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(&WorkspaceControlSnapshot {
+            version: 1,
+            workspace_id: self.workspace_id.clone(),
+            authorization,
+            chat,
+            mesh,
+        }).map_err(|_| "Invalid mesh control frame".to_string())
+    }
+
+    pub fn decode_control(&self, bytes: &[u8]) -> Result<WorkspaceControlSnapshot, String> {
+        let snapshot: WorkspaceControlSnapshot = serde_json::from_slice(bytes)
+            .map_err(|_| "Invalid mesh control frame".to_string())?;
+        if snapshot.version != 1 || snapshot.workspace_id != self.workspace_id {
+            return Err("Invalid mesh control frame".to_string());
+        }
+        Ok(snapshot)
     }
 
     pub fn control_frames(&mut self, snapshot: &[u8]) -> Result<Vec<Vec<u8>>, String> {
