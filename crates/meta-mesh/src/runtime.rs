@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use meta_mesh_core::{
     control_frames, encode_workspace_update, is_workspace_update, AutomergeSyncFrame,
     ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput, LiveWorkspaceSession,
-    MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState, RelayDialPolicy, SessionCandidate,
-    SessionDirection, SessionKey,
+    MeshBatchDeliveryFlow, MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState,
+    RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -218,6 +218,47 @@ impl WasmLiveWorkspaceSession {
     #[wasm_bindgen(js_name = verifyHeartbeatAck)]
     pub fn verify_heartbeat_ack(&self, frame: &[u8]) -> Result<(), JsValue> {
         self.inner.verify_heartbeat_ack(frame).map_err(js_error)
+    }
+}
+
+#[wasm_bindgen]
+pub struct WasmMeshBatchDeliveryFlow {
+    inner: MeshBatchDeliveryFlow,
+}
+
+#[wasm_bindgen]
+impl WasmMeshBatchDeliveryFlow {
+    #[wasm_bindgen(constructor)]
+    pub fn new(target_device_id: &str, route_ids: JsValue, fallback_delay_ms: f64,
+        retry_delays_ms: JsValue) -> Result<Self, JsValue> {
+        let route_ids: Vec<String> = from_value(route_ids)?;
+        let retry_delays_ms: Vec<f64> = from_value(retry_delays_ms)?;
+        Ok(Self { inner: MeshBatchDeliveryFlow::new(target_device_id.to_string(), route_ids,
+            fallback_delay_ms, retry_delays_ms).map_err(js_error)? })
+    }
+
+    pub fn start(&mut self) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.start().map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = routeResult)]
+    pub fn route_result(&mut self, round: u32, route_index: u32, accepted: bool,
+        failure: &str) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.route_result(round, route_index, accepted, failure.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = fallbackElapsed)]
+    pub fn fallback_elapsed(&mut self, round: u32) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.fallback_elapsed(round))
+    }
+
+    #[wasm_bindgen(js_name = retryElapsed)]
+    pub fn retry_elapsed(&mut self, round: u32) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.retry_elapsed(round))
+    }
+
+    pub fn abort(&mut self) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.abort())
     }
 }
 

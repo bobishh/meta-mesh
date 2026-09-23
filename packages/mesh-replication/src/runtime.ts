@@ -298,10 +298,50 @@ export type RustMeshAuthenticatedSessions = {
   free?(): void
 }
 
+export type RustAutomergeDeviceSyncFlow = {
+  nextRound(frame: unknown): { kind: "round"; value: {
+    round: number
+    batch: { protocolVersion: 1; scopeId: string; documentId: string; batchId: string;
+      changes: Array<{ hash: string; bytes: Uint8Array | number[] }> }
+    request: { kind: "mesh-automerge-device-sync"; version: 1; batchId: string; frame: unknown }
+    selectedRouteInstanceId: string | null
+  } } | { kind: "converged"; value: { rounds: number; routeInstanceIds: string[] } }
+  validateResponse(response: unknown): void
+  completeRound(routeInstanceId: string, response: unknown): unknown
+  free?(): void
+}
+
+export type RustBatchDeliveryAction =
+  | { kind: "launchRoute"; round: number; routeIndex: number }
+  | { kind: "armFallback" | "armRetry"; round: number; delayMs: number }
+  | { kind: "cancelOtherRoutes"; round: number; routeIndex: number }
+  | { kind: "cancelAllRoutes"; round: number }
+  | { kind: "completed"; round: number; routeIndex: number; attemptedRouteIds: string[] }
+  | { kind: "exhausted"; attemptedRouteIds: string[]; message: string }
+  | { kind: "aborted" }
+
+export type RustBatchDeliveryFlow = {
+  start(): { actions: RustBatchDeliveryAction[] }
+  routeResult(round: number, routeIndex: number, accepted: boolean, failure: string): { actions: RustBatchDeliveryAction[] }
+  fallbackElapsed(round: number): { actions: RustBatchDeliveryAction[] }
+  retryElapsed(round: number): { actions: RustBatchDeliveryAction[] }
+  abort(): { actions: RustBatchDeliveryAction[] }
+  free?(): void
+}
+
 export type MeshRustRuntime = {
   state: RustStateCore
   createDeviceRouteCatalog(): RustDeviceRouteCatalog
   createAutomergeSyncEngine(localDeviceId: string, maximumFrameBytes?: number): RustAutomergeSyncEngine
+  createAutomergeDeviceSyncFlow(targetDeviceId: string, documentId: string, maximumRounds: number): RustAutomergeDeviceSyncFlow
+  decodeAutomergeDeviceSyncRequest(request: unknown, expectedRemoteDeviceId: string): {
+    frame: unknown
+    batch: { protocolVersion: 1; scopeId: string; documentId: string; batchId: string;
+      changes: Array<{ hash: string; bytes: Uint8Array | number[] }> }
+  }
+  encodeAutomergeDeviceSyncResponse(batchId: string, ack: unknown, frame: unknown): unknown
+  createBatchDeliveryFlow(targetDeviceId: string, routeInstanceIds: string[], fallbackDelayMs: number,
+    retryDelaysMs: number[]): RustBatchDeliveryFlow
   createMeshRuntimeState(): RustMeshRuntimeState
   createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession
   createMeshHandshakeFlow(direction: "incoming" | "outgoing"): RustMeshHandshakeFlow

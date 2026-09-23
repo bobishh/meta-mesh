@@ -21,12 +21,12 @@ pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
 pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandoff, WasmWorkspaceJoinHandshake};
 pub use runtime::{
     WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshHandshakeFlow,
-    WasmMeshLifecycleState, WasmMeshRuntimeState,
+    WasmMeshBatchDeliveryFlow, WasmMeshLifecycleState, WasmMeshRuntimeState,
 };
 pub use session_lifecycle::WasmMeshSessionLifecycle;
 
 #[cfg(target_family = "wasm")]
-pub use automerge::WasmAutomergeSyncEngine;
+pub use automerge::{WasmAutomergeDeviceSyncFlow, WasmAutomergeSyncEngine};
 #[cfg(target_family = "wasm")]
 pub use identity::WasmIdentityCrypto;
 #[cfg(target_family = "wasm")]

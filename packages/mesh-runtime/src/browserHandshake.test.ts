@@ -59,7 +59,9 @@ describe("BrowserMeshHandshake", () => {
   it("returns the owner revocation catalog before closing a revoked peer", async () => {
     const stream = { read: vi.fn(async () => new Uint8Array([1])), send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
     const connection = { remoteEndpointId: "endpoint", acceptStream: vi.fn().mockResolvedValueOnce(stream).mockRejectedValueOnce(new Error("closed")), close: vi.fn(async () => {}) }
-    const credential = { secret: "secret", workspaceId: "workspace" }
+    const credential = { secret: "secret", workspaceId: "workspace", catalog: {
+      revocations: [{ payload: { personId: "revoked", epoch: 1 } }],
+    } }
     const host = {
       credentials: vi.fn(async () => [credential]), secret: () => "secret", workspaceId: () => "workspace", mergeAuthority: vi.fn(async () => credential),
       verifyPeer: vi.fn(async () => ({ deviceId: "remote", instanceId: "slot", issuedAt: "2026-01-01T00:00:00.000Z", personId: "revoked", endpoint: "endpoint" })),

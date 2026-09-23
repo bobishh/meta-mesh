@@ -4,11 +4,13 @@ pub mod authority_command;
 pub mod authority_flow;
 pub mod authorization;
 pub mod automerge;
+pub mod automerge_delivery;
 pub mod bundle_reuse;
 pub mod catalog;
 pub mod change_admission_flow;
 pub mod credential_access;
 pub mod dial_schedule;
+pub mod delivery_flow;
 pub mod gossip_lifecycle;
 pub mod gossip_payload;
 pub mod handshake;
@@ -68,6 +70,10 @@ pub use authorization::{
 pub use automerge::{
     AutomergeSyncEngine, AutomergeSyncFrame, AutomergeSyncResult, DEFAULT_MAX_AUTOMERGE_FRAME_BYTES,
 };
+pub use automerge_delivery::{
+    decode_device_sync_request, encode_device_sync_response, AutomergeDeviceSyncFlow, DeviceSyncConverged,
+    DeviceSyncInbound, DeviceSyncRequest, DeviceSyncRound, DeviceSyncStep, DeviceSyncWireFrame,
+};
 pub use bundle_reuse::{can_reuse_member_bundle, BundleReuseInput};
 pub use catalog::{validate_mesh_catalog, MeshCatalog};
 pub use change_admission_flow::{
@@ -80,6 +86,7 @@ pub use credential_access::{
     owned_workspace_ids, partition_credentials, CredentialPartition, CredentialPartitionInput,
 };
 pub use dial_schedule::{plan_dial_schedule, DialRouteInput, DialScheduleInput, DialSchedulePlan};
+pub use delivery_flow::{BatchDeliveryAction, BatchDeliveryUpdate, MeshBatchDeliveryFlow};
 pub use gossip_lifecycle::{
     GossipBroadcastPlan, GossipDeliveryAction, GossipLifecycleNeighborChange, GossipLifecycleState,
     GossipNeighborPlan, GossipRebuildAction, GossipRebuildInput, GossipRebuildPlan,

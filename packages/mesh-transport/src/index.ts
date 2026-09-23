@@ -54,6 +54,8 @@ export type IrohModule = {
   WasmStateCore?: typeof import("../wasm/meta_mesh.js").WasmStateCore
   WasmDeviceRouteCatalog?: { new(): any }
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
+  WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/meta_mesh.js").WasmAutomergeDeviceSyncFlow
+  WasmMeshBatchDeliveryFlow?: typeof import("../wasm/meta_mesh.js").WasmMeshBatchDeliveryFlow
   WasmMeshRuntimeState?: { new(): any }
   WasmMeshLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmMeshLifecycleState
   WasmGossipLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmGossipLifecycleState
