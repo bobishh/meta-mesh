@@ -46,6 +46,25 @@ impl NativeScopeAdmission {
         Ok((peer, response))
     }
 
+    pub fn admit_response(
+        &mut self,
+        frame: &[u8],
+        secret: &str,
+        workspace_id: &str,
+        remote_endpoint: &str,
+        snapshot: &WorkspaceWriteAuthorizationSnapshot,
+        now_ms: i128,
+    ) -> Result<MeshPeerAdmission, String> {
+        let response =
+            decode_mesh_handshake(frame, "mesh-handshake-response", secret, workspace_id)?;
+        self.sessions.admit(
+            serde_json::to_value(response).map_err(|error| error.to_string())?,
+            snapshot,
+            remote_endpoint,
+            now_ms,
+        )
+    }
+
     pub fn peer(&self, workspace_id: &str, remote_endpoint: &str) -> Option<&MeshPeerAdmission> {
         self.sessions.peer(workspace_id, remote_endpoint)
     }

@@ -1,6 +1,6 @@
 use meta_mesh_core::{
     LiveSessionPublishPlan, MeshHandshake, MeshPeerAdmission, PairingCodec,
-    WorkspaceWriteAuthorizationSnapshot,
+    WorkspaceWriteAuthorizationSnapshot, encode_mesh_handshake,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -28,6 +28,7 @@ pub trait NativeScopeServiceHost {
         &mut self,
         workspace_id: &str,
     ) -> Result<WorkspaceWriteAuthorizationSnapshot, String>;
+    fn outgoing_handshake(&mut self, workspace_id: &str) -> Result<Value, String>;
     fn open_scope(&mut self, peer: &MeshPeerAdmission) -> Result<Self::ScopeHost, String>;
 }
 
@@ -53,6 +54,73 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
     }
     pub fn host_mut(&mut self) -> &mut H {
         &mut self.host
+    }
+
+    pub fn has_peer(&self, workspace_id: &str, remote_endpoint: &str) -> bool {
+        self.admission.peer(workspace_id, remote_endpoint).is_some()
+    }
+
+    pub fn prepare_connect(&mut self, workspace_id: &str, secret: &str) -> Result<Vec<u8>, String> {
+        let credential = self
+            .host
+            .credential(secret)?
+            .ok_or("Unknown mesh credential")?;
+        if credential.workspace_id != workspace_id {
+            return Err("Mesh credential targets another workspace".into());
+        }
+        let handshake = self.host.outgoing_handshake(workspace_id)?;
+        encode_mesh_handshake("mesh-handshake-request", secret, handshake)
+    }
+
+    pub fn complete_connect(
+        &mut self,
+        workspace_id: &str,
+        secret: &str,
+        remote_endpoint: &str,
+        response: &[u8],
+        now_ms: i128,
+    ) -> Result<MeshPeerAdmission, String> {
+        let credential = self
+            .host
+            .credential(secret)?
+            .ok_or("Unknown mesh credential")?;
+        if credential.workspace_id != workspace_id {
+            return Err("Mesh credential targets another workspace".into());
+        }
+        let authority = self.host.authority(workspace_id)?;
+        let peer = self.admission.admit_response(
+            response,
+            secret,
+            workspace_id,
+            remote_endpoint,
+            &authority,
+            now_ms,
+        )?;
+        let scope = match self.host.open_scope(&peer) {
+            Ok(scope) => scope,
+            Err(error) => {
+                self.admission.remove(workspace_id, remote_endpoint);
+                return Err(error);
+            }
+        };
+        let native = match NativeScopePeer::new(
+            workspace_id,
+            secret,
+            self.host.local_device_id(),
+            &peer.device_id,
+            scope,
+        ) {
+            Ok(native) => native,
+            Err(error) => {
+                self.admission.remove(workspace_id, remote_endpoint);
+                return Err(error);
+            }
+        };
+        self.peers.insert(
+            (workspace_id.to_string(), remote_endpoint.to_string()),
+            native,
+        );
+        Ok(peer)
     }
 
     pub fn receive(
@@ -212,6 +280,12 @@ mod tests {
         fn authority(&mut self, _: &str) -> Result<WorkspaceWriteAuthorizationSnapshot, String> {
             panic!("not admitted")
         }
+        fn outgoing_handshake(&mut self, _: &str) -> Result<Value, String> {
+            Ok(serde_json::json!({
+                "workspaceId": "board", "peer": {},
+                "capabilities": ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"],
+            }))
+        }
         fn open_scope(&mut self, _: &MeshPeerAdmission) -> Result<Scope, String> {
             panic!("not admitted")
         }
@@ -225,5 +299,20 @@ mod tests {
             service.receive("remote", &frame, 0).unwrap_err(),
             "Unauthenticated mesh peer"
         );
+    }
+
+    #[test]
+    fn outbound_handshake_uses_the_same_credential_bound_frame_as_browser() {
+        let mut service = NativeScopeService::new(Host);
+        let request = service.prepare_connect("board", "secret").unwrap();
+        let decoded = meta_mesh_core::decode_mesh_handshake(
+            &request,
+            "mesh-handshake-request",
+            "secret",
+            "board",
+        )
+        .unwrap();
+        assert_eq!(decoded.workspace_id, "board");
+        assert!(service.prepare_connect("board", "wrong").is_err());
     }
 }
