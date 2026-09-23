@@ -2671,6 +2671,9 @@ export class WasmMeshScopeRuntime {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
+    resetDocument() {
+        wasm.wasmmeshscoperuntime_resetDocument(this.__wbg_ptr);
+    }
     /**
      * @param {string} local_device_id
      * @param {string} remote_device_id

@@ -282,6 +282,11 @@ impl WasmMeshScopeRuntime {
         self.inner.reject_document_receive().map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = resetDocument)]
+    pub fn reset_document(&mut self) {
+        self.inner.reset_document();
+    }
+
     #[wasm_bindgen(js_name = completeSavedReceive)]
     pub fn complete_saved_receive(&mut self, persisted: bool) -> Result<JsValue, JsValue> {
         to_value(

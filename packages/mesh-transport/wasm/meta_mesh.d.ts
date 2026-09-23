@@ -309,6 +309,7 @@ export class WasmMeshScopeRuntime {
     publishFrame(document: Uint8Array, proof: any): Uint8Array | undefined;
     receiveFrame(frame: Uint8Array): any;
     rejectDocumentReceive(): void;
+    resetDocument(): void;
     startDocumentSync(local_device_id: string, remote_device_id: string): void;
 }
 
@@ -572,6 +573,7 @@ export interface InitOutput {
     readonly wasmmeshscoperuntime_publishFrame: (a: number, b: number, c: number, d: any) => [number, number, number, number];
     readonly wasmmeshscoperuntime_receiveFrame: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmmeshscoperuntime_rejectDocumentReceive: (a: number) => [number, number];
+    readonly wasmmeshscoperuntime_resetDocument: (a: number) => void;
     readonly wasmmeshscoperuntime_startDocumentSync: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmmeshsessionlifecycle_callbackPlan: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_clear: (a: number) => void;

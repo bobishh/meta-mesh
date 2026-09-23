@@ -102,6 +102,7 @@ export const wasmmeshscoperuntime_provideDocument: (a: number, b: number, c: num
 export const wasmmeshscoperuntime_publishFrame: (a: number, b: number, c: number, d: any) => [number, number, number, number];
 export const wasmmeshscoperuntime_receiveFrame: (a: number, b: number, c: number) => [number, number, number];
 export const wasmmeshscoperuntime_rejectDocumentReceive: (a: number) => [number, number];
+export const wasmmeshscoperuntime_resetDocument: (a: number) => void;
 export const wasmmeshscoperuntime_startDocumentSync: (a: number, b: number, c: number, d: number, e: number) => [number, number];
 export const wasmmeshsessionlifecycle_callbackPlan: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number];
 export const wasmmeshsessionlifecycle_clear: (a: number) => void;

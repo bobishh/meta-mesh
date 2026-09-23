@@ -150,6 +150,7 @@ export class BrowserMeshScopeSync {
     if (action === "mergeAuthorization") {
       if (!this.host.mergeAuthorization) throw new Error("Unsupported mesh authorization control")
       await this.host.mergeAuthorization(control.authorization)
+      this.runtime.resetDocument()
     } else if (action === "mergeChat") {
       if (!this.host.mergeChat) throw new Error("Unsupported mesh chat control")
       await this.host.mergeChat(control.chat)

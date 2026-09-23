@@ -223,6 +223,7 @@ impl MeshScopeRuntime {
         let prepared = pending.prepared.expect("checked above");
         if prepared.should_persist && !persisted {
             self.live.abort_document();
+            self.live.reset_document();
             return Err("Mesh document persistence failed".into());
         }
         self.live.commit_document()?;
@@ -241,6 +242,10 @@ impl MeshScopeRuntime {
         self.live.abort_document();
         self.live.reset_document();
         Ok(())
+    }
+
+    pub fn reset_document(&mut self) {
+        self.live.reset_document();
     }
 
     /// Acknowledge durable frames only after the host completed their storage

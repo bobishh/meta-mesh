@@ -260,6 +260,7 @@ export type RustMeshScopeRuntime = {
   provideDocument(document: Uint8Array, responseProof: unknown): RustMeshScopeFrameEffect
   completeDocumentReceive(persisted: boolean): RustMeshScopeDocumentCompletion
   rejectDocumentReceive(): void
+  resetDocument(): void
   completeSavedReceive(persisted: boolean): RustMeshScopeDocumentCompletion
   publishFrame(document: Uint8Array, proof: unknown): Uint8Array | number[] | undefined
   preparePublish(document: Uint8Array, proof: unknown, authorization: unknown, chat: unknown, mesh: unknown): {
