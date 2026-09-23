@@ -2,8 +2,8 @@
 //! Product documents never supply implicit creator, controller, or recovery data.
 
 use crate::{
-    DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, PublicIdentity, SignedEnvelope, public_key_id,
-    sign_json_envelope, verify_device_certificate_chain, verify_signed_envelope,
+    public_key_id, sign_json_envelope, verify_device_certificate_chain, verify_signed_envelope,
+    DeviceCertificate, PublicIdentity, SignedEnvelope, DEFAULT_SIGNATURE_DOMAIN,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -85,6 +85,34 @@ pub struct ScopeGenesisPayload {
 }
 pub type SignedScopeGenesis = SignedEnvelope<ScopeGenesisPayload>;
 
+/// Builds the immutable payload a platform signer seals as the first
+/// authority record. Private keys remain outside platform-neutral core.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeGenesisPayloadInput {
+    pub scope_id: String,
+    pub creator: ScopeAuthority,
+}
+
+pub fn create_scope_genesis_payload(
+    input: ScopeGenesisPayloadInput,
+) -> Result<ScopeGenesisPayload, String> {
+    valid_scope_id(&input.scope_id)?;
+    input.creator.validate()?;
+    validate_creator(
+        &input.creator.person_id,
+        &input.creator.public_key,
+        &input.creator.certificates,
+    )?;
+    Ok(ScopeGenesisPayload {
+        kind: "scope-genesis".into(),
+        version: SCOPE_AUTHORITY_VERSION,
+        scope_id: input.scope_id,
+        creator: input.creator,
+        control_epoch: 1,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScopeCapability {
@@ -139,6 +167,39 @@ pub struct ScopeControlTransferPayload {
     pub to_control_epoch: u64,
 }
 pub type ScopeControlTransfer = SignedEnvelope<ScopeControlTransferPayload>;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopeControlTransferPayloadInput {
+    pub snapshot: ScopeAuthoritySnapshot,
+    pub to_controller: ScopeAuthority,
+}
+
+/// Builds the next transfer from the validated controller only. A platform
+/// signer seals this payload with that controller's device key.
+pub fn create_scope_control_transfer_payload(
+    input: ScopeControlTransferPayloadInput,
+) -> Result<ScopeControlTransferPayload, String> {
+    let authority = validate_scope_authority(&input.snapshot)?;
+    input.to_controller.validate()?;
+    validate_creator(
+        &input.to_controller.person_id,
+        &input.to_controller.public_key,
+        &input.to_controller.certificates,
+    )?;
+    if input.to_controller.person_id == authority.controller.person_id {
+        return Err("Scope control transfer requires another controller".into());
+    }
+    Ok(ScopeControlTransferPayload {
+        kind: "scope-control-transfer".into(),
+        version: SCOPE_AUTHORITY_VERSION,
+        scope_id: authority.scope_id,
+        from_controller_person_id: authority.controller.person_id,
+        to_controller: input.to_controller,
+        from_control_epoch: authority.control_epoch,
+        to_control_epoch: authority.control_epoch + 1,
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -480,7 +541,7 @@ fn base_controller_capabilities() -> Vec<ScopeCapability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DeviceCertificatePayload, public_key_from_seed, sign_device_certificate};
+    use crate::{public_key_from_seed, sign_device_certificate, DeviceCertificatePayload};
     use serde_json::json;
     fn authority(root: [u8; 32], device: [u8; 32]) -> (ScopeAuthority, [u8; 32], String) {
         let public_key = public_key_from_seed(&root).unwrap();
@@ -579,16 +640,14 @@ mod tests {
         let (other, other_seed, other_device) = authority([12; 32], [13; 32]);
         let valid = genesis(&creator, &seed, &device);
         let forged = sign_scope_record(&other_seed, valid.payload.clone(), &other_device).unwrap();
-        assert!(
-            validate_scope_authority(&ScopeAuthoritySnapshot {
-                genesis: forged,
-                grants: vec![],
-                grant_issuers: vec![],
-                revocations: vec![],
-                control_transfers: vec![]
-            })
-            .is_err()
-        );
+        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
+            genesis: forged,
+            grants: vec![],
+            grant_issuers: vec![],
+            revocations: vec![],
+            control_transfers: vec![]
+        })
+        .is_err());
         let g = sign_scope_record(
             &seed,
             ScopeCapabilityGrantPayload {
@@ -617,18 +676,16 @@ mod tests {
             &device,
         )
         .unwrap();
-        assert!(
-            validate_scope_authority(&ScopeAuthoritySnapshot {
-                genesis: valid.clone(),
-                grants: vec![g.clone()],
-                grant_issuers: vec![],
-                revocations: vec![v],
-                control_transfers: vec![]
-            })
-            .unwrap()
-            .grants
-            .is_empty()
-        );
+        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
+            genesis: valid.clone(),
+            grants: vec![g.clone()],
+            grant_issuers: vec![],
+            revocations: vec![v],
+            control_transfers: vec![]
+        })
+        .unwrap()
+        .grants
+        .is_empty());
         let transfer = |to: ScopeAuthority| {
             sign_scope_record(
                 &seed,
@@ -645,16 +702,14 @@ mod tests {
             )
             .unwrap()
         };
-        assert!(
-            validate_scope_authority(&ScopeAuthoritySnapshot {
-                genesis: valid,
-                grants: vec![g],
-                grant_issuers: vec![],
-                revocations: vec![],
-                control_transfers: vec![transfer(other.clone()), transfer(creator.clone())]
-            })
-            .is_err()
-        );
+        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
+            genesis: valid,
+            grants: vec![g],
+            grant_issuers: vec![],
+            revocations: vec![],
+            control_transfers: vec![transfer(other.clone()), transfer(creator.clone())]
+        })
+        .is_err());
     }
 
     #[test]
@@ -708,11 +763,9 @@ mod tests {
         assert!(validate_scope_authority(&valid).is_err());
         let mut unordered = valid;
         unordered.grants.push(root_grant);
-        assert!(
-            validate_scope_authority(&unordered)
-                .unwrap()
-                .allows("member", ScopeCapability::Write)
-        );
+        assert!(validate_scope_authority(&unordered)
+            .unwrap()
+            .allows("member", ScopeCapability::Write));
         let control = sign_scope_record(
             &admin_seed,
             ScopeCapabilityGrantPayload {
@@ -755,5 +808,34 @@ mod tests {
             }),
         );
         assert!(serde_json::from_value::<ScopeAuthoritySnapshot>(raw).is_err());
+    }
+
+    #[test]
+    fn genesis_payload_requires_explicit_validated_creator() {
+        let (creator, _, _) = authority([33; 32], [34; 32]);
+        let payload = create_scope_genesis_payload(ScopeGenesisPayloadInput {
+            scope_id: "workspace:board".into(),
+            creator,
+        })
+        .unwrap();
+        assert_eq!(payload.kind, "scope-genesis");
+        assert_eq!(payload.control_epoch, 1);
+    }
+
+    #[test]
+    fn transfer_payload_uses_validated_controller_epoch() {
+        let (creator, seed, device) = authority([35; 32], [36; 32]);
+        let (next, _, _) = authority([37; 32], [38; 32]);
+        let payload = create_scope_control_transfer_payload(ScopeControlTransferPayloadInput {
+            snapshot: ScopeAuthoritySnapshot {
+                genesis: genesis(&creator, &seed, &device),
+                grants: vec![], grant_issuers: vec![], revocations: vec![], control_transfers: vec![],
+            },
+            to_controller: next,
+        })
+        .unwrap();
+        assert_eq!(payload.from_controller_person_id, creator.person_id);
+        assert_eq!(payload.from_control_epoch, 1);
+        assert_eq!(payload.to_control_epoch, 2);
     }
 }

@@ -79,6 +79,14 @@ export interface WorkspaceAuthorityRecord {
     certificates: unknown[]
   }>
   catalog?: unknown
+  /** Signed scope authority ledger. Validate with Rust before persistence. */
+  scopeAuthoritySnapshot?: {
+    genesis: unknown
+    grants: unknown[]
+    grantIssuers: unknown[]
+    revocations: unknown[]
+    controlTransfers: unknown[]
+  }
 }
 
 export const DEFAULT_PEER_DB_NAME = "match-peer-catalog-v1"
@@ -128,9 +136,16 @@ export function validateWorkspaceAuthority(value: unknown): asserts value is Wor
     (item.ownerHistory !== undefined && (!Array.isArray(item.ownerHistory) || item.ownerHistory.length > 32 || item.ownerHistory.some(owner =>
       !owner || typeof owner.personId !== "string" || !owner.personId || typeof owner.publicKey !== "string" || !owner.publicKey ||
       !Array.isArray(owner.certificates) || owner.certificates.length > 32))) ||
+    (item.scopeAuthoritySnapshot !== undefined && (!item.scopeAuthoritySnapshot ||
+      !Object.prototype.hasOwnProperty.call(item.scopeAuthoritySnapshot, "genesis") ||
+      !Array.isArray(item.scopeAuthoritySnapshot.grants) || item.scopeAuthoritySnapshot.grants.length > 4096 ||
+      !Array.isArray(item.scopeAuthoritySnapshot.grantIssuers) || item.scopeAuthoritySnapshot.grantIssuers.length > 4096 ||
+      !Array.isArray(item.scopeAuthoritySnapshot.revocations) || item.scopeAuthoritySnapshot.revocations.length > 4096 ||
+      !Array.isArray(item.scopeAuthoritySnapshot.controlTransfers) || item.scopeAuthoritySnapshot.controlTransfers.length > 128)) ||
     new TextEncoder().encode(JSON.stringify(item)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
     throw new Error("Invalid workspace authority")
   }
+  if (item.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(item.scopeAuthoritySnapshot)
 }
 
 export function authorityFromCredential(credential: WorkspaceMeshCredential): WorkspaceAuthorityRecord {
@@ -314,9 +329,17 @@ async function putAuthorityIfNewer(store: IDBObjectStore, authority: WorkspaceAu
   const current = await promisifyRequest<WorkspaceAuthorityRecord | undefined>(store.get(authority.workspaceId))
   if (current) {
     validateWorkspaceAuthority(current)
+    if (current.scopeAuthoritySnapshot && authority.scopeAuthoritySnapshot &&
+      JSON.stringify(current.scopeAuthoritySnapshot.genesis) !== JSON.stringify(authority.scopeAuthoritySnapshot.genesis)) {
+      throw new Error("Workspace scope genesis cannot change")
+    }
     if (authority.epoch < current.epoch) return
     if (authority.epoch === current.epoch && authority.updatedAt < current.updatedAt) return
+    if (!authority.scopeAuthoritySnapshot) authority = {
+      ...authority, scopeAuthoritySnapshot: current.scopeAuthoritySnapshot,
+    }
   }
+  validateWorkspaceAuthority(authority)
   await promisifyRequest(store.put(structuredClone(authority)))
 }
 

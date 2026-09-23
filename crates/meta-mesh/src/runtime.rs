@@ -1,13 +1,20 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    AutomergeSyncFrame, ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput,
-    LiveWorkspaceSession, MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState, RelayDialPolicy,
-    SessionCandidate, SessionDirection, SessionKey, control_frames, encode_workspace_update,
-    is_workspace_update,
+    control_frames, encode_workspace_update, is_workspace_update, AutomergeSyncFrame,
+    ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput, LiveWorkspaceSession,
+    MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState, RelayDialPolicy, SessionCandidate,
+    SessionDirection, SessionKey,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveReceiveWithPlan {
+    action: meta_mesh_core::LiveSessionAction,
+    plan: meta_mesh_core::LiveSessionReceivePlan,
+}
 
 #[wasm_bindgen]
 pub struct WasmLiveWorkspaceSession {
@@ -25,6 +32,15 @@ impl WasmLiveWorkspaceSession {
 
     pub fn receive(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
         to_value(&self.inner.receive(frame).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = receiveWithPlan)]
+    pub fn receive_with_plan(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
+        let Some(action) = self.inner.receive(frame).map_err(js_error)? else {
+            return to_value(&Option::<()>::None);
+        };
+        let plan = self.inner.receive_plan(&action).map_err(js_error)?;
+        to_value(&Some(LiveReceiveWithPlan { action, plan }))
     }
 
     pub fn encode(&self, frame_type: &str, payload: &[u8]) -> Result<Vec<u8>, JsValue> {
@@ -67,6 +83,58 @@ impl WasmLiveWorkspaceSession {
         self.inner
             .generate_document(document, optional_value(proof)?)
             .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = preparePublish)]
+    pub fn prepare_publish(
+        &mut self,
+        document: &[u8],
+        proof: JsValue,
+        authorization: JsValue,
+        chat: JsValue,
+        mesh: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .prepare_publish(
+                    document,
+                    optional_value(proof)?,
+                    optional_value(authorization)?,
+                    optional_value(chat)?,
+                    optional_value(mesh)?,
+                )
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = prepareControlPublish)]
+    pub fn prepare_control_publish(
+        &mut self,
+        authorization: JsValue,
+        chat: JsValue,
+        mesh: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .prepare_control_publish(
+                    optional_value(authorization)?,
+                    optional_value(chat)?,
+                    optional_value(mesh)?,
+                )
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = prepareSnapshotPublish)]
+    pub fn prepare_snapshot_publish(&self, snapshot: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.prepare_snapshot_publish(snapshot).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = finishPublish)]
+    pub fn finish_publish(&mut self, control_snapshot: &[u8], all_frames_sent: bool) {
+        self.inner.finish_publish(control_snapshot, all_frames_sent);
     }
 
     #[wasm_bindgen(js_name = prepareDocument)]

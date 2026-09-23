@@ -3,6 +3,8 @@ export type RustStateCore = {
   requireChangeAuthorizationCoverage(changeHashes: string[], records: unknown[]): void
   createScopeGenesis(input: unknown): { scopeId: string; creatorPersonId: string;
     creatorPublicKey: string; creatorCertificates: unknown[] }
+  createScopeGenesisPayload(input: unknown): unknown
+  createScopeControlTransferPayload(input: unknown): unknown
   preferredSessionDirection(localDeviceId: string, remoteDeviceId: string): "incoming" | "outgoing"
   hasAuthorityConflict(credential: unknown): boolean
   prepareWriteEvidence(input: unknown): unknown
@@ -98,6 +100,7 @@ export type RustStateCore = {
   verifyWorkspaceSuccessionVote(vote: unknown, policy: unknown, candidatePersonId: string, authority: unknown, revoked: string[], nowMs: number): unknown
   verifyWorkspaceSuccessionClaim(claim: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, revoked: string[], nowMs: number): unknown
   planChangeAdmission(documentId: string, changes: unknown, verifiedAt: string): unknown
+  planChangeAdmissionFlow(input: unknown, nowMs: number): unknown
   transitionOutboxClaim(current: unknown, input: unknown): unknown
   mergePeerRecords(existing: unknown, incoming: unknown): unknown
   reconcileReplicaSets(left: unknown, right: unknown): unknown
@@ -179,21 +182,39 @@ export type RustLiveSessionAction = {
   payload?: number[]
 }
 
+export type RustPreparedLiveDocument = {
+  document: Uint8Array | number[]
+  acceptedChanges: number
+  acceptedHashes: string[]
+  heads: string[]
+  response?: Uint8Array | number[] | null
+  proof?: unknown
+  shouldPersist: boolean
+}
+
 export type RustLiveWorkspaceSession = {
   receive(frame: Uint8Array): RustLiveSessionAction | null
+  receiveWithPlan(frame: Uint8Array): {
+    action: RustLiveSessionAction
+    plan: { effects: string[]; control?: unknown }
+  } | null
   encode(frameType: string, payload: Uint8Array): Uint8Array
   encodeAutomergeFrame(frame: unknown): Uint8Array
   decodeAutomergePayload(payload: Uint8Array): unknown
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void
   generateDocument(document: Uint8Array, proof: unknown): Uint8Array | undefined
-  prepareDocument(payload: Uint8Array, document: Uint8Array, responseProof: unknown): {
-    document: Uint8Array | number[]
-    acceptedChanges: number
-    acceptedHashes: string[]
-    heads: string[]
-    response?: Uint8Array | number[] | null
-    proof?: unknown
+  prepareDocument(payload: Uint8Array, document: Uint8Array, responseProof: unknown): RustPreparedLiveDocument
+  preparePublish(document: Uint8Array, proof: unknown, authorization: unknown, chat: unknown, mesh: unknown): {
+    documentFrame?: Uint8Array | number[]
+    controlSnapshot: Uint8Array | number[]
+    controlFrames: Array<Uint8Array | number[]>
   }
+  prepareControlPublish(authorization: unknown, chat: unknown, mesh: unknown): {
+    controlSnapshot: Uint8Array | number[]
+    controlFrames: Array<Uint8Array | number[]>
+  }
+  prepareSnapshotPublish(snapshot: Uint8Array): { snapshot: Uint8Array | number[]; frame?: Uint8Array | number[] }
+  finishPublish(controlSnapshot: Uint8Array, allFramesSent: boolean): void
   commitDocument(): void
   abortDocument(): void
   resetDocument(): void

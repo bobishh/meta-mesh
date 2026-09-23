@@ -1,4 +1,4 @@
-use crate::{PublicIdentity, WorkspaceAuthority, WorkspaceGrant, verify_workspace_grant};
+use crate::{verify_workspace_grant, PublicIdentity, WorkspaceAuthority, WorkspaceGrant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -270,6 +270,22 @@ pub fn is_workspace_envelope(value: &Value) -> Result<bool, String> {
             .is_some_and(|items| items.len() <= max)
     };
     let optional = |key: &str, max: usize| !value.contains_key(key) || bounded(key, max);
+    let workspace_id = value.get("workspaceId").and_then(Value::as_str);
+    let owner_person_id = value.get("ownerPersonId").and_then(Value::as_str);
+    let owner_public_key = value.get("ownerPublicKey").and_then(Value::as_str);
+    let epoch = value.get("epoch").and_then(Value::as_u64);
+    let scope_authority_valid = match value.get("scopeAuthoritySnapshot") {
+        None => true,
+        Some(snapshot) => serde_json::from_value::<crate::ScopeAuthoritySnapshot>(snapshot.clone())
+            .ok()
+            .and_then(|snapshot| crate::validate_scope_authority(&snapshot).ok())
+            .is_some_and(|authority| {
+                Some(authority.scope_id.as_str()) == workspace_id
+                    && Some(authority.controller.person_id.as_str()) == owner_person_id
+                    && Some(authority.controller.public_key.as_str()) == owner_public_key
+                    && Some(authority.control_epoch) == epoch
+            }),
+    };
     Ok(value.get("version").and_then(Value::as_u64) == Some(1)
         && text("workspaceId")
         && text("ownerPersonId")
@@ -281,6 +297,7 @@ pub fn is_workspace_envelope(value: &Value) -> Result<bool, String> {
             .is_some_and(|epoch| (1..=9_007_199_254_740_991).contains(&epoch))
         && bounded("ownerCertificates", 32)
         && bounded("peers", 512)
+        && scope_authority_valid
         && optional("ownerHistory", usize::MAX)
         && optional("ownershipTransfers", usize::MAX)
         && optional("successionVotes", 32)

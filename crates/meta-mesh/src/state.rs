@@ -97,6 +97,18 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::create_scope_genesis(input).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = createScopeGenesisPayload)]
+    pub fn create_scope_genesis_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeGenesisPayloadInput = from_value(raw)?;
+        to_value(&meta_mesh_core::create_scope_genesis_payload(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = createScopeControlTransferPayload)]
+    pub fn create_scope_control_transfer_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeControlTransferPayloadInput = from_value(raw)?;
+        to_value(&meta_mesh_core::create_scope_control_transfer_payload(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = preferredSessionDirection)]
     pub fn preferred_session_direction(
         local_device_id: &str,
@@ -823,6 +835,17 @@ impl WasmStateCore {
         let changes: Vec<IncomingDocumentChange> = from_value(changes)?;
         let plan = meta_mesh_core::plan_change_admission(document_id, changes, verified_at)
             .map_err(js_error)?;
+        to_value(&plan)
+    }
+
+    #[wasm_bindgen(js_name = planChangeAdmissionFlow)]
+    pub fn plan_change_admission_flow(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ChangeAdmissionFlowInput = from_value(raw)?;
+        let plan = meta_mesh_core::plan_change_admission_flow(
+            input,
+            i128::from(integer(now_ms, "Invalid change authorization timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&plan)
     }
 
