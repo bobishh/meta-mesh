@@ -28,6 +28,8 @@ export type MeshScopeHost = {
 /** Executes Rust scope effects against browser storage and transport callbacks. */
 export class BrowserMeshScopeSync {
   private queue: Promise<unknown> = Promise.resolve()
+  private closing = false
+  private closed?: Promise<void>
   private knownChat = new Set<string>()
   constructor(private readonly runtime: RustMeshScopeRuntime, private readonly host: MeshScopeHost) {}
 
@@ -40,6 +42,7 @@ export class BrowserMeshScopeSync {
   }
 
   receive(stream: MeshScopeStream, frame: Uint8Array): Promise<void> {
+    if (this.closing) return Promise.resolve()
     const prepared = this.queue.then(() => this.runtime.receiveFrame(frame), () => this.runtime.receiveFrame(frame))
     // Gossip callback must stay outside document/control serialization. It may
     // publish another stream and waiting here recreates the old sync deadlock.
@@ -53,13 +56,16 @@ export class BrowserMeshScopeSync {
   }
 
   async publish(sendFrame: MeshScopeSendFrame): Promise<boolean> {
+    if (this.closing) return false
     const run = async () => {
+      if (this.closing) return false
       const document = await this.host.readDocument()
       const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
       const nextKnownChat = new Set(this.knownChat)
-      const plan = this.runtime.preparePublish(document, proof, proof,
-        this.host.readChat ? await this.host.readChat(nextKnownChat) : undefined,
-        this.host.readMesh ? await this.host.readMesh() : undefined)
+      const chat = this.host.readChat ? await this.host.readChat(nextKnownChat) : undefined
+      const mesh = this.host.readMesh ? await this.host.readMesh() : undefined
+      if (this.closing) return false
+      const plan = this.runtime.preparePublish(document, proof, proof, chat, mesh)
       let allFramesSent = false
       try {
         if (plan.documentFrame && !await sendFrame(toBytes(plan.documentFrame), "document")) return false
@@ -177,7 +183,13 @@ export class BrowserMeshScopeSync {
     try { this.runtime.completeSavedReceive(false) } catch { /* preserve host failure */ }
   }
 
-  free(): void { this.runtime.free?.() }
+  close(): Promise<void> {
+    if (!this.closed) {
+      this.closing = true
+      this.closed = this.queue.then(() => {}, () => {}).then(() => { this.runtime.free?.() })
+    }
+    return this.closed
+  }
 }
 
 function toBytes(value: Uint8Array | number[]): Uint8Array {
