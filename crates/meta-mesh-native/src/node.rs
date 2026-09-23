@@ -37,6 +37,7 @@ pub struct NativeNodeOptions {
     pub secret: Option<[u8; 32]>,
     pub allowed_peers: Vec<EndpointId>,
     pub allow_any: bool,
+    pub accept_unlisted_browser_rpc: bool,
     pub storage_path: Option<PathBuf>,
     pub bind_addr: SocketAddr,
     pub relay_mode: RelayMode,
@@ -48,6 +49,7 @@ impl Default for NativeNodeOptions {
             secret: None,
             allowed_peers: Vec::new(),
             allow_any: false,
+            accept_unlisted_browser_rpc: false,
             storage_path: None,
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             relay_mode: RelayMode::Default,
@@ -59,11 +61,15 @@ impl Default for NativeNodeOptions {
 struct AccessHook {
     allowed_remotes: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
+    accept_unlisted_browser_rpc: bool,
 }
 
 impl EndpointHooks for AccessHook {
     async fn after_handshake<'a>(&'a self, connection: &'a Connection) -> AfterHandshakeOutcome {
-        if connection.side().is_client() || self.allow_any {
+        if connection.side().is_client()
+            || self.allow_any
+            || (self.accept_unlisted_browser_rpc && connection.alpn() == BROWSER_RPC_ALPN)
+        {
             return AfterHandshakeOutcome::Accept;
         }
         if self
@@ -289,6 +295,7 @@ impl NativeNode {
             secret,
             allowed_peers,
             allow_any: false,
+            accept_unlisted_browser_rpc: false,
             storage_path: None,
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             relay_mode: RelayMode::Disabled,
@@ -309,6 +316,7 @@ impl NativeNode {
             .hooks(AccessHook {
                 allowed_remotes: allowed_peers.clone(),
                 allow_any: options.allow_any,
+                accept_unlisted_browser_rpc: options.accept_unlisted_browser_rpc,
             })
             .bind()
             .await?;
@@ -563,6 +571,24 @@ mod tests {
         );
         responder.await.unwrap();
         session.close();
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn unlisted_browser_sync_can_reach_signed_admission_without_blob_access() {
+        let guest = NativeNode::start(Some([31; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start_with_options(NativeNodeOptions {
+            secret: Some([32; 32]),
+            accept_unlisted_browser_rpc: true,
+            ..NativeNodeOptions::default()
+        }).await.unwrap();
+        assert!(!host.is_peer_authorized(&guest.endpoint_id()));
+        let browser = guest.connect_browser(host.addr(), Duration::from_secs(5)).await.unwrap();
+        browser.close();
+        let blobs = guest.endpoint.connect(host.addr(), BLOBS_ALPN).await.unwrap();
+        let denied = tokio::time::timeout(Duration::from_secs(5), blobs.closed()).await.unwrap();
+        assert!(denied.to_string().contains("unauthorized"), "{denied}");
         guest.close().await.unwrap();
         host.close().await.unwrap();
     }
