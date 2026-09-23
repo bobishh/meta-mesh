@@ -136,6 +136,12 @@ Checkpoint after the write-evidence migration (11:08 local time): 6.7 and 7.3–
 - Current raw TS file sizes: Match's seven core sync files 2,767 lines; seven shared browser runtime adapter files 883 lines; Twang's whole `src/engine.ts` 2,651 lines. These include transport, UI/product, and persistence code and are **not** a remaining-protocol LOC estimate.
 - No lighthouse process exists. No Kotlin work in this transfer pass. No production deployment of this branch.
 
+### Scope runtime checkpoint (2026-09-23)
+
+- `meta-mesh-core` now owns Match scope-frame dispatch, Automerge receive preparation, durable completion before reply, publish ordering, and reset after failed persistence or accepted authority control. `BrowserMeshScopeSync` performs browser storage and stream effects. Match wires it through `workspaceSet.ts`; vendored Meta-mesh `d5820db` passes Match typecheck and production build.
+- Rust core: 138 tests pass. Meta-mesh WASM build and TypeScript check pass. Twang TypeScript check passes after changing the room RPC tag from `room-sync-v2` to `room-sync` and deleting unused `direct-sync`/`group-sync` receivers. No Twang consumer/runtime migration, final E2E, production deployment, or lighthouse process is claimed by these checks.
+- Match and Twang already use the same Rust `AutomergeSyncEngine`. Match's authenticated stream and Twang's request/response ACK are transport envelopes, not separate Automerge algorithms. An unused second `MeshDocumentRuntime` wrapper was removed. Twang still has TypeScript document delivery orchestration; `6.7`, `7.3`–`7.6` remain open.
+
 ### Dependency status (2026-09-20)
 
 - Native target: `iroh 1.2.0`, `iroh-gossip 0.101.0`, `iroh-blobs 0.103.0` available.
