@@ -117,6 +117,19 @@ export type RustLiveWorkspaceSession = {
   encode(frameType: string, payload: Uint8Array): Uint8Array
   encodeAutomergeFrame(frame: unknown): Uint8Array
   decodeAutomergePayload(payload: Uint8Array): unknown
+  startDocumentSync(localDeviceId: string, remoteDeviceId: string): void
+  generateDocument(document: Uint8Array, proof: unknown): Uint8Array | undefined
+  prepareDocument(payload: Uint8Array, document: Uint8Array, responseProof: unknown): {
+    document: Uint8Array | number[]
+    acceptedChanges: number
+    acceptedHashes: string[]
+    heads: string[]
+    response?: Uint8Array | number[] | null
+    proof?: unknown
+  }
+  commitDocument(): void
+  abortDocument(): void
+  resetDocument(): void
   controlChanged(snapshot: Uint8Array): boolean
   controlFrames(snapshot: Uint8Array): Uint8Array[]
   markControlSent(snapshot: Uint8Array): void

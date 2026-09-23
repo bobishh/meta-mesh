@@ -660,6 +660,32 @@ impl MobileLiveWorkspaceSession {
         self.with_inner(|session| to_json(&session.decode_automerge_payload(&payload).map_err(MobileMeshError::from_display)?))
     }
 
+    pub fn start_document_sync(&self, local_device_id: String, remote_device_id: String) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| session.start_document_sync(&local_device_id, &remote_device_id).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn generate_document(&self, document: Vec<u8>, proof_json: Option<String>) -> Result<Option<Vec<u8>>, MobileMeshError> {
+        let proof = proof_json.as_deref().map(from_json).transpose()?;
+        self.with_inner(|session| session.generate_document(&document, proof).map_err(MobileMeshError::from_display))
+    }
+
+    pub fn prepare_document_json(&self, payload: Vec<u8>, document: Vec<u8>, response_proof_json: Option<String>) -> Result<String, MobileMeshError> {
+        let response_proof = response_proof_json.as_deref().map(from_json).transpose()?;
+        self.with_inner(|session| to_json(&session.prepare_document(&payload, &document, response_proof).map_err(MobileMeshError::from_display)?))
+    }
+
+    pub fn commit_document(&self) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| session.commit_document().map_err(MobileMeshError::from_display))
+    }
+
+    pub fn abort_document(&self) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| { session.abort_document(); Ok(()) })
+    }
+
+    pub fn reset_document(&self) -> Result<(), MobileMeshError> {
+        self.with_inner(|session| { session.reset_document(); Ok(()) })
+    }
+
     pub fn control_changed(&self, snapshot: Vec<u8>) -> Result<bool, MobileMeshError> {
         self.with_inner(|session| Ok(session.control_changed(&snapshot)))
     }

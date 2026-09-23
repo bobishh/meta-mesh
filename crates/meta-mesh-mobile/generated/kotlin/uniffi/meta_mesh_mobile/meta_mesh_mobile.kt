@@ -767,7 +767,11 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_abort_document(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_commit_document(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed(
     ): Int
@@ -779,9 +783,17 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_generate_document(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_prepare_document_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_reset_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_start_document_sync(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack(
     ): Int
@@ -945,8 +957,12 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_constructor_mobileliveworkspacesession_new(`workspaceId`: RustBuffer.ByValue,`secret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_abort_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_acknowledge_saved(`ptr`: Long,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_commit_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_changed(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_frames(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -957,10 +973,18 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(`ptr`: Long,`frameJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_generate_document(`ptr`: Long,`document`: RustBuffer.ByValue,`proofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_prepare_document_json(`ptr`: Long,`payload`: RustBuffer.ByValue,`document`: RustBuffer.ByValue,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_receive_json(`ptr`: Long,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_reset_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_start_document_sync(`ptr`: Long,`localDeviceId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_heartbeat_ack(`ptr`: Long,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_saved_receipt(`ptr`: Long,`frame`: RustBuffer.ByValue,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1415,7 +1439,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive() and 0xFFFF) != 60073) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_abort_document() and 0xFFFF) != 35754) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved() and 0xFFFF) != 17535) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_commit_document() and 0xFFFF) != 26158) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed() and 0xFFFF) != 59873) {
@@ -1433,10 +1463,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame() and 0xFFFF) != 60700) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_generate_document() and 0xFFFF) != 15947) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() and 0xFFFF) != 21253) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_prepare_document_json() and 0xFFFF) != 4286) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json() and 0xFFFF) != 17819) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_reset_document() and 0xFFFF) != 39027) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_start_document_sync() and 0xFFFF) != 62150) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack() and 0xFFFF) != 30873) {
@@ -2734,7 +2776,11 @@ public object FfiConverterTypeMobileGossipTopic: FfiConverter<MobileGossipTopic,
 
 public interface MobileLiveWorkspaceSessionInterface {
 
+    fun `abortDocument`()
+
     fun `acknowledgeSaved`(`bytes`: kotlin.ByteArray): kotlin.ByteArray
+
+    fun `commitDocument`()
 
     fun `controlChanged`(`snapshot`: kotlin.ByteArray): kotlin.Boolean
 
@@ -2746,9 +2792,17 @@ public interface MobileLiveWorkspaceSessionInterface {
 
     fun `encodeAutomergeFrame`(`frameJson`: kotlin.String): kotlin.ByteArray
 
+    fun `generateDocument`(`document`: kotlin.ByteArray, `proofJson`: kotlin.String?): kotlin.ByteArray?
+
     fun `markControlSent`(`snapshot`: kotlin.ByteArray)
 
+    fun `prepareDocumentJson`(`payload`: kotlin.ByteArray, `document`: kotlin.ByteArray, `responseProofJson`: kotlin.String?): kotlin.String
+
     fun `receiveJson`(`frame`: kotlin.ByteArray): kotlin.String
+
+    fun `resetDocument`()
+
+    fun `startDocumentSync`(`localDeviceId`: kotlin.String, `remoteDeviceId`: kotlin.String)
 
     fun `verifyHeartbeatAck`(`frame`: kotlin.ByteArray)
 
@@ -2869,6 +2923,19 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
     }
 
 
+    @Throws(MobileMeshException::class)override fun `abortDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_abort_document(
+        it,
+        _status)
+}
+    }
+
+
+
+
     @Throws(MobileMeshException::class)override fun `acknowledgeSaved`(`bytes`: kotlin.ByteArray): kotlin.ByteArray {
             return FfiConverterByteArray.lift(
     callWithHandle {
@@ -2881,6 +2948,19 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
     }
     )
     }
+
+
+
+    @Throws(MobileMeshException::class)override fun `commitDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_commit_document(
+        it,
+        _status)
+}
+    }
+
 
 
 
@@ -2960,6 +3040,22 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
 
 
 
+    @Throws(MobileMeshException::class)override fun `generateDocument`(`document`: kotlin.ByteArray, `proofJson`: kotlin.String?): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_generate_document(
+        it,
+
+        FfiConverterByteArray.lower(`document`),
+        FfiConverterOptionalString.lower(`proofJson`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileMeshException::class)override fun `markControlSent`(`snapshot`: kotlin.ByteArray)
         =
     callWithHandle {
@@ -2971,6 +3067,23 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
 }
     }
 
+
+
+
+    @Throws(MobileMeshException::class)override fun `prepareDocumentJson`(`payload`: kotlin.ByteArray, `document`: kotlin.ByteArray, `responseProofJson`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_prepare_document_json(
+        it,
+
+        FfiConverterByteArray.lower(`payload`),
+        FfiConverterByteArray.lower(`document`),
+        FfiConverterOptionalString.lower(`responseProofJson`),_status)
+}
+    }
+    )
+    }
 
 
 
@@ -2986,6 +3099,34 @@ open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWork
     }
     )
     }
+
+
+
+    @Throws(MobileMeshException::class)override fun `resetDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_reset_document(
+        it,
+        _status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `startDocumentSync`(`localDeviceId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_start_document_sync(
+        it,
+
+        FfiConverterString.lower(`localDeviceId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
 
 
 

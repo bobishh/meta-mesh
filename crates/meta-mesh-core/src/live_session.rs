@@ -2,7 +2,8 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{AutomergeSyncFrame, ControlFrameReceiver, PairingCodec, control_frames};
+use crate::{AutomergeSyncEngine, AutomergeSyncFrame, ControlFrameReceiver, PairingCodec, control_frames};
+use serde_json::Value;
 
 const MAX_OWNER_OFFER_BYTES: usize = 24 * 1024 * 1024;
 const MAX_GOSSIP_PACKET_BYTES: usize = 256 * 1024;
@@ -21,6 +22,22 @@ pub enum LiveSessionAction {
     Snapshot(Vec<u8>),
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedLiveDocument {
+    pub document: Vec<u8>,
+    pub accepted_changes: usize,
+    pub accepted_hashes: Vec<String>,
+    pub heads: Vec<String>,
+    pub response: Option<Vec<u8>>,
+    pub proof: Option<Value>,
+}
+
+struct LiveDocumentSync {
+    engine: AutomergeSyncEngine,
+    remote_device_id: String,
+}
+
 /// Transport-independent protocol for one authenticated live workspace stream.
 /// The host performs storage and I/O; acknowledgements are created only after
 /// its durable write succeeds.
@@ -30,6 +47,7 @@ pub struct LiveWorkspaceSession {
     control_receiver: ControlFrameReceiver,
     transfer_sequence: u64,
     last_control_sent: Option<Vec<u8>>,
+    document_sync: Option<LiveDocumentSync>,
 }
 
 impl LiveWorkspaceSession {
@@ -45,6 +63,7 @@ impl LiveWorkspaceSession {
             secret,
             transfer_sequence: 0,
             last_control_sent: None,
+            document_sync: None,
         })
     }
 
@@ -111,6 +130,60 @@ impl LiveWorkspaceSession {
         serde_json::from_value(value).map_err(|_| "Invalid Automerge sync frame".to_string())
     }
 
+    pub fn start_document_sync(&mut self, local_device_id: &str, remote_device_id: &str) -> Result<(), String> {
+        if remote_device_id.is_empty() { return Err("Invalid remote device ID".to_string()); }
+        self.document_sync = Some(LiveDocumentSync {
+            engine: AutomergeSyncEngine::new(local_device_id, None)?,
+            remote_device_id: remote_device_id.to_string(),
+        });
+        Ok(())
+    }
+
+    pub fn generate_document(&mut self, document: &[u8], proof: Option<Value>) -> Result<Option<Vec<u8>>, String> {
+        let workspace_id = self.workspace_id.clone();
+        let sync = self.document_sync.as_mut().ok_or_else(|| "Document sync is not started".to_string())?;
+        sync.engine.load_document(&workspace_id, &workspace_id, document)?;
+        let frame = sync.engine.generate(&workspace_id, &sync.remote_device_id, true, proof)?;
+        frame.map(|frame| self.encode_automerge_frame(&frame)).transpose()
+    }
+
+    pub fn prepare_document(&mut self, payload: &[u8], document: &[u8], response_proof: Option<Value>) -> Result<PreparedLiveDocument, String> {
+        let frame = self.decode_automerge_payload(payload)?;
+        if frame.document_id != self.workspace_id || frame.scope_id != self.workspace_id {
+            return Err("Invalid Automerge sync frame".to_string());
+        }
+        let workspace_id = self.workspace_id.clone();
+        let sync = self.document_sync.as_mut().ok_or_else(|| "Document sync is not started".to_string())?;
+        sync.engine.load_document(&workspace_id, &workspace_id, document)?;
+        let proof = frame.proof.clone();
+        let result = sync.engine.prepare_receive(&sync.remote_device_id, frame, true, response_proof)?;
+        Ok(PreparedLiveDocument {
+            document: result.document,
+            accepted_changes: result.accepted_changes,
+            accepted_hashes: result.accepted_hashes,
+            heads: result.heads,
+            response: result.response.map(|frame| self.encode_automerge_frame(&frame)).transpose()?,
+            proof,
+        })
+    }
+
+    pub fn commit_document(&mut self) -> Result<(), String> {
+        let sync = self.document_sync.as_mut().ok_or_else(|| "Document sync is not started".to_string())?;
+        sync.engine.commit_prepared_receive(&self.workspace_id, &sync.remote_device_id)
+    }
+
+    pub fn abort_document(&mut self) {
+        if let Some(sync) = self.document_sync.as_mut() {
+            sync.engine.abort_prepared_receive(&self.workspace_id, &sync.remote_device_id);
+        }
+    }
+
+    pub fn reset_document(&mut self) {
+        if let Some(sync) = self.document_sync.as_mut() {
+            sync.engine.reset(&self.workspace_id, &sync.remote_device_id);
+        }
+    }
+
     pub fn control_changed(&self, snapshot: &[u8]) -> bool {
         self.last_control_sent.as_deref() != Some(snapshot)
     }
@@ -149,6 +222,7 @@ impl LiveWorkspaceSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use automerge::{AutoCommit, ROOT, transaction::Transactable};
 
     #[test]
     fn confirmed_delivery_requires_exact_saved_bytes() {
@@ -204,5 +278,28 @@ mod tests {
         let wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
         assert_eq!(wire["message"], "AQL_");
         assert_eq!(session.decode_automerge_payload(&payload).unwrap(), frame);
+    }
+
+    #[test]
+    fn document_sync_can_abort_and_retry_prepared_receive() {
+        let mut source_document = AutoCommit::new();
+        source_document.put(ROOT, "id", "board").unwrap();
+        let baseline = source_document.save();
+        source_document.put(ROOT, "title", "new title").unwrap();
+        let changed = source_document.save();
+
+        let mut source = LiveWorkspaceSession::new("board", "secret").unwrap();
+        source.start_document_sync("source", "receiver").unwrap();
+        let outbound = source.generate_document(&changed, None).unwrap().unwrap();
+        let mut receiver = LiveWorkspaceSession::new("board", "secret").unwrap();
+        receiver.start_document_sync("receiver", "source").unwrap();
+        let Some(LiveSessionAction::AutomergeSync(payload)) = receiver.receive(&outbound).unwrap() else { panic!("expected document frame"); };
+        let first = receiver.prepare_document(&payload, &baseline, None).unwrap();
+        assert!(receiver.generate_document(&baseline, None).is_err());
+        receiver.abort_document();
+        let second = receiver.prepare_document(&payload, &baseline, None).unwrap();
+        assert_eq!(second.accepted_hashes, first.accepted_hashes);
+        receiver.commit_document().unwrap();
+        AutoCommit::load(&second.document).unwrap();
     }
 }

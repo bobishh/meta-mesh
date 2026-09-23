@@ -982,7 +982,11 @@ public func FfiConverterTypeMobileGossipTopic_lower(_ value: MobileGossipTopic) 
 
 public protocol MobileLiveWorkspaceSessionProtocol: AnyObject, Sendable {
 
+    func abortDocument() throws
+
     func acknowledgeSaved(bytes: Data) throws  -> Data
+
+    func commitDocument() throws
 
     func controlChanged(snapshot: Data) throws  -> Bool
 
@@ -994,9 +998,17 @@ public protocol MobileLiveWorkspaceSessionProtocol: AnyObject, Sendable {
 
     func encodeAutomergeFrame(frameJson: String) throws  -> Data
 
+    func generateDocument(document: Data, proofJson: String?) throws  -> Data?
+
     func markControlSent(snapshot: Data) throws
 
+    func prepareDocumentJson(payload: Data, document: Data, responseProofJson: String?) throws  -> String
+
     func receiveJson(frame: Data) throws  -> String
+
+    func resetDocument() throws
+
+    func startDocumentSync(localDeviceId: String, remoteDeviceId: String) throws
 
     func verifyHeartbeatAck(frame: Data) throws
 
@@ -1066,6 +1078,14 @@ public convenience init(workspaceId: String, secret: String)throws  {
 
 
 
+open func abortDocument()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_abort_document(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+
 open func acknowledgeSaved(bytes: Data)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
@@ -1074,6 +1094,14 @@ open func acknowledgeSaved(bytes: Data)throws  -> Data  {
         FfiConverterData.lower(bytes),uniffiCallStatus
     )
 })
+}
+
+open func commitDocument()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_commit_document(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
 }
 
 open func controlChanged(snapshot: Data)throws  -> Bool  {
@@ -1127,6 +1155,17 @@ open func encodeAutomergeFrame(frameJson: String)throws  -> Data  {
 })
 }
 
+open func generateDocument(document: Data, proofJson: String?)throws  -> Data?  {
+    return try  FfiConverterOptionData.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_generate_document(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(document),
+        FfiConverterOptionString.lower(proofJson),uniffiCallStatus
+    )
+})
+}
+
 open func markControlSent(snapshot: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(
@@ -1134,6 +1173,18 @@ open func markControlSent(snapshot: Data)throws   {try rustCallWithError(FfiConv
         FfiConverterData.lower(snapshot),uniffiCallStatus
     )
 }
+}
+
+open func prepareDocumentJson(payload: Data, document: Data, responseProofJson: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_prepare_document_json(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(payload),
+        FfiConverterData.lower(document),
+        FfiConverterOptionString.lower(responseProofJson),uniffiCallStatus
+    )
+})
 }
 
 open func receiveJson(frame: Data)throws  -> String  {
@@ -1144,6 +1195,24 @@ open func receiveJson(frame: Data)throws  -> String  {
         FfiConverterData.lower(frame),uniffiCallStatus
     )
 })
+}
+
+open func resetDocument()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_reset_document(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+
+open func startDocumentSync(localDeviceId: String, remoteDeviceId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
+        uniffiCallStatus in
+    uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_start_document_sync(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(localDeviceId),
+        FfiConverterString.lower(remoteDeviceId),uniffiCallStatus
+    )
+}
 }
 
 open func verifyHeartbeatAck(frame: Data)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
@@ -3276,7 +3345,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive() != 60073) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_abort_document() != 35754) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved() != 17535) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_commit_document() != 26158) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed() != 59873) {
@@ -3294,10 +3369,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame() != 60700) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_generate_document() != 15947) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() != 21253) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_prepare_document_json() != 4286) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json() != 17819) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_reset_document() != 39027) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_start_document_sync() != 62150) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack() != 30873) {

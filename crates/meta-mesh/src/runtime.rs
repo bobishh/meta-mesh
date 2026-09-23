@@ -38,6 +38,30 @@ impl WasmLiveWorkspaceSession {
         to_value(&self.inner.decode_automerge_payload(payload).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = startDocumentSync)]
+    pub fn start_document_sync(&mut self, local_device_id: &str, remote_device_id: &str) -> Result<(), JsValue> {
+        self.inner.start_document_sync(local_device_id, remote_device_id).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = generateDocument)]
+    pub fn generate_document(&mut self, document: &[u8], proof: JsValue) -> Result<Option<Vec<u8>>, JsValue> {
+        self.inner.generate_document(document, optional_value(proof)?).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = prepareDocument)]
+    pub fn prepare_document(&mut self, payload: &[u8], document: &[u8], response_proof: JsValue) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.prepare_document(payload, document, optional_value(response_proof)?).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = commitDocument)]
+    pub fn commit_document(&mut self) -> Result<(), JsValue> { self.inner.commit_document().map_err(js_error) }
+
+    #[wasm_bindgen(js_name = abortDocument)]
+    pub fn abort_document(&mut self) { self.inner.abort_document(); }
+
+    #[wasm_bindgen(js_name = resetDocument)]
+    pub fn reset_document(&mut self) { self.inner.reset_document(); }
+
     #[wasm_bindgen(js_name = controlChanged)]
     pub fn control_changed(&self, snapshot: &[u8]) -> bool { self.inner.control_changed(snapshot) }
 
@@ -288,6 +312,10 @@ fn direction(value: &str) -> Result<SessionDirection, JsValue> {
 
 fn from_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
     serde_wasm_bindgen::from_value(value).map_err(js_error)
+}
+
+fn optional_value(value: JsValue) -> Result<Option<serde_json::Value>, JsValue> {
+    if value.is_null() || value.is_undefined() { Ok(None) } else { from_value(value).map(Some) }
 }
 
 fn to_value(value: &impl Serialize) -> Result<JsValue, JsValue> {
