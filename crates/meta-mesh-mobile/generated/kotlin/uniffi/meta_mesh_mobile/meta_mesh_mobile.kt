@@ -913,11 +913,11 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_clear(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(`ptr`: Long,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_refresh_json(`ptr`: Long,`snapshotJson`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(`ptr`: Long,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
     external fun uniffi_meta_mesh_mobile_fn_clone_mobilemeshhandshakeflow(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Long
@@ -1345,13 +1345,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_clear() and 0xFFFF) != 416) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json() and 0xFFFF) != 19223) {
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json() and 0xFFFF) != 57798) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_refresh_json() and 0xFFFF) != 27884) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove() and 0xFFFF) != 3093) {
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove() and 0xFFFF) != 5494) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_advance() and 0xFFFF) != 27410) {
@@ -2575,11 +2575,11 @@ public interface MobileMeshAuthenticatedSessionsInterface {
 
     fun `clear`()
 
-    fun `peerJson`(`remoteEndpoint`: kotlin.String): kotlin.String?
+    fun `peerJson`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.String?
 
     fun `refreshJson`(`snapshotJson`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String
 
-    fun `remove`(`remoteEndpoint`: kotlin.String): kotlin.Boolean
+    fun `remove`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.Boolean
 
     companion object
 }
@@ -2725,13 +2725,14 @@ open class MobileMeshAuthenticatedSessions: Disposable, AutoCloseable, MobileMes
 
 
 
-    @Throws(MobileMeshException::class)override fun `peerJson`(`remoteEndpoint`: kotlin.String): kotlin.String? {
+    @Throws(MobileMeshException::class)override fun `peerJson`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.String? {
             return FfiConverterOptionalString.lift(
     callWithHandle {
     uniffiRustCallWithError(MobileMeshException) { _status ->
     UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(
         it,
 
+        FfiConverterString.lower(`workspaceId`),
         FfiConverterString.lower(`remoteEndpoint`),_status)
 }
     }
@@ -2756,13 +2757,14 @@ open class MobileMeshAuthenticatedSessions: Disposable, AutoCloseable, MobileMes
 
 
 
-    @Throws(MobileMeshException::class)override fun `remove`(`remoteEndpoint`: kotlin.String): kotlin.Boolean {
+    @Throws(MobileMeshException::class)override fun `remove`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCallWithError(MobileMeshException) { _status ->
     UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(
         it,
 
+        FfiConverterString.lower(`workspaceId`),
         FfiConverterString.lower(`remoteEndpoint`),_status)
 }
     }

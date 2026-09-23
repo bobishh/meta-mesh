@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
                 Some("sync") => {
                     let peer = admitted
-                        .peer(&remote_device_id)
+                        .peer(&config.snapshot.workspace_id, &remote_device_id)
                         .ok_or("Unauthenticated mesh peer")?;
                     let frame: AutomergeSyncFrame =
                         serde_json::from_value(value.get("frame").cloned().ok_or("Missing frame")?)
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     serde_json::to_value(result).map_err(|error| error.to_string())
                 }
                 Some("read") => {
-                    if admitted.peer(&remote_device_id).is_none() {
+                    if admitted.peer(&config.snapshot.workspace_id, &remote_device_id).is_none() {
                         return Err("Unauthenticated mesh peer".into());
                     }
                     Ok(json!({ "document": engine.save_document("document")? }))

@@ -947,11 +947,11 @@ public protocol MobileMeshAuthenticatedSessionsProtocol: AnyObject, Sendable {
 
     func clear() throws
 
-    func peerJson(remoteEndpoint: String) throws  -> String?
+    func peerJson(workspaceId: String, remoteEndpoint: String) throws  -> String?
 
     func refreshJson(snapshotJson: String, nowMs: Int64) throws  -> String
 
-    func remove(remoteEndpoint: String) throws  -> Bool
+    func remove(workspaceId: String, remoteEndpoint: String) throws  -> Bool
 
 }
 open class MobileMeshAuthenticatedSessions: MobileMeshAuthenticatedSessionsProtocol, @unchecked Sendable {
@@ -1036,11 +1036,12 @@ open func clear()throws   {try rustCallWithError(FfiConverterTypeMobileMeshError
 }
 }
 
-open func peerJson(remoteEndpoint: String)throws  -> String?  {
+open func peerJson(workspaceId: String, remoteEndpoint: String)throws  -> String?  {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(
             self.uniffiCloneHandle(),
+        FfiConverterString.lower(workspaceId),
         FfiConverterString.lower(remoteEndpoint),uniffiCallStatus
     )
 })
@@ -1057,11 +1058,12 @@ open func refreshJson(snapshotJson: String, nowMs: Int64)throws  -> String  {
 })
 }
 
-open func remove(remoteEndpoint: String)throws  -> Bool  {
+open func remove(workspaceId: String, remoteEndpoint: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(
             self.uniffiCloneHandle(),
+        FfiConverterString.lower(workspaceId),
         FfiConverterString.lower(remoteEndpoint),uniffiCallStatus
     )
 })
@@ -2981,13 +2983,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_clear() != 416) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json() != 19223) {
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json() != 57798) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_refresh_json() != 27884) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove() != 3093) {
+    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove() != 5494) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_advance() != 27410) {

@@ -45,7 +45,7 @@ do {
         _ = try sessions.admitJson(handshakeJson: "{}", snapshotJson: "{}", remoteEndpoint: "peer", nowMs: 0)
         expect(false, "Swift session registry admitted unsigned authority")
     } catch {}
-    expect(try sessions.peerJson(remoteEndpoint: "peer") == nil, "Swift retained denied peer")
+    expect(try sessions.peerJson(workspaceId: "workspace", remoteEndpoint: "peer") == nil, "Swift retained denied peer")
     let running = try runtime.isRunning()
     expect(running, "Swift runtime did not start")
     let attempt = try runtime.beginRouteAttemptJson(routeKey: "peer-1", nowMs: 100)

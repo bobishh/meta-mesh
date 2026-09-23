@@ -23,7 +23,7 @@ pub struct MeshPeerAdmission {
 
 #[derive(Default)]
 pub struct MeshAuthenticatedSessions {
-    peers: BTreeMap<String, (Value, MeshPeerAdmission)>,
+    peers: BTreeMap<(String, String), (Value, MeshPeerAdmission)>,
 }
 
 impl MeshAuthenticatedSessions {
@@ -34,15 +34,15 @@ impl MeshAuthenticatedSessions {
         remote_endpoint: &str,
         now_ms: i128,
     ) -> Result<MeshPeerAdmission, String> {
-        self.peers.remove(remote_endpoint);
+        let key = (snapshot.workspace_id.clone(), remote_endpoint.to_string());
+        self.peers.remove(&key);
         let peer = admit_mesh_peer(handshake.clone(), snapshot, remote_endpoint, now_ms)?;
-        self.peers
-            .insert(remote_endpoint.to_string(), (handshake, peer.clone()));
+        self.peers.insert(key, (handshake, peer.clone()));
         Ok(peer)
     }
 
-    pub fn peer(&self, remote_endpoint: &str) -> Option<&MeshPeerAdmission> {
-        self.peers.get(remote_endpoint).map(|(_, peer)| peer)
+    pub fn peer(&self, workspace_id: &str, remote_endpoint: &str) -> Option<&MeshPeerAdmission> {
+        self.peers.get(&(workspace_id.to_string(), remote_endpoint.to_string())).map(|(_, peer)| peer)
     }
 
     /// Recompute every live admission against an updated signed authority
@@ -54,20 +54,21 @@ impl MeshAuthenticatedSessions {
     ) -> Result<Vec<String>, String> {
         ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(snapshot, now_ms)?;
         let mut evicted = Vec::new();
-        for (endpoint, (handshake, peer)) in &mut self.peers {
+        for ((workspace_id, endpoint), (handshake, peer)) in &mut self.peers {
+            if workspace_id != &snapshot.workspace_id { continue; }
             match admit_mesh_peer(handshake.clone(), snapshot, endpoint, now_ms) {
                 Ok(admitted) => *peer = admitted,
                 Err(_) => evicted.push(endpoint.clone()),
             }
         }
         for endpoint in &evicted {
-            self.peers.remove(endpoint);
+            self.peers.remove(&(snapshot.workspace_id.clone(), endpoint.clone()));
         }
         Ok(evicted)
     }
 
-    pub fn remove(&mut self, remote_endpoint: &str) -> bool {
-        self.peers.remove(remote_endpoint).is_some()
+    pub fn remove(&mut self, workspace_id: &str, remote_endpoint: &str) -> bool {
+        self.peers.remove(&(workspace_id.to_string(), remote_endpoint.to_string())).is_some()
     }
 
     pub fn clear(&mut self) {
@@ -201,7 +202,7 @@ mod tests {
         )
     }
 
-    fn signed_editor() -> (
+    fn signed_editor(workspace_id: &str) -> (
         Value,
         WorkspaceWriteAuthorizationSnapshot,
         WorkspaceAuthority,
@@ -213,7 +214,7 @@ mod tests {
             kind: "workspace-grant".into(),
             version: 1,
             grant_id: "editor".into(),
-            workspace_id: "workspace".into(),
+            workspace_id: workspace_id.into(),
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
@@ -233,7 +234,7 @@ mod tests {
         let advertisement_payload = PeerAdvertisementPayload {
             kind: "peer-advertisement".into(),
             version: 1,
-            workspace_id: "workspace".into(),
+            workspace_id: workspace_id.into(),
             person_id: editor.person_id.clone(),
             device_id: editor_device_id.clone(),
             instance_id: Some("slot-1".into()),
@@ -258,10 +259,10 @@ mod tests {
         };
         let bundle = json!({ "advertisement": advertisement, "publicKey": editor.public_key,
             "certificates": editor.certificates, "grant": grant });
-        let handshake = json!({ "workspaceId": "workspace", "peer": bundle,
+        let handshake = json!({ "workspaceId": workspace_id, "peer": bundle,
             "capabilities": ["iroh-gossip-v1", "automerge-sync-v1"] });
         let snapshot = WorkspaceWriteAuthorizationSnapshot {
-            workspace_id: "workspace".into(),
+            workspace_id: workspace_id.into(),
             genesis_owner: owner.clone(),
             genesis_epoch: 1,
             expected_current_owner: owner.clone(),
@@ -277,7 +278,7 @@ mod tests {
 
     #[test]
     fn signed_editor_is_admitted_only_on_its_signed_transport_endpoint() {
-        let (handshake, snapshot, _, device_id) = signed_editor();
+        let (handshake, snapshot, _, device_id) = signed_editor("workspace");
         let admitted = admit_mesh_peer(handshake.clone(), &snapshot, "remote-endpoint", 0).unwrap();
         assert_eq!(admitted.device_id, device_id);
         assert_eq!(admitted.role, WorkspaceRole::Editor);
@@ -292,8 +293,23 @@ mod tests {
     }
 
     #[test]
+    fn one_transport_endpoint_keeps_independent_workspace_admissions() {
+        let (first, first_snapshot, _, _) = signed_editor("first");
+        let (second, second_snapshot, _, _) = signed_editor("second");
+        let mut sessions = MeshAuthenticatedSessions::default();
+        sessions.admit(first, &first_snapshot, "remote-endpoint", 0).unwrap();
+        sessions.admit(second, &second_snapshot, "remote-endpoint", 0).unwrap();
+        assert_eq!(sessions.peer("first", "remote-endpoint").unwrap().workspace_id, "first");
+        assert_eq!(sessions.peer("second", "remote-endpoint").unwrap().workspace_id, "second");
+        assert!(sessions.refresh(&first_snapshot, 0).unwrap().is_empty());
+        assert!(sessions.remove("first", "remote-endpoint"));
+        assert!(sessions.peer("first", "remote-endpoint").is_none());
+        assert!(sessions.peer("second", "remote-endpoint").is_some());
+    }
+
+    #[test]
     fn signed_device_revocation_rejects_editor_before_document_sync() {
-        let (handshake, mut snapshot, owner, device_id) = signed_editor();
+        let (handshake, mut snapshot, owner, device_id) = signed_editor("workspace");
         let mut sessions = MeshAuthenticatedSessions::default();
         sessions
             .admit(handshake.clone(), &snapshot, "remote-endpoint", 0)
@@ -301,7 +317,7 @@ mod tests {
         let mut invalid = snapshot.clone();
         invalid.workspace_id.clear();
         assert!(sessions.refresh(&invalid, 0).is_err());
-        assert!(sessions.peer("remote-endpoint").is_some());
+        assert!(sessions.peer("workspace", "remote-endpoint").is_some());
         let owner_device_id = public_key_id(&public_key_from_seed(&[2; 32]).unwrap()).unwrap();
         let mut document = AutoCommit::new();
         document.put(ROOT, "title", "board").unwrap();
@@ -348,6 +364,6 @@ mod tests {
             sessions.refresh(&snapshot, 0).unwrap(),
             vec!["remote-endpoint"]
         );
-        assert!(sessions.peer("remote-endpoint").is_none());
+        assert!(sessions.peer("workspace", "remote-endpoint").is_none());
     }
 }

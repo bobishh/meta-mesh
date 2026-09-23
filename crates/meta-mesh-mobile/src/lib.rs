@@ -548,10 +548,10 @@ impl MobileMeshAuthenticatedSessions {
         to_json(&admitted)
     }
 
-    pub fn peer_json(&self, remote_endpoint: String) -> Result<Option<String>, MobileMeshError> {
+    pub fn peer_json(&self, workspace_id: String, remote_endpoint: String) -> Result<Option<String>, MobileMeshError> {
         let sessions = self.inner.lock()
             .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?;
-        sessions.peer(&remote_endpoint).map(to_json).transpose()
+        sessions.peer(&workspace_id, &remote_endpoint).map(to_json).transpose()
     }
 
     pub fn refresh_json(&self, snapshot_json: String, now_ms: i64) -> Result<String, MobileMeshError> {
@@ -563,10 +563,10 @@ impl MobileMeshAuthenticatedSessions {
         to_json(&evicted)
     }
 
-    pub fn remove(&self, remote_endpoint: String) -> Result<bool, MobileMeshError> {
+    pub fn remove(&self, workspace_id: String, remote_endpoint: String) -> Result<bool, MobileMeshError> {
         Ok(self.inner.lock()
             .map_err(|_| MobileMeshError::from_display("Mobile mesh session lock poisoned"))?
-            .remove(&remote_endpoint))
+            .remove(&workspace_id, &remote_endpoint))
     }
 
     pub fn clear(&self) -> Result<(), MobileMeshError> {

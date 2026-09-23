@@ -29,8 +29,8 @@ impl WasmMeshAuthenticatedSessions {
         to_value(&admitted)
     }
 
-    pub fn peer(&self, remote_endpoint: &str) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.peer(remote_endpoint))
+    pub fn peer(&self, workspace_id: &str, remote_endpoint: &str) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.peer(workspace_id, remote_endpoint))
     }
 
     pub fn refresh(&mut self, snapshot: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
@@ -40,7 +40,7 @@ impl WasmMeshAuthenticatedSessions {
         to_value(&evicted)
     }
 
-    pub fn remove(&mut self, remote_endpoint: &str) -> bool { self.inner.remove(remote_endpoint) }
+    pub fn remove(&mut self, workspace_id: &str, remote_endpoint: &str) -> bool { self.inner.remove(workspace_id, remote_endpoint) }
     pub fn clear(&mut self) { self.inner.clear(); }
 }
 
