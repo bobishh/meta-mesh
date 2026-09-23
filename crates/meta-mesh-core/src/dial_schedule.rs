@@ -34,7 +34,10 @@ pub struct DialSchedulePlan {
 pub fn plan_dial_schedule(input: DialScheduleInput) -> Result<DialSchedulePlan, String> {
     let mut candidates = BTreeMap::<String, Vec<(usize, &DialRouteInput)>>::new();
     for (index, route) in input.routes.iter().enumerate() {
-        if route.revoked || route.device_id == input.local_device_id {
+        // Each pair has one dialer. Simultaneous Iroh dials can alias the
+        // same underlying connection; closing a rejected duplicate then
+        // closes the accepted session as well.
+        if route.revoked || route.device_id <= input.local_device_id {
             continue;
         }
         candidates
@@ -107,4 +110,25 @@ pub fn plan_dial_schedule(input: DialScheduleInput) -> Result<DialSchedulePlan, 
 fn retry(retries: &mut BTreeMap<String, u64>, workspace_id: &str, at: u64) {
     let prior = retries.entry(workspace_id.to_string()).or_insert(at);
     *prior = (*prior).min(at);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_one_side_of_a_device_pair_dials() {
+        let route = |device_id: &str| DialRouteInput {
+            workspace_id: "board".into(), device_id: device_id.into(), revoked: false,
+            health: 0, retry_at_ms: 0, has_session: false, attempt_active: false,
+        };
+        let lower = plan_dial_schedule(DialScheduleInput {
+            local_device_id: "device-a".into(), now_ms: 1, routes: vec![route("device-b")],
+        }).unwrap();
+        let upper = plan_dial_schedule(DialScheduleInput {
+            local_device_id: "device-b".into(), now_ms: 1, routes: vec![route("device-a")],
+        }).unwrap();
+        assert_eq!(lower.ready_groups, vec![vec![0]]);
+        assert!(upper.ready_groups.is_empty());
+    }
 }
