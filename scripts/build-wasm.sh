@@ -59,7 +59,8 @@ cargo build --manifest-path "$crate_dir/Cargo.toml" --release --target wasm32-un
 wasm-bindgen \
   "$target_dir/wasm32-unknown-unknown/release/meta_mesh.wasm" \
   --out-dir "$out_dir" \
-  --target web
+  --target web \
+  --remove-name-section
 
 mkdir -p "$root_dir/packages/mesh-transport/wasm"
 cp "$out_dir"/meta_mesh* "$root_dir/packages/mesh-transport/wasm/"

@@ -36,3 +36,11 @@ Run generated Swift and Kotlin clients against the native runtime, including den
 ```sh
 ./scripts/test-mobile-language-interop.sh
 ```
+
+## Browser release artifacts
+
+`scripts/build-wasm.sh` omits the WebAssembly debugging `name` section from
+the shipped browser artifact. This keeps Rust symbol names out of the download;
+exports and executable sections are preserved. For symbolized local debugging,
+run `wasm-bindgen` on `target/wasm32-unknown-unknown/release/meta_mesh.wasm`
+without `--remove-name-section` into a separate local output directory.
