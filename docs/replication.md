@@ -76,7 +76,7 @@ Reconnect can discard ephemeral sync state. Native Automerge anti-entropy recons
 
 ## Sparse gossip
 
-Neighbors are selected per durable device, never per tab. Defaults are low-water 2, target 4, high-water 6, eager fanout 3. Announcements advertise bounded change hashes and heads. Peers request missing hashes and validate each change before admission. Periodic repair exchanges frontiers so missed live pushes converge.
+Neighbors are selected per durable device, never per tab. Defaults are low-water 2, target 4, high-water 6, eager fanout 3. For each selected device, every live local instance schedules an independent session to each advertised remote instance that it does not already hold. A deterministic `(deviceId, instanceId)` endpoint tie-break selects exactly one dialer for each endpoint pair, avoiding the Iroh connection alias that can occur when both sides dial the same endpoint at once. Announcements advertise bounded change hashes and heads. Peers request missing hashes and validate each change before admission. Periodic repair exchanges frontiers so missed live pushes converge.
 
 Small meshes can connect fully. Larger meshes keep bounded neighbors and rely on repeated gossip. Offline delivery still requires some later overlap between replicas or an explicitly trusted store-and-forward node. More historical peers alone do not provide delivery when no current path exists.
 

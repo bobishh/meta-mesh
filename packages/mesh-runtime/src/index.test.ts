@@ -25,7 +25,7 @@ describe("Rust mesh runtime", () => {
       key: { workspaceId: "workspace", deviceId: "device", instanceId: "one" },
       connectionId: "replacement", remoteIssuedAt: "2026-09-21T00:00:00Z",
       remoteRouteSequence: 2, direction: "outgoing",
-    }, "incoming")
+    }, "outgoing")
 
     expect(first.decision).toBe("accepted")
     expect(sibling.decision).toBe("accepted")

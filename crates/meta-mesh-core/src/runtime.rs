@@ -70,9 +70,11 @@ pub enum SessionDirection {
 
 pub fn preferred_session_direction(
     local_device_id: &str,
+    local_instance_id: &str,
     remote_device_id: &str,
+    remote_instance_id: &str,
 ) -> SessionDirection {
-    if local_device_id < remote_device_id {
+    if (local_device_id, local_instance_id) < (remote_device_id, remote_instance_id) {
         SessionDirection::Outgoing
     } else {
         SessionDirection::Incoming
@@ -719,6 +721,18 @@ mod tests {
             None
         );
         assert_eq!(runtime.sessions().count(), 2);
+    }
+
+    #[test]
+    fn endpoint_direction_breaks_ties_between_instances_of_one_device() {
+        assert_eq!(
+            preferred_session_direction("device", "tab-a", "device", "tab-b"),
+            SessionDirection::Outgoing,
+        );
+        assert_eq!(
+            preferred_session_direction("device", "tab-b", "device", "tab-a"),
+            SessionDirection::Incoming,
+        );
     }
 
     #[test]

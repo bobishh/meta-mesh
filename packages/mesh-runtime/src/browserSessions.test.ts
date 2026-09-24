@@ -14,7 +14,7 @@ describe("BrowserMeshSessions", () => {
     const session = { publish: vi.fn(async () => {}), close: vi.fn(async () => {}), done }
     const runtime = { admitSession: vi.fn(() => ({ decision: "accepted" as const, generation: 1 })), removeSession: vi.fn(() => "connection") }
     const sessions = new BrowserMeshSessions({
-      profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId,
+      profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId, instanceId: () => "tab-local",
       credential: async () => ({}), create: () => ({ session }), runtime: () => runtime,
       key: () => "workspace:remote:instance", stopped: () => false, trace: vi.fn(), diagnosticCleared: vi.fn(),
       currentRemoved: vi.fn(async () => {}), notify: vi.fn(async () => {}), publishRecovered: vi.fn(async () => {}),
@@ -49,7 +49,7 @@ describe("BrowserMeshSessions", () => {
       clear: vi.fn(),
     }
     const sessions = new BrowserMeshSessions({
-      profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId,
+      profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId, instanceId: () => "tab-local",
       credential: async () => ({}), create: () => { throw new Error("Session construction failed") },
       runtime: () => runtime,
       key: () => "workspace:remote:instance", stopped: () => false, trace: vi.fn(), diagnosticCleared: vi.fn(),

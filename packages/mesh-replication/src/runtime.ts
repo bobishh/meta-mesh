@@ -6,7 +6,7 @@ export type RustStateCore = {
   createScopeGenesisPayload(input: unknown): unknown
   planScopeGenesis(input: unknown): unknown
   createScopeControlTransferPayload(input: unknown): unknown
-  preferredSessionDirection(localDeviceId: string, remoteDeviceId: string): "incoming" | "outgoing"
+  preferredSessionDirection(localDeviceId: string, localInstanceId: string, remoteDeviceId: string, remoteInstanceId: string): "incoming" | "outgoing"
   hasAuthorityConflict(credential: unknown): boolean
   prepareWriteEvidence(input: unknown): unknown
   planSuccessionCatalog(input: unknown): { credential: unknown; persist: boolean; publish: boolean }

@@ -118,11 +118,15 @@ impl WasmStateCore {
     #[wasm_bindgen(js_name = preferredSessionDirection)]
     pub fn preferred_session_direction(
         local_device_id: &str,
+        local_instance_id: &str,
         remote_device_id: &str,
+        remote_instance_id: &str,
     ) -> Result<JsValue, JsValue> {
         to_value(&meta_mesh_core::preferred_session_direction(
             local_device_id,
+            local_instance_id,
             remote_device_id,
+            remote_instance_id,
         ))
     }
 
