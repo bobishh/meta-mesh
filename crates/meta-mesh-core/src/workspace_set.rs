@@ -46,20 +46,26 @@ mod tests {
         let allowed = vec!["a".into(), "b".into()];
         let entries = br#"[{"id":"a","bytes":"AA"},{"id":"b","bytes":"BB"}]"#;
         assert_eq!(decode_workspace_set(entries, &allowed).unwrap().len(), 2);
-        assert!(decode_workspace_set(
-            br#"[{"id":"a","bytes":"AA"},{"id":"a","bytes":"BB"}]"#,
-            &allowed
-        )
-        .is_err());
-        assert!(decode_workspace_set(
-            br#"[{"id":"a","bytes":"AA"},{"id":"c","bytes":"BB"}]"#,
-            &allowed
-        )
-        .is_err());
-        assert!(decode_workspace_set(
-            br#"[{"id":"a","bytes":1},{"id":"b","bytes":"BB"}]"#,
-            &allowed
-        )
-        .is_err());
+        assert!(
+            decode_workspace_set(
+                br#"[{"id":"a","bytes":"AA"},{"id":"a","bytes":"BB"}]"#,
+                &allowed
+            )
+            .is_err()
+        );
+        assert!(
+            decode_workspace_set(
+                br#"[{"id":"a","bytes":"AA"},{"id":"c","bytes":"BB"}]"#,
+                &allowed
+            )
+            .is_err()
+        );
+        assert!(
+            decode_workspace_set(
+                br#"[{"id":"a","bytes":1},{"id":"b","bytes":"BB"}]"#,
+                &allowed
+            )
+            .is_err()
+        );
     }
 }

@@ -582,12 +582,23 @@ mod tests {
             secret: Some([32; 32]),
             accept_unlisted_browser_rpc: true,
             ..NativeNodeOptions::default()
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         assert!(!host.is_peer_authorized(&guest.endpoint_id()));
-        let browser = guest.connect_browser(host.addr(), Duration::from_secs(5)).await.unwrap();
+        let browser = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
         browser.close();
-        let blobs = guest.endpoint.connect(host.addr(), BLOBS_ALPN).await.unwrap();
-        let denied = tokio::time::timeout(Duration::from_secs(5), blobs.closed()).await.unwrap();
+        let blobs = guest
+            .endpoint
+            .connect(host.addr(), BLOBS_ALPN)
+            .await
+            .unwrap();
+        let denied = tokio::time::timeout(Duration::from_secs(5), blobs.closed())
+            .await
+            .unwrap();
         assert!(denied.to_string().contains("unauthorized"), "{denied}");
         guest.close().await.unwrap();
         host.close().await.unwrap();

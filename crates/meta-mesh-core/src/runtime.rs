@@ -733,13 +733,17 @@ mod tests {
             candidate("one", "preferred", 1, SessionDirection::Outgoing),
             SessionDirection::Outgoing,
         );
-        assert!(matches!(preferred, SessionAdmission::Accepted { replaced_connection_id: Some(value), .. }
-            if value == "nonpreferred"));
+        assert!(
+            matches!(preferred, SessionAdmission::Accepted { replaced_connection_id: Some(value), .. }
+            if value == "nonpreferred")
+        );
         let stale = runtime.admit_session(
             candidate("one", "stale", 100, SessionDirection::Incoming),
             SessionDirection::Outgoing,
         );
-        assert!(matches!(stale, SessionAdmission::Rejected { retained_connection_id } if retained_connection_id == "preferred"));
+        assert!(
+            matches!(stale, SessionAdmission::Rejected { retained_connection_id } if retained_connection_id == "preferred")
+        );
     }
 
     #[test]

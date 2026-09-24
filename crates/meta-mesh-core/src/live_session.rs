@@ -1,9 +1,9 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    control_frames, AutomergeSyncEngine, AutomergeSyncFrame, ControlFrameReceiver, PairingCodec,
+    AutomergeSyncEngine, AutomergeSyncFrame, ControlFrameReceiver, PairingCodec, control_frames,
 };
 use serde_json::Value;
 
@@ -169,7 +169,7 @@ impl LiveWorkspaceSession {
                 return Err(format!(
                     "Unsupported live workspace frame: {}",
                     header.frame_type
-                ))
+                ));
             }
         };
         Ok(Some(action))
@@ -519,7 +519,7 @@ impl LiveWorkspaceSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use automerge::{transaction::Transactable, AutoCommit, ROOT};
+    use automerge::{AutoCommit, ROOT, transaction::Transactable};
 
     #[test]
     fn confirmed_delivery_requires_exact_saved_bytes() {
@@ -532,13 +532,17 @@ mod tests {
         );
         let ack = session.acknowledge_saved(bytes).unwrap();
         session.verify_saved_receipt(&ack, bytes).unwrap();
-        assert!(session
-            .verify_saved_receipt(&ack, b"different authority")
-            .is_err());
-        assert!(LiveWorkspaceSession::new("board", "another secret")
-            .unwrap()
-            .receive(&frame)
-            .is_err());
+        assert!(
+            session
+                .verify_saved_receipt(&ack, b"different authority")
+                .is_err()
+        );
+        assert!(
+            LiveWorkspaceSession::new("board", "another secret")
+                .unwrap()
+                .receive(&frame)
+                .is_err()
+        );
     }
 
     #[test]
@@ -649,17 +653,21 @@ mod tests {
             Some(&sender.encode("sync-update", b"snapshot").unwrap()[..])
         );
         sender.finish_publish(&first.snapshot, false);
-        assert!(sender
-            .prepare_snapshot_publish(b"snapshot")
-            .unwrap()
-            .frame
-            .is_some());
+        assert!(
+            sender
+                .prepare_snapshot_publish(b"snapshot")
+                .unwrap()
+                .frame
+                .is_some()
+        );
         sender.finish_publish(&first.snapshot, true);
-        assert!(sender
-            .prepare_snapshot_publish(b"snapshot")
-            .unwrap()
-            .frame
-            .is_none());
+        assert!(
+            sender
+                .prepare_snapshot_publish(b"snapshot")
+                .unwrap()
+                .frame
+                .is_none()
+        );
 
         let action = receiver
             .receive(first.frame.as_ref().unwrap())
@@ -702,9 +710,11 @@ mod tests {
         );
         let ack = session.encode("sync-heartbeat-ack", &[]).unwrap();
         session.verify_heartbeat_ack(&ack).unwrap();
-        assert!(session
-            .encode("mesh-iroh-gossip", &vec![0; MAX_GOSSIP_PACKET_BYTES + 1])
-            .is_err());
+        assert!(
+            session
+                .encode("mesh-iroh-gossip", &vec![0; MAX_GOSSIP_PACKET_BYTES + 1])
+                .is_err()
+        );
         let oversized = PairingCodec::encode(
             "mesh-iroh-gossip",
             "secret",

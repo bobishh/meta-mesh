@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    authority::WorkspaceDeparture, authorization::ValidatedWorkspaceWriteAuthorizationContext,
-    public_key_id, verify_device_certificate_chain, verify_workspace_grant, PublicIdentity,
-    WorkspaceAuthority, WorkspaceGrant, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
-    DEFAULT_SIGNATURE_DOMAIN,
+    DEFAULT_SIGNATURE_DOMAIN, PublicIdentity, WorkspaceAuthority, WorkspaceGrant, WorkspaceRole,
+    WorkspaceWriteAuthorizationSnapshot, authority::WorkspaceDeparture,
+    authorization::ValidatedWorkspaceWriteAuthorizationContext, public_key_id,
+    verify_device_certificate_chain, verify_workspace_grant,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

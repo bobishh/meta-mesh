@@ -2,8 +2,8 @@
 //! Product documents never supply implicit creator, controller, or recovery data.
 
 use crate::{
-    public_key_id, sign_json_envelope, verify_device_certificate_chain, verify_signed_envelope,
-    DeviceCertificate, PublicIdentity, SignedEnvelope, DEFAULT_SIGNATURE_DOMAIN,
+    DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, PublicIdentity, SignedEnvelope, public_key_id,
+    sign_json_envelope, verify_device_certificate_chain, verify_signed_envelope,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -561,7 +561,7 @@ fn base_controller_capabilities() -> Vec<ScopeCapability> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{public_key_from_seed, sign_device_certificate, DeviceCertificatePayload};
+    use crate::{DeviceCertificatePayload, public_key_from_seed, sign_device_certificate};
     use serde_json::json;
     fn authority(root: [u8; 32], device: [u8; 32]) -> (ScopeAuthority, [u8; 32], String) {
         let public_key = public_key_from_seed(&root).unwrap();
@@ -660,14 +660,16 @@ mod tests {
         let (other, other_seed, other_device) = authority([12; 32], [13; 32]);
         let valid = genesis(&creator, &seed, &device);
         let forged = sign_scope_record(&other_seed, valid.payload.clone(), &other_device).unwrap();
-        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
-            genesis: forged,
-            grants: vec![],
-            grant_issuers: vec![],
-            revocations: vec![],
-            control_transfers: vec![]
-        })
-        .is_err());
+        assert!(
+            validate_scope_authority(&ScopeAuthoritySnapshot {
+                genesis: forged,
+                grants: vec![],
+                grant_issuers: vec![],
+                revocations: vec![],
+                control_transfers: vec![]
+            })
+            .is_err()
+        );
         let g = sign_scope_record(
             &seed,
             ScopeCapabilityGrantPayload {
@@ -696,16 +698,18 @@ mod tests {
             &device,
         )
         .unwrap();
-        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
-            genesis: valid.clone(),
-            grants: vec![g.clone()],
-            grant_issuers: vec![],
-            revocations: vec![v],
-            control_transfers: vec![]
-        })
-        .unwrap()
-        .grants
-        .is_empty());
+        assert!(
+            validate_scope_authority(&ScopeAuthoritySnapshot {
+                genesis: valid.clone(),
+                grants: vec![g.clone()],
+                grant_issuers: vec![],
+                revocations: vec![v],
+                control_transfers: vec![]
+            })
+            .unwrap()
+            .grants
+            .is_empty()
+        );
         let transfer = |to: ScopeAuthority| {
             sign_scope_record(
                 &seed,
@@ -722,14 +726,16 @@ mod tests {
             )
             .unwrap()
         };
-        assert!(validate_scope_authority(&ScopeAuthoritySnapshot {
-            genesis: valid,
-            grants: vec![g],
-            grant_issuers: vec![],
-            revocations: vec![],
-            control_transfers: vec![transfer(other.clone()), transfer(creator.clone())]
-        })
-        .is_err());
+        assert!(
+            validate_scope_authority(&ScopeAuthoritySnapshot {
+                genesis: valid,
+                grants: vec![g],
+                grant_issuers: vec![],
+                revocations: vec![],
+                control_transfers: vec![transfer(other.clone()), transfer(creator.clone())]
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -783,9 +789,11 @@ mod tests {
         assert!(validate_scope_authority(&valid).is_err());
         let mut unordered = valid;
         unordered.grants.push(root_grant);
-        assert!(validate_scope_authority(&unordered)
-            .unwrap()
-            .allows("member", ScopeCapability::Write));
+        assert!(
+            validate_scope_authority(&unordered)
+                .unwrap()
+                .allows("member", ScopeCapability::Write)
+        );
         let control = sign_scope_record(
             &admin_seed,
             ScopeCapabilityGrantPayload {

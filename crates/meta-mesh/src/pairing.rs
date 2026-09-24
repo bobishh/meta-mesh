@@ -1,7 +1,7 @@
 use js_sys::{Object, Reflect, Uint8Array};
 use meta_mesh_core::{
-    PairingCodec, WorkspaceJoinAck, WorkspaceJoinHandshake, WorkspaceJoinHandoff,
-    WorkspaceJoinHandoffOutcome, WorkspaceJoinResponse,
+    PairingCodec, WorkspaceJoinAck, WorkspaceJoinHandoff, WorkspaceJoinHandoffOutcome,
+    WorkspaceJoinHandshake, WorkspaceJoinResponse,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -208,7 +208,10 @@ impl WasmWorkspaceJoinHandoff {
 
     #[wasm_bindgen(js_name = guestTransportFailed)]
     pub fn guest_transport_failed(&mut self, retryable: bool) -> Result<String, JsValue> {
-        self.inner.guest_transport_failed(retryable).map(handoff_outcome_name).map_err(js_error)
+        self.inner
+            .guest_transport_failed(retryable)
+            .map(handoff_outcome_name)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = guestResumeSucceeded)]
@@ -218,7 +221,10 @@ impl WasmWorkspaceJoinHandoff {
 
     #[wasm_bindgen(js_name = guestResumeFailed)]
     pub fn guest_resume_failed(&mut self, retryable: bool) -> Result<String, JsValue> {
-        self.inner.guest_resume_failed(retryable).map(handoff_outcome_name).map_err(js_error)
+        self.inner
+            .guest_resume_failed(retryable)
+            .map(handoff_outcome_name)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = guestBeginConfirmation)]
@@ -228,16 +234,24 @@ impl WasmWorkspaceJoinHandoff {
 
     #[wasm_bindgen(js_name = guestConfirmationSent)]
     pub fn guest_confirmation_sent(&mut self) -> Result<String, JsValue> {
-        self.inner.guest_confirmation_sent().map(handoff_outcome_name).map_err(js_error)
+        self.inner
+            .guest_confirmation_sent()
+            .map(handoff_outcome_name)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = guestConfirmationFailed)]
     pub fn guest_confirmation_failed(&mut self) -> Result<String, JsValue> {
-        self.inner.guest_confirmation_failed().map(handoff_outcome_name).map_err(js_error)
+        self.inner
+            .guest_confirmation_failed()
+            .map(handoff_outcome_name)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = hostReceiveConfirmation)]
     pub fn host_receive_confirmation(&mut self, frame: &[u8]) -> Result<(), JsValue> {
-        self.inner.host_receive_confirmation(frame).map_err(js_error)
+        self.inner
+            .host_receive_confirmation(frame)
+            .map_err(js_error)
     }
 }

@@ -1,4 +1,4 @@
-use crate::{verify_workspace_grant, PublicIdentity, WorkspaceAuthority, WorkspaceGrant};
+use crate::{PublicIdentity, WorkspaceAuthority, WorkspaceGrant, verify_workspace_grant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

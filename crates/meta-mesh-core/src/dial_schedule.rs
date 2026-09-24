@@ -119,15 +119,26 @@ mod tests {
     #[test]
     fn only_one_side_of_a_device_pair_dials() {
         let route = |device_id: &str| DialRouteInput {
-            workspace_id: "board".into(), device_id: device_id.into(), revoked: false,
-            health: 0, retry_at_ms: 0, has_session: false, attempt_active: false,
+            workspace_id: "board".into(),
+            device_id: device_id.into(),
+            revoked: false,
+            health: 0,
+            retry_at_ms: 0,
+            has_session: false,
+            attempt_active: false,
         };
         let lower = plan_dial_schedule(DialScheduleInput {
-            local_device_id: "device-a".into(), now_ms: 1, routes: vec![route("device-b")],
-        }).unwrap();
+            local_device_id: "device-a".into(),
+            now_ms: 1,
+            routes: vec![route("device-b")],
+        })
+        .unwrap();
         let upper = plan_dial_schedule(DialScheduleInput {
-            local_device_id: "device-b".into(), now_ms: 1, routes: vec![route("device-a")],
-        }).unwrap();
+            local_device_id: "device-b".into(),
+            now_ms: 1,
+            routes: vec![route("device-a")],
+        })
+        .unwrap();
         assert_eq!(lower.ready_groups, vec![vec![0]]);
         assert!(upper.ready_groups.is_empty());
     }

@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
 use meta_mesh_core::{
-    control_frames, encode_workspace_update, is_workspace_update, AutomergeSyncFrame,
-    ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput, LiveWorkspaceSession,
-    MeshScopeRuntime,
-    MeshBatchDeliveryFlow, MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState,
-    RelayDialPolicy, SessionCandidate, SessionDirection, SessionKey,
+    AutomergeSyncFrame, ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput,
+    LiveWorkspaceSession, MeshBatchDeliveryFlow, MeshHandshakeFlow, MeshLifecycleState,
+    MeshRuntimeState, MeshScopeRuntime, RelayDialPolicy, SessionCandidate, SessionDirection,
+    SessionKey, control_frames, encode_workspace_update, is_workspace_update,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -130,7 +129,12 @@ impl WasmLiveWorkspaceSession {
 
     #[wasm_bindgen(js_name = prepareSnapshotPublish)]
     pub fn prepare_snapshot_publish(&self, snapshot: &[u8]) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.prepare_snapshot_publish(snapshot).map_err(js_error)?)
+        to_value(
+            &self
+                .inner
+                .prepare_snapshot_publish(snapshot)
+                .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = finishPublish)]
@@ -345,12 +349,23 @@ pub struct WasmMeshBatchDeliveryFlow {
 #[wasm_bindgen]
 impl WasmMeshBatchDeliveryFlow {
     #[wasm_bindgen(constructor)]
-    pub fn new(target_device_id: &str, route_ids: JsValue, fallback_delay_ms: f64,
-        retry_delays_ms: JsValue) -> Result<Self, JsValue> {
+    pub fn new(
+        target_device_id: &str,
+        route_ids: JsValue,
+        fallback_delay_ms: f64,
+        retry_delays_ms: JsValue,
+    ) -> Result<Self, JsValue> {
         let route_ids: Vec<String> = from_value(route_ids)?;
         let retry_delays_ms: Vec<f64> = from_value(retry_delays_ms)?;
-        Ok(Self { inner: MeshBatchDeliveryFlow::new(target_device_id.to_string(), route_ids,
-            fallback_delay_ms, retry_delays_ms).map_err(js_error)? })
+        Ok(Self {
+            inner: MeshBatchDeliveryFlow::new(
+                target_device_id.to_string(),
+                route_ids,
+                fallback_delay_ms,
+                retry_delays_ms,
+            )
+            .map_err(js_error)?,
+        })
     }
 
     pub fn start(&mut self) -> Result<JsValue, JsValue> {
@@ -358,9 +373,18 @@ impl WasmMeshBatchDeliveryFlow {
     }
 
     #[wasm_bindgen(js_name = routeResult)]
-    pub fn route_result(&mut self, round: u32, route_index: u32, accepted: bool,
-        failure: &str) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.route_result(round, route_index, accepted, failure.to_string()))
+    pub fn route_result(
+        &mut self,
+        round: u32,
+        route_index: u32,
+        accepted: bool,
+        failure: &str,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .route_result(round, route_index, accepted, failure.to_string()),
+        )
     }
 
     #[wasm_bindgen(js_name = fallbackElapsed)]

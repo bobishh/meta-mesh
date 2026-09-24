@@ -351,9 +351,11 @@ mod tests {
             candidate_person_id: "candidate".into(),
             existing_vote_for,
         };
-        assert!(plan_authority_command(make(Some("candidate".into())))
-            .unwrap()
-            .is_empty());
+        assert!(
+            plan_authority_command(make(Some("candidate".into())))
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             plan_authority_command(make(Some("other".into()))).unwrap_err(),
             "Your vote is already recorded for this policy"
@@ -390,12 +392,14 @@ mod tests {
         assert_eq!(plan[0], AuthorityAction::CreateGrant);
         assert!(plan.contains(&AuthorityAction::PersistGrant));
         assert!(plan.contains(&AuthorityAction::RefreshSuccessionPolicy));
-        assert!(plan_authority_command(AuthorityCommandInput::Promote {
-            local_person_id: "editor".into(),
-            owner_person_id: Some("owner".into()),
-            target_person_id: "other".into(),
-            has_active_membership: true,
-        })
-        .is_err());
+        assert!(
+            plan_authority_command(AuthorityCommandInput::Promote {
+                local_person_id: "editor".into(),
+                owner_person_id: Some("owner".into()),
+                target_person_id: "other".into(),
+                has_active_membership: true,
+            })
+            .is_err()
+        );
     }
 }

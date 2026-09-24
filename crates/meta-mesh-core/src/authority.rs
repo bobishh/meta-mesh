@@ -52,19 +52,33 @@ pub type WorkspaceRevocation = SignedEnvelope<WorkspaceRevocationPayload>;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDeparturePayload {
-    pub kind: String, pub version: u8, pub workspace_id: String, pub person_id: String,
-    pub access_epoch: u64, pub workspace_heads: Vec<String>, pub left_at: String,
+    pub kind: String,
+    pub version: u8,
+    pub workspace_id: String,
+    pub person_id: String,
+    pub access_epoch: u64,
+    pub workspace_heads: Vec<String>,
+    pub left_at: String,
 }
 pub type WorkspaceDeparture = SignedEnvelope<WorkspaceDeparturePayload>;
 
-pub fn verify_workspace_departure(record: &WorkspaceDeparture, workspace_id: &str,
-    authority: &WorkspaceAuthority, now_ms: i128) -> Result<(), String> {
+pub fn verify_workspace_departure(
+    record: &WorkspaceDeparture,
+    workspace_id: &str,
+    authority: &WorkspaceAuthority,
+    now_ms: i128,
+) -> Result<(), String> {
     bounded(record, 32 * 1024, "Workspace departure too large")?;
     let p = &record.payload;
-    if p.kind != "workspace-departure" || p.version != 1 || p.workspace_id != workspace_id
-        || p.person_id != authority.person_id || p.access_epoch < 1
+    if p.kind != "workspace-departure"
+        || p.version != 1
+        || p.workspace_id != workspace_id
+        || p.person_id != authority.person_id
+        || p.access_epoch < 1
         || !valid_heads(&p.workspace_heads)
-        || public_key_id(&authority.public_key)? != authority.person_id || !valid_time(&p.left_at, now_ms)? {
+        || public_key_id(&authority.public_key)? != authority.person_id
+        || !valid_time(&p.left_at, now_ms)?
+    {
         return Err("Invalid workspace departure".into());
     }
     verify_owner_envelope(record, authority, "workspace departure")
@@ -84,16 +98,25 @@ pub struct WorkspaceDeviceRevocationPayload {
 }
 pub type WorkspaceDeviceRevocation = SignedEnvelope<WorkspaceDeviceRevocationPayload>;
 
-pub fn verify_workspace_device_revocation(record: &WorkspaceDeviceRevocation, workspace_id: &str,
-    owner_person_id: &str, authority: &WorkspaceAuthority, now_ms: i128) -> Result<(), String> {
+pub fn verify_workspace_device_revocation(
+    record: &WorkspaceDeviceRevocation,
+    workspace_id: &str,
+    owner_person_id: &str,
+    authority: &WorkspaceAuthority,
+    now_ms: i128,
+) -> Result<(), String> {
     bounded(record, 32 * 1024, "Device revocation too large")?;
     let p = &record.payload;
-    if p.kind != "workspace-device-revocation" || p.version != 1 || p.workspace_id != workspace_id
-        || p.person_id.is_empty() || p.device_id.is_empty()
+    if p.kind != "workspace-device-revocation"
+        || p.version != 1
+        || p.workspace_id != workspace_id
+        || p.person_id.is_empty()
+        || p.device_id.is_empty()
         || !valid_heads(&p.workspace_heads)
         || (authority.person_id != owner_person_id && authority.person_id != p.person_id)
         || public_key_id(&authority.public_key)? != authority.person_id
-        || !valid_time(&p.revoked_at, now_ms)? {
+        || !valid_time(&p.revoked_at, now_ms)?
+    {
         return Err("Invalid workspace device revocation".into());
     }
     verify_owner_envelope(record, authority, "workspace device revocation")
@@ -230,36 +253,72 @@ pub fn plan_ownership_transitions(
     let mut planned = Vec::new();
 
     loop {
-        let Some(next_epoch) = records.iter().filter(|record|
-            record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(owner_person_id))
+        let Some(next_epoch) = records
+            .iter()
+            .filter(|record| {
+                record
+                    .pointer("/payload/fromOwnerPersonId")
+                    .and_then(Value::as_str)
+                    == Some(owner_person_id)
+            })
             .filter_map(|record| record.pointer("/payload/epoch").and_then(Value::as_u64))
-            .filter(|candidate| *candidate > epoch).min() else {
-            return OwnershipTransitionPlan { records: planned, conflicted: false };
+            .filter(|candidate| *candidate > epoch)
+            .min()
+        else {
+            return OwnershipTransitionPlan {
+                records: planned,
+                conflicted: false,
+            };
         };
         let mut candidates = records
             .iter()
             .filter(|record| {
                 record.pointer("/payload/epoch").and_then(Value::as_u64) == Some(next_epoch)
-                    && record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str)
+                    && record
+                        .pointer("/payload/fromOwnerPersonId")
+                        .and_then(Value::as_str)
                         == Some(owner_person_id)
-                    && record.pointer("/payload/toOwnerPersonId").and_then(Value::as_str)
+                    && record
+                        .pointer("/payload/toOwnerPersonId")
+                        .and_then(Value::as_str)
                         .is_some_and(|value| !value.is_empty())
-                    && record.get("signature").and_then(Value::as_str)
+                    && record
+                        .get("signature")
+                        .and_then(Value::as_str)
                         .is_some_and(|value| !value.is_empty())
             })
             .collect::<Vec<_>>();
         if candidates.is_empty() {
-            return OwnershipTransitionPlan { records: planned, conflicted: false };
+            return OwnershipTransitionPlan {
+                records: planned,
+                conflicted: false,
+            };
         }
-        let successors = candidates.iter()
-            .filter_map(|record| record.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
+        let successors = candidates
+            .iter()
+            .filter_map(|record| {
+                record
+                    .pointer("/payload/toOwnerPersonId")
+                    .and_then(Value::as_str)
+            })
             .collect::<HashSet<_>>();
         if successors.len() > 1 {
-            return OwnershipTransitionPlan { records: planned, conflicted: true };
+            return OwnershipTransitionPlan {
+                records: planned,
+                conflicted: true,
+            };
         }
-        candidates.sort_by_key(|record| record.get("signature").and_then(Value::as_str).unwrap_or_default());
+        candidates.sort_by_key(|record| {
+            record
+                .get("signature")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        });
         let selected = candidates[0];
-        owner_person_id = selected.pointer("/payload/toOwnerPersonId").and_then(Value::as_str).unwrap_or_default();
+        owner_person_id = selected
+            .pointer("/payload/toOwnerPersonId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         epoch = next_epoch;
         planned.push(selected.clone());
     }
@@ -287,33 +346,65 @@ pub fn next_verified_ownership_transition(
     if records.len() > 512 || workspace_id.is_empty() {
         return Err("Invalid workspace ownership transition catalog".into());
     }
-    let next_epoch = records.iter()
-        .filter(|record| record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(current_owner.person_id.as_str()))
+    let next_epoch = records
+        .iter()
+        .filter(|record| {
+            record
+                .pointer("/payload/fromOwnerPersonId")
+                .and_then(Value::as_str)
+                == Some(current_owner.person_id.as_str())
+        })
         .filter_map(|record| record.pointer("/payload/epoch").and_then(Value::as_u64))
         .filter(|epoch| *epoch > current_epoch)
         .min();
     let Some(next_epoch) = next_epoch else {
-        return Ok(VerifiedOwnershipTransition { candidates: vec![], selected: None, conflicted: false });
+        return Ok(VerifiedOwnershipTransition {
+            candidates: vec![],
+            selected: None,
+            conflicted: false,
+        });
     };
-    let mut candidates = records.iter()
-        .filter(|record| record.pointer("/payload/fromOwnerPersonId").and_then(Value::as_str) == Some(current_owner.person_id.as_str())
-            && record.pointer("/payload/epoch").and_then(Value::as_u64) == Some(next_epoch))
+    let mut candidates = records
+        .iter()
+        .filter(|record| {
+            record
+                .pointer("/payload/fromOwnerPersonId")
+                .and_then(Value::as_str)
+                == Some(current_owner.person_id.as_str())
+                && record.pointer("/payload/epoch").and_then(Value::as_u64) == Some(next_epoch)
+        })
         .cloned()
-        .map(|record| serde_json::from_value::<WorkspaceOwnershipTransfer>(record)
-            .map_err(|_| "Invalid workspace ownership transfer".to_string()))
+        .map(|record| {
+            serde_json::from_value::<WorkspaceOwnershipTransfer>(record)
+                .map_err(|_| "Invalid workspace ownership transfer".to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?;
     candidates.sort_by(|left, right| left.signature.cmp(&right.signature));
     let mut successors = HashSet::new();
     for record in &candidates {
-        verify_workspace_ownership_transfer(record, workspace_id, current_owner, current_epoch, now_ms)?;
+        verify_workspace_ownership_transfer(
+            record,
+            workspace_id,
+            current_owner,
+            current_epoch,
+            now_ms,
+        )?;
         if revoked_people.contains(&record.payload.to_owner_person_id) {
             return Err("New owner access is revoked".into());
         }
         successors.insert(record.payload.to_owner_person_id.as_str());
     }
     let conflicted = successors.len() > 1;
-    let selected = if conflicted { None } else { candidates.first().cloned() };
-    Ok(VerifiedOwnershipTransition { candidates, selected, conflicted })
+    let selected = if conflicted {
+        None
+    } else {
+        candidates.first().cloned()
+    };
+    Ok(VerifiedOwnershipTransition {
+        candidates,
+        selected,
+        conflicted,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -345,56 +436,101 @@ pub fn summarize_succession(
     revocations: &[Value],
     epoch: u64,
 ) -> Result<Option<SuccessionSummary>, String> {
-    let revoked: HashSet<&str> = revocations.iter()
+    let revoked: HashSet<&str> = revocations
+        .iter()
         .filter_map(|record| record.pointer("/payload/personId").and_then(Value::as_str))
         .collect();
     let conflicted = has_conflicting_ownership_transfers(transfers)
-        || claims.iter()
+        || claims
+            .iter()
             .filter(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch))
-            .filter_map(|claim| claim.pointer("/payload/toOwnerPersonId").and_then(Value::as_str))
-            .collect::<HashSet<_>>().len() > 1;
+            .filter_map(|claim| {
+                claim
+                    .pointer("/payload/toOwnerPersonId")
+                    .and_then(Value::as_str)
+            })
+            .collect::<HashSet<_>>()
+            .len()
+            > 1;
     let policy = policy
         .filter(|policy| policy.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch))
-        .or_else(|| claims.iter()
-            .find(|claim| claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch + 1))
-            .and_then(|claim| claim.pointer("/payload/policy")));
+        .or_else(|| {
+            claims
+                .iter()
+                .find(|claim| {
+                    claim.pointer("/payload/epoch").and_then(Value::as_u64) == Some(epoch + 1)
+                })
+                .and_then(|claim| claim.pointer("/payload/policy"))
+        });
     let Some(policy) = policy else {
         return if conflicted {
-            Ok(Some(SuccessionSummary { successor_person_id: None, eligible_editor_person_ids: vec![], votes: vec![], quorum: 0, conflicted }))
-        } else { Ok(None) };
+            Ok(Some(SuccessionSummary {
+                successor_person_id: None,
+                eligible_editor_person_ids: vec![],
+                votes: vec![],
+                quorum: 0,
+                conflicted,
+            }))
+        } else {
+            Ok(None)
+        };
     };
-    let payload = policy.get("payload").and_then(Value::as_object)
+    let payload = policy
+        .get("payload")
+        .and_then(Value::as_object)
         .ok_or_else(|| "Invalid workspace succession policy".to_string())?;
-    let eligible = payload.get("eligibleEditorPersonIds").and_then(Value::as_array)
+    let eligible = payload
+        .get("eligibleEditorPersonIds")
+        .and_then(Value::as_array)
         .ok_or_else(|| "Invalid workspace succession policy".to_string())?
-        .iter().map(|value| value.as_str().map(str::to_owned)
-            .ok_or_else(|| "Invalid workspace succession policy".to_string()))
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "Invalid workspace succession policy".to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?
-        .into_iter().filter(|person_id| !revoked.contains(person_id.as_str())).collect::<Vec<_>>();
+        .into_iter()
+        .filter(|person_id| !revoked.contains(person_id.as_str()))
+        .collect::<Vec<_>>();
     let successor_person_id = match payload.get("successorPersonId") {
         None | Some(Value::Null) => None,
-        Some(Value::String(person_id)) if !revoked.contains(person_id.as_str()) => Some(person_id.clone()),
+        Some(Value::String(person_id)) if !revoked.contains(person_id.as_str()) => {
+            Some(person_id.clone())
+        }
         Some(Value::String(_)) => None,
         _ => return Err("Invalid workspace succession policy".to_string()),
     };
-    let votes = votes.iter().filter_map(|vote| {
-        let payload = vote.pointer("/signed/payload")?.as_object()?;
-        Some(SuccessionVoteSummary {
-            voter_person_id: payload.get("voterPersonId")?.as_str()?.to_owned(),
-            candidate_person_id: payload.get("candidatePersonId")?.as_str()?.to_owned(),
+    let votes = votes
+        .iter()
+        .filter_map(|vote| {
+            let payload = vote.pointer("/signed/payload")?.as_object()?;
+            Some(SuccessionVoteSummary {
+                voter_person_id: payload.get("voterPersonId")?.as_str()?.to_owned(),
+                candidate_person_id: payload.get("candidatePersonId")?.as_str()?.to_owned(),
+            })
         })
-    }).collect();
-    Ok(Some(SuccessionSummary { successor_person_id, eligible_editor_person_ids: eligible.clone(),
-        votes, quorum: eligible.len() / 2 + 1, conflicted }))
+        .collect();
+    Ok(Some(SuccessionSummary {
+        successor_person_id,
+        eligible_editor_person_ids: eligible.clone(),
+        votes,
+        quorum: eligible.len() / 2 + 1,
+        conflicted,
+    }))
 }
 
 pub fn eligible_editor_person_ids(peers: &[Value]) -> Vec<String> {
-    let mut people = peers.iter().filter_map(|peer| {
-        let role = peer.get("role").and_then(Value::as_str)?;
-        let person_id = peer.get("personId").and_then(Value::as_str)?;
-        let revoked = peer.get("revokedAt").is_some_and(|value| !value.is_null());
-        (role == "editor" && !revoked && !person_id.is_empty()).then(|| person_id.to_owned())
-    }).collect::<Vec<_>>();
+    let mut people = peers
+        .iter()
+        .filter_map(|peer| {
+            let role = peer.get("role").and_then(Value::as_str)?;
+            let person_id = peer.get("personId").and_then(Value::as_str)?;
+            let revoked = peer.get("revokedAt").is_some_and(|value| !value.is_null());
+            (role == "editor" && !revoked && !person_id.is_empty()).then(|| person_id.to_owned())
+        })
+        .collect::<Vec<_>>();
     people.sort();
     people.dedup();
     people
@@ -403,17 +539,40 @@ pub fn eligible_editor_person_ids(peers: &[Value]) -> Vec<String> {
 pub fn canonical_revocations(records: &[Value]) -> Vec<Value> {
     let mut unique: HashMap<String, Value> = HashMap::new();
     for record in records {
-        let Some(_) = record.pointer("/payload/personId").and_then(Value::as_str).filter(|value| !value.is_empty()) else { continue; };
-        if record.pointer("/payload/epoch").and_then(Value::as_u64).is_none() { continue; }
-        unique.insert(serde_json::to_string(record).expect("JSON value serializes"), record.clone());
+        let Some(_) = record
+            .pointer("/payload/personId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        if record
+            .pointer("/payload/epoch")
+            .and_then(Value::as_u64)
+            .is_none()
+        {
+            continue;
+        }
+        unique.insert(
+            serde_json::to_string(record).expect("JSON value serializes"),
+            record.clone(),
+        );
     }
     let mut result = unique.into_values().collect::<Vec<_>>();
     result.sort_by(|left, right| {
-        left.pointer("/payload/personId").and_then(Value::as_str)
+        left.pointer("/payload/personId")
+            .and_then(Value::as_str)
             .cmp(&right.pointer("/payload/personId").and_then(Value::as_str))
-            .then_with(|| left.pointer("/payload/epoch").and_then(Value::as_u64)
-                .cmp(&right.pointer("/payload/epoch").and_then(Value::as_u64)))
-            .then_with(|| serde_json::to_string(left).ok().cmp(&serde_json::to_string(right).ok()))
+            .then_with(|| {
+                left.pointer("/payload/epoch")
+                    .and_then(Value::as_u64)
+                    .cmp(&right.pointer("/payload/epoch").and_then(Value::as_u64))
+            })
+            .then_with(|| {
+                serde_json::to_string(left)
+                    .ok()
+                    .cmp(&serde_json::to_string(right).ok())
+            })
     });
     result
 }
@@ -503,7 +662,6 @@ pub fn verify_workspace_ownership_transfer(
     }
     Ok(())
 }
-
 
 pub fn verify_workspace_succession_policy(
     policy: &WorkspaceSuccessionPolicy,
@@ -784,9 +942,13 @@ mod tests {
         let policy = json!({ "payload": {
             "epoch": 4, "successorPersonId": null, "eligibleEditorPersonIds": ["alice", "bob", "carol"]
         }});
-        let votes = vec![json!({ "signed": { "payload": { "voterPersonId": "alice", "candidatePersonId": "bob" } } })];
+        let votes = vec![
+            json!({ "signed": { "payload": { "voterPersonId": "alice", "candidatePersonId": "bob" } } }),
+        ];
         let revocations = vec![json!({ "payload": { "personId": "carol" } })];
-        let summary = summarize_succession(Some(&policy), &[], &votes, &[], &revocations, 4).unwrap().unwrap();
+        let summary = summarize_succession(Some(&policy), &[], &votes, &[], &revocations, 4)
+            .unwrap()
+            .unwrap();
         assert_eq!(summary.eligible_editor_person_ids, vec!["alice", "bob"]);
         assert_eq!(summary.quorum, 2);
         assert_eq!(summary.votes.len(), 1);
@@ -801,7 +963,10 @@ mod tests {
             json!({ "role": "editor", "personId": "carol", "revokedAt": "2026-09-21T00:00:00.000Z" }),
             json!({ "role": "visitor", "personId": "dave" }),
         ];
-        assert_eq!(super::eligible_editor_person_ids(&peers), vec!["alice", "bob"]);
+        assert_eq!(
+            super::eligible_editor_person_ids(&peers),
+            vec!["alice", "bob"]
+        );
     }
 
     #[test]

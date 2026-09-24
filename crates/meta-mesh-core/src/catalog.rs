@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    admit_mesh_peer, MeshHandshake, WorkspaceWriteAuthorizationSnapshot, MESH_CAPABILITIES,
+    MESH_CAPABILITIES, MeshHandshake, WorkspaceWriteAuthorizationSnapshot, admit_mesh_peer,
 };
 
 const MAX_CATALOG_BYTES: usize = 8 * 1024 * 1024;
@@ -159,9 +159,9 @@ mod tests {
 
     use super::{merge_verified_peer_catalog, validate_mesh_catalog};
     use crate::{
-        public_key_from_seed, public_key_id, sign_device_certificate, sign_json_envelope,
-        DeviceCertificatePayload, WorkspaceAuthority, WorkspaceWriteAuthorizationSnapshot,
-        DEFAULT_SIGNATURE_DOMAIN,
+        DEFAULT_SIGNATURE_DOMAIN, DeviceCertificatePayload, WorkspaceAuthority,
+        WorkspaceWriteAuthorizationSnapshot, public_key_from_seed, public_key_id,
+        sign_device_certificate, sign_json_envelope,
     };
 
     #[test]
@@ -190,10 +190,12 @@ mod tests {
     }
     #[test]
     fn rejects_removed_break_glass_evidence() {
-        assert!(validate_mesh_catalog(
-            json!({ "version": 1, "peers": [], "revocations": [], "breakGlassClaims": [{}] })
-        )
-        .is_err());
+        assert!(
+            validate_mesh_catalog(
+                json!({ "version": 1, "peers": [], "revocations": [], "breakGlassClaims": [{}] })
+            )
+            .is_err()
+        );
     }
 
     #[test]

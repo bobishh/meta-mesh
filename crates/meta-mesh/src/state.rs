@@ -543,13 +543,9 @@ impl WasmStateCore {
         secret: &str,
         workspace_id: &str,
     ) -> Result<JsValue, JsValue> {
-        let handshake = meta_mesh_core::decode_mesh_handshake(
-            frame,
-            expected_type,
-            secret,
-            workspace_id,
-        )
-        .map_err(js_error)?;
+        let handshake =
+            meta_mesh_core::decode_mesh_handshake(frame, expected_type, secret, workspace_id)
+                .map_err(js_error)?;
         to_value(&handshake)
     }
 

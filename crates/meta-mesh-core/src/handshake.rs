@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{validate_mesh_capabilities, PairingCodec, PairingFrameHeader};
+use crate::{PairingCodec, PairingFrameHeader, validate_mesh_capabilities};
 
 const MAX_HANDSHAKE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PEERS: usize = 512;
@@ -145,18 +145,14 @@ pub fn select_mesh_handshake_bundle(
         .or_else(|| {
             candidates.iter().position(|candidate| {
                 candidate.device_id == local_device_id
-                    && candidate
-                        .instance_id
-                        .as_deref()
-                        .is_none_or(str::is_empty)
+                    && candidate.instance_id.as_deref().is_none_or(str::is_empty)
             })
         })
 }
 
 /// Authority merge order for authenticated mesh handshakes. Each host action
 /// is I/O; Rust decides the protocol order and required transfer refresh.
-pub fn plan_mesh_handshake_authority_import(
-) -> Result<Vec<crate::AuthorityImportAction>, String> {
+pub fn plan_mesh_handshake_authority_import() -> Result<Vec<crate::AuthorityImportAction>, String> {
     crate::plan_authority_import("handshake", false, true)
 }
 
@@ -198,11 +194,10 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        decode_mesh_handshake, encode_mesh_handshake, inspect_mesh_handshake,
-        matches_admitted_mesh_peer, matches_expected_mesh_peer,
+        MeshHandshakeBundleCandidate, decode_mesh_handshake, encode_mesh_handshake,
+        inspect_mesh_handshake, matches_admitted_mesh_peer, matches_expected_mesh_peer,
         plan_mesh_handshake_authority_import, select_mesh_handshake_bundle,
         should_advertise_owner_workspace_ids, validate_mesh_handshake,
-        MeshHandshakeBundleCandidate,
     };
 
     #[test]
@@ -300,13 +295,29 @@ mod tests {
     #[test]
     fn plans_host_handshake_decisions_without_store_or_network_access() {
         let candidates = vec![
-            MeshHandshakeBundleCandidate { device_id: "device".into(), instance_id: None },
-            MeshHandshakeBundleCandidate { device_id: "device".into(), instance_id: Some("tab-a".into()) },
+            MeshHandshakeBundleCandidate {
+                device_id: "device".into(),
+                instance_id: None,
+            },
+            MeshHandshakeBundleCandidate {
+                device_id: "device".into(),
+                instance_id: Some("tab-a".into()),
+            },
         ];
-        assert_eq!(select_mesh_handshake_bundle(&candidates, "device", "tab-a"), Some(1));
-        assert_eq!(select_mesh_handshake_bundle(&candidates, "device", "tab-b"), Some(0));
-        assert!(should_advertise_owner_workspace_ids("owner", "owner", "owner"));
-        assert!(!should_advertise_owner_workspace_ids("owner", "owner", "remote"));
+        assert_eq!(
+            select_mesh_handshake_bundle(&candidates, "device", "tab-a"),
+            Some(1)
+        );
+        assert_eq!(
+            select_mesh_handshake_bundle(&candidates, "device", "tab-b"),
+            Some(0)
+        );
+        assert!(should_advertise_owner_workspace_ids(
+            "owner", "owner", "owner"
+        ));
+        assert!(!should_advertise_owner_workspace_ids(
+            "owner", "owner", "remote"
+        ));
         let actions = plan_mesh_handshake_authority_import().unwrap();
         assert!(actions.contains(&crate::AuthorityImportAction::ValidateCapabilities));
         assert!(actions.contains(&crate::AuthorityImportAction::OwnershipTransfers));

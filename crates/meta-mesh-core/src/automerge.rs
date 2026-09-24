@@ -87,9 +87,18 @@ impl AutomergeSyncEngine {
         }
         let document = AutoCommit::load(bytes)
             .map_err(|error| format!("Invalid Automerge document: {error}"))?;
-        let revision = self.documents.get(&document_id).map_or(1, |previous| previous.revision.saturating_add(1));
-        self.documents
-            .insert(document_id, DocumentState { scope_id, document, revision });
+        let revision = self
+            .documents
+            .get(&document_id)
+            .map_or(1, |previous| previous.revision.saturating_add(1));
+        self.documents.insert(
+            document_id,
+            DocumentState {
+                scope_id,
+                document,
+                revision,
+            },
+        );
         Ok(())
     }
 
@@ -183,8 +192,11 @@ impl AutomergeSyncEngine {
             .sync()
             .receive_sync_message(&mut state, message)
             .map_err(|error| format!("Automerge sync failed: {error}"))?;
-        let accepted_hashes = candidate.get_changes(&before_heads).iter()
-            .map(|change| change.hash().to_string()).collect::<Vec<_>>();
+        let accepted_hashes = candidate
+            .get_changes(&before_heads)
+            .iter()
+            .map(|change| change.hash().to_string())
+            .collect::<Vec<_>>();
         let accepted_changes = accepted_hashes.len();
         let heads = candidate
             .get_heads()
@@ -208,7 +220,14 @@ impl AutomergeSyncEngine {
                 })
             })
             .transpose()?;
-        self.prepared.insert(key, PreparedReceive { document: candidate, state, document_revision });
+        self.prepared.insert(
+            key,
+            PreparedReceive {
+                document: candidate,
+                state,
+                document_revision,
+            },
+        );
         Ok(AutomergeSyncResult {
             accepted_changes,
             accepted_hashes,
@@ -218,9 +237,15 @@ impl AutomergeSyncEngine {
         })
     }
 
-    pub fn commit_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) -> Result<(), String> {
+    pub fn commit_prepared_receive(
+        &mut self,
+        document_id: &str,
+        remote_device_id: &str,
+    ) -> Result<(), String> {
         let key = (document_id.to_string(), remote_device_id.to_string());
-        let pending = self.prepared.remove(&key)
+        let pending = self
+            .prepared
+            .remove(&key)
             .ok_or_else(|| "No prepared Automerge receive".to_string())?;
         let document = self.document_mut(document_id)?;
         if document.revision != pending.document_revision {
@@ -233,7 +258,8 @@ impl AutomergeSyncEngine {
     }
 
     pub fn abort_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) {
-        self.prepared.remove(&(document_id.to_string(), remote_device_id.to_string()));
+        self.prepared
+            .remove(&(document_id.to_string(), remote_device_id.to_string()));
     }
 
     pub fn receive(
@@ -339,22 +365,37 @@ mod tests {
         let original = empty.save();
         let mut sender = AutomergeSyncEngine::new("sender", None).unwrap();
         let mut receiver = AutomergeSyncEngine::new("receiver", None).unwrap();
-        sender.load_document("scope", "doc", &changed.save()).unwrap();
+        sender
+            .load_document("scope", "doc", &changed.save())
+            .unwrap();
         receiver.load_document("scope", "doc", &original).unwrap();
 
-        let mut frame = sender.generate("doc", "receiver", true, None).unwrap().unwrap();
+        let mut frame = sender
+            .generate("doc", "receiver", true, None)
+            .unwrap()
+            .unwrap();
         for _ in 0..20 {
-            let prepared = receiver.prepare_receive("sender", frame.clone(), true, None).unwrap();
+            let prepared = receiver
+                .prepare_receive("sender", frame.clone(), true, None)
+                .unwrap();
             if prepared.accepted_changes > 0 {
                 assert_eq!(receiver.save_document("doc").unwrap(), original);
                 receiver.abort_prepared_receive("doc", "sender");
                 assert_eq!(receiver.save_document("doc").unwrap(), original);
-                let retried = receiver.prepare_receive("sender", frame.clone(), true, None).unwrap();
+                let retried = receiver
+                    .prepare_receive("sender", frame.clone(), true, None)
+                    .unwrap();
                 assert_eq!(retried.accepted_changes, prepared.accepted_changes);
                 receiver.load_document("scope", "doc", &original).unwrap();
-                assert_eq!(receiver.commit_prepared_receive("doc", "sender").unwrap_err(),
-                    "Automerge document changed during admission");
-                let retried = receiver.prepare_receive("sender", frame, true, None).unwrap();
+                assert_eq!(
+                    receiver
+                        .commit_prepared_receive("doc", "sender")
+                        .unwrap_err(),
+                    "Automerge document changed during admission"
+                );
+                let retried = receiver
+                    .prepare_receive("sender", frame, true, None)
+                    .unwrap();
                 assert_eq!(retried.accepted_changes, prepared.accepted_changes);
                 receiver.commit_prepared_receive("doc", "sender").unwrap();
                 assert_eq!(receiver.save_document("doc").unwrap(), changed.save());
@@ -362,8 +403,11 @@ mod tests {
             }
             receiver.commit_prepared_receive("doc", "sender").unwrap();
             let reply = prepared.response.expect("initial sync reply");
-            frame = sender.receive("receiver", reply, true, None).unwrap()
-                .response.expect("document change frame");
+            frame = sender
+                .receive("receiver", reply, true, None)
+                .unwrap()
+                .response
+                .expect("document change frame");
         }
         panic!("sender never sent the document change");
     }
@@ -376,16 +420,28 @@ mod tests {
         right_doc.put(ROOT, "right", "value").unwrap();
         let mut left = AutomergeSyncEngine::new("left", None).unwrap();
         let mut right = AutomergeSyncEngine::new("right", None).unwrap();
-        left.load_document("scope", "doc", &left_doc.save()).unwrap();
-        right.load_document("scope", "doc", &right_doc.save()).unwrap();
+        left.load_document("scope", "doc", &left_doc.save())
+            .unwrap();
+        right
+            .load_document("scope", "doc", &right_doc.save())
+            .unwrap();
         let from_left = left.generate("doc", "right", true, None).unwrap().unwrap();
         let from_right = right.generate("doc", "left", true, None).unwrap().unwrap();
-        let mut pending = std::collections::VecDeque::from([(true, from_right), (false, from_left)]);
+        let mut pending =
+            std::collections::VecDeque::from([(true, from_right), (false, from_left)]);
         for _ in 0..20 {
-            let Some((to_left, frame)) = pending.pop_front() else { break };
-            let result = if to_left { left.receive("right", frame, true, None) }
-                else { right.receive("left", frame, true, None) }.unwrap();
-            if let Some(response) = result.response { pending.push_back((!to_left, response)); }
+            let Some((to_left, frame)) = pending.pop_front() else {
+                break;
+            };
+            let result = if to_left {
+                left.receive("right", frame, true, None)
+            } else {
+                right.receive("left", frame, true, None)
+            }
+            .unwrap();
+            if let Some(response) = result.response {
+                pending.push_back((!to_left, response));
+            }
         }
         assert!(pending.is_empty(), "concurrent exchange did not settle");
         assert_eq!(left.heads("doc").unwrap(), right.heads("doc").unwrap());

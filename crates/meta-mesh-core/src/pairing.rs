@@ -296,8 +296,11 @@ impl WorkspaceJoinHandshake {
                 }
                 WorkspaceJoinAck::Accepted(payload)
             }
-            WorkspaceJoinResponse::Accepted(_) if header.frame_type == "workspace-join-rejected-ack" => {
-                let payload = PairingCodec::decode(frame, "workspace-join-rejected-ack", &self.secret)?;
+            WorkspaceJoinResponse::Accepted(_)
+                if header.frame_type == "workspace-join-rejected-ack" =>
+            {
+                let payload =
+                    PairingCodec::decode(frame, "workspace-join-rejected-ack", &self.secret)?;
                 let error = serde_json::from_slice::<serde_json::Value>(&payload)
                     .ok()
                     .and_then(|value| {
@@ -391,14 +394,20 @@ impl WorkspaceJoinHandoff {
     }
 
     pub fn guest_request(&mut self) -> Result<Vec<u8>, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Ready)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Ready,
+        )?;
         let frame = PairingCodec::encode("mesh-handoff-request", &self.secret, &[])?;
         self.phase = WorkspaceJoinHandoffPhase::AwaitingReady;
         Ok(frame)
     }
 
     pub fn host_receive_request(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
-        self.require(WorkspaceJoinHandoffSide::Host, WorkspaceJoinHandoffPhase::Ready)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Host,
+            WorkspaceJoinHandoffPhase::Ready,
+        )?;
         let payload = PairingCodec::decode(frame, "mesh-handoff-request", &self.secret)?;
         if !payload.is_empty() {
             return Err("Workspace handoff request invalid".to_string());
@@ -409,7 +418,10 @@ impl WorkspaceJoinHandoff {
     }
 
     pub fn guest_receive_ready(&mut self, frame: &[u8]) -> Result<(), String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::AwaitingReady)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::AwaitingReady,
+        )?;
         let payload = PairingCodec::decode(frame, "mesh-handoff-ready", &self.secret)?;
         if !payload.is_empty() {
             return Err("Workspace handoff response invalid".to_string());
@@ -418,47 +430,82 @@ impl WorkspaceJoinHandoff {
         Ok(())
     }
 
-    pub fn guest_transport_failed(&mut self, retryable: bool) -> Result<WorkspaceJoinHandoffOutcome, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::AwaitingReady)?;
+    pub fn guest_transport_failed(
+        &mut self,
+        retryable: bool,
+    ) -> Result<WorkspaceJoinHandoffOutcome, String> {
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::AwaitingReady,
+        )?;
         self.phase = WorkspaceJoinHandoffPhase::Complete;
-        Ok(if retryable { WorkspaceJoinHandoffOutcome::Retry } else { WorkspaceJoinHandoffOutcome::Failed })
+        Ok(if retryable {
+            WorkspaceJoinHandoffOutcome::Retry
+        } else {
+            WorkspaceJoinHandoffOutcome::Failed
+        })
     }
 
     pub fn guest_resume_succeeded(&mut self) -> Result<(), String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Resuming)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Resuming,
+        )?;
         self.phase = WorkspaceJoinHandoffPhase::Resumed;
         Ok(())
     }
 
     /// Rust decides retry only while adoption has not completed.
-    pub fn guest_resume_failed(&mut self, retryable: bool) -> Result<WorkspaceJoinHandoffOutcome, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Resuming)?;
+    pub fn guest_resume_failed(
+        &mut self,
+        retryable: bool,
+    ) -> Result<WorkspaceJoinHandoffOutcome, String> {
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Resuming,
+        )?;
         self.phase = WorkspaceJoinHandoffPhase::Complete;
-        Ok(if retryable { WorkspaceJoinHandoffOutcome::Retry } else { WorkspaceJoinHandoffOutcome::Failed })
+        Ok(if retryable {
+            WorkspaceJoinHandoffOutcome::Retry
+        } else {
+            WorkspaceJoinHandoffOutcome::Failed
+        })
     }
 
     pub fn guest_begin_confirmation(&mut self) -> Result<Vec<u8>, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Resumed)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Resumed,
+        )?;
         let frame = PairingCodec::encode("mesh-handoff-confirmed", &self.secret, &[])?;
         self.phase = WorkspaceJoinHandoffPhase::Confirming;
         Ok(frame)
     }
 
     pub fn guest_confirmation_sent(&mut self) -> Result<WorkspaceJoinHandoffOutcome, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Confirming)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Confirming,
+        )?;
         self.phase = WorkspaceJoinHandoffPhase::Complete;
         Ok(WorkspaceJoinHandoffOutcome::Complete)
     }
 
     /// The mesh owns the node after resume succeeds; failed confirmation must preserve it.
     pub fn guest_confirmation_failed(&mut self) -> Result<WorkspaceJoinHandoffOutcome, String> {
-        self.require(WorkspaceJoinHandoffSide::Guest, WorkspaceJoinHandoffPhase::Confirming)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Guest,
+            WorkspaceJoinHandoffPhase::Confirming,
+        )?;
         self.phase = WorkspaceJoinHandoffPhase::Complete;
         Ok(WorkspaceJoinHandoffOutcome::Adopted)
     }
 
     pub fn host_receive_confirmation(&mut self, frame: &[u8]) -> Result<(), String> {
-        self.require(WorkspaceJoinHandoffSide::Host, WorkspaceJoinHandoffPhase::AwaitingConfirmation)?;
+        self.require(
+            WorkspaceJoinHandoffSide::Host,
+            WorkspaceJoinHandoffPhase::AwaitingConfirmation,
+        )?;
         let payload = PairingCodec::decode(frame, "mesh-handoff-confirmed", &self.secret)?;
         if !payload.is_empty() {
             return Err("Workspace handoff confirmation invalid".to_string());
@@ -467,7 +514,11 @@ impl WorkspaceJoinHandoff {
         Ok(())
     }
 
-    fn require(&self, side: WorkspaceJoinHandoffSide, phase: WorkspaceJoinHandoffPhase) -> Result<(), String> {
+    fn require(
+        &self,
+        side: WorkspaceJoinHandoffSide,
+        phase: WorkspaceJoinHandoffPhase,
+    ) -> Result<(), String> {
         if self.side != side || self.phase != phase {
             return Err("Workspace handoff out of sequence".to_string());
         }
@@ -513,9 +564,16 @@ mod tests {
     fn enrollment_rejection_preserves_reason_and_authenticates_ack() {
         let reason = br#"{"reason":"Workspace storage is unavailable"}"#;
         let rejection = PairingCodec::encode("enroll-rejected", "secret", reason).unwrap();
-        assert_eq!(PairingCodec::decode(&rejection, "enroll-rejected", "secret").unwrap(), reason);
+        assert_eq!(
+            PairingCodec::decode(&rejection, "enroll-rejected", "secret").unwrap(),
+            reason
+        );
         let ack = PairingCodec::encode("enroll-rejected-ack", "secret", &[]).unwrap();
-        assert!(PairingCodec::decode(&ack, "enroll-rejected-ack", "secret").unwrap().is_empty());
+        assert!(
+            PairingCodec::decode(&ack, "enroll-rejected-ack", "secret")
+                .unwrap()
+                .is_empty()
+        );
         assert!(PairingCodec::decode(&ack, "enroll-rejected-ack", "wrong-secret").is_err());
     }
 
@@ -626,7 +684,9 @@ mod tests {
 
         let mut host = WorkspaceJoinHandshake::host("join-secret").unwrap();
         let mut right_guest = WorkspaceJoinHandshake::guest("join-secret").unwrap();
-        let request = right_guest.send_request(br#"{"personId":"guest"}"#).unwrap();
+        let request = right_guest
+            .send_request(br#"{"personId":"guest"}"#)
+            .unwrap();
         host.receive_request(&request).unwrap();
         assert_eq!(
             host.receive_ack(&[]).unwrap_err(),
@@ -672,12 +732,25 @@ mod tests {
     fn workspace_join_request_is_authenticated_and_starts_host_response_phase() {
         let mut host = WorkspaceJoinHandshake::host("join-secret").unwrap();
         let mut guest = WorkspaceJoinHandshake::guest("join-secret").unwrap();
-        let wrong_secret = PairingCodec::encode("workspace-join-request", "other-secret", br#"{}"#).unwrap();
-        assert_eq!(host.receive_request(&wrong_secret).unwrap_err(), "Pairing authorization failed");
-        assert_eq!(host.respond(br#"{}"#).unwrap_err(), "Workspace join handshake out of sequence");
+        let wrong_secret =
+            PairingCodec::encode("workspace-join-request", "other-secret", br#"{}"#).unwrap();
+        assert_eq!(
+            host.receive_request(&wrong_secret).unwrap_err(),
+            "Pairing authorization failed"
+        );
+        assert_eq!(
+            host.respond(br#"{}"#).unwrap_err(),
+            "Workspace join handshake out of sequence"
+        );
         let request = guest.send_request(br#"{"personId":"guest"}"#).unwrap();
-        assert_eq!(guest.send_request(br#"{}"#).unwrap_err(), "Workspace join handshake out of sequence");
-        assert_eq!(host.receive_request(&request).unwrap(), br#"{"personId":"guest"}"#);
+        assert_eq!(
+            guest.send_request(br#"{}"#).unwrap_err(),
+            "Workspace join handshake out of sequence"
+        );
+        assert_eq!(
+            host.receive_request(&request).unwrap(),
+            br#"{"personId":"guest"}"#
+        );
     }
 
     #[test]
@@ -702,8 +775,14 @@ mod tests {
     fn workspace_handoff_transport_failure_can_retry_only_before_resume() {
         let mut guest = WorkspaceJoinHandoff::guest("join-secret").unwrap();
         guest.guest_request().unwrap();
-        assert_eq!(guest.guest_transport_failed(true).unwrap(), WorkspaceJoinHandoffOutcome::Retry);
-        assert_eq!(guest.guest_transport_failed(true).unwrap_err(), "Workspace handoff out of sequence");
+        assert_eq!(
+            guest.guest_transport_failed(true).unwrap(),
+            WorkspaceJoinHandoffOutcome::Retry
+        );
+        assert_eq!(
+            guest.guest_transport_failed(true).unwrap_err(),
+            "Workspace handoff out of sequence"
+        );
     }
 
     #[test]
@@ -725,12 +804,9 @@ mod tests {
             "Workspace handoff out of sequence"
         );
         assert_eq!(
-            host.host_receive_confirmation(&PairingCodec::encode(
-                "mesh-handoff-confirmed",
-                "other-secret",
-                &[],
+            host.host_receive_confirmation(
+                &PairingCodec::encode("mesh-handoff-confirmed", "other-secret", &[],).unwrap()
             )
-            .unwrap())
             .unwrap_err(),
             "Pairing authorization failed"
         );
@@ -751,6 +827,9 @@ mod tests {
             WorkspaceJoinHandoffOutcome::Complete
         );
         host.host_receive_confirmation(&confirmation).unwrap();
-        assert_eq!(host.host_receive_confirmation(&confirmation).unwrap_err(), "Workspace handoff out of sequence");
+        assert_eq!(
+            host.host_receive_confirmation(&confirmation).unwrap_err(),
+            "Workspace handoff out of sequence"
+        );
     }
 }

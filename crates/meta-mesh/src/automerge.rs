@@ -83,19 +83,28 @@ impl WasmAutomergeSyncEngine {
     ) -> Result<JsValue, JsValue> {
         let frame: AutomergeSyncFrame = serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
         let response_proof = optional_value(response_proof)?;
-        let result = self.inner.prepare_receive(remote_device_id, frame, authorized, response_proof)
+        let result = self
+            .inner
+            .prepare_receive(remote_device_id, frame, authorized, response_proof)
             .map_err(js_error)?;
         to_value(&result)
     }
 
     #[wasm_bindgen(js_name = commitPreparedReceive)]
-    pub fn commit_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) -> Result<(), JsValue> {
-        self.inner.commit_prepared_receive(document_id, remote_device_id).map_err(js_error)
+    pub fn commit_prepared_receive(
+        &mut self,
+        document_id: &str,
+        remote_device_id: &str,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .commit_prepared_receive(document_id, remote_device_id)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = abortPreparedReceive)]
     pub fn abort_prepared_receive(&mut self, document_id: &str, remote_device_id: &str) {
-        self.inner.abort_prepared_receive(document_id, remote_device_id)
+        self.inner
+            .abort_prepared_receive(document_id, remote_device_id)
     }
 }
 
@@ -131,41 +140,82 @@ pub struct WasmAutomergeDeviceSyncFlow {
 #[wasm_bindgen]
 impl WasmAutomergeDeviceSyncFlow {
     #[wasm_bindgen(js_name = decodeIncomingRequest)]
-    pub fn decode_incoming_request(request: JsValue, expected_remote_device_id: &str) -> Result<JsValue, JsValue> {
-        let request: serde_json::Value = serde_wasm_bindgen::from_value(request).map_err(js_error)?;
-        to_value(&meta_mesh_core::decode_device_sync_request(request, expected_remote_device_id).map_err(js_error)?)
+    pub fn decode_incoming_request(
+        request: JsValue,
+        expected_remote_device_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        let request: serde_json::Value =
+            serde_wasm_bindgen::from_value(request).map_err(js_error)?;
+        to_value(
+            &meta_mesh_core::decode_device_sync_request(request, expected_remote_device_id)
+                .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = encodeResponse)]
-    pub fn encode_response(batch_id: String, ack: JsValue, frame: JsValue) -> Result<JsValue, JsValue> {
+    pub fn encode_response(
+        batch_id: String,
+        ack: JsValue,
+        frame: JsValue,
+    ) -> Result<JsValue, JsValue> {
         let ack: serde_json::Value = serde_wasm_bindgen::from_value(ack).map_err(js_error)?;
-        let frame: Option<AutomergeSyncFrame> = serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
-        to_value(&meta_mesh_core::encode_device_sync_response(batch_id, ack, frame).map_err(js_error)?)
+        let frame: Option<AutomergeSyncFrame> =
+            serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
+        to_value(
+            &meta_mesh_core::encode_device_sync_response(batch_id, ack, frame).map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(target_device_id: String, document_id: String, maximum_rounds: f64) -> Result<Self, JsValue> {
-        if !maximum_rounds.is_finite() || maximum_rounds.fract() != 0.0 || maximum_rounds < 1.0 || maximum_rounds > 1_000_000.0 {
+    pub fn new(
+        target_device_id: String,
+        document_id: String,
+        maximum_rounds: f64,
+    ) -> Result<Self, JsValue> {
+        if !maximum_rounds.is_finite()
+            || maximum_rounds.fract() != 0.0
+            || maximum_rounds < 1.0
+            || maximum_rounds > 1_000_000.0
+        {
             return Err(js_error("Invalid Automerge sync round limit"));
         }
-        Ok(Self { inner: AutomergeDeviceSyncFlow::new(target_device_id, document_id, maximum_rounds as u32).map_err(js_error)? })
+        Ok(Self {
+            inner: AutomergeDeviceSyncFlow::new(
+                target_device_id,
+                document_id,
+                maximum_rounds as u32,
+            )
+            .map_err(js_error)?,
+        })
     }
 
     #[wasm_bindgen(js_name = nextRound)]
     pub fn next_round(&mut self, frame: JsValue) -> Result<JsValue, JsValue> {
-        let frame: Option<AutomergeSyncFrame> = serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
+        let frame: Option<AutomergeSyncFrame> =
+            serde_wasm_bindgen::from_value(frame).map_err(js_error)?;
         to_value(&self.inner.next(frame).map_err(js_error)?)
     }
 
     #[wasm_bindgen(js_name = validateResponse)]
     pub fn validate_response(&self, response: JsValue) -> Result<(), JsValue> {
-        let response: serde_json::Value = serde_wasm_bindgen::from_value(response).map_err(js_error)?;
+        let response: serde_json::Value =
+            serde_wasm_bindgen::from_value(response).map_err(js_error)?;
         self.inner.validate_response(response).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = completeRound)]
-    pub fn complete_round(&mut self, route_instance_id: String, response: JsValue) -> Result<JsValue, JsValue> {
-        let response: serde_json::Value = serde_wasm_bindgen::from_value(response).map_err(js_error)?;
-        to_value(&self.inner.complete_round(route_instance_id, response).map_err(js_error)?)
+    pub fn complete_round(
+        &mut self,
+        route_instance_id: String,
+        response: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let response: serde_json::Value =
+            serde_wasm_bindgen::from_value(response).map_err(js_error)?;
+        to_value(
+            &self
+                .inner
+                .complete_round(route_instance_id, response)
+                .map_err(js_error)?,
+        )
     }
 }

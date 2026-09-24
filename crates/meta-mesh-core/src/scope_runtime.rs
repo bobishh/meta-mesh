@@ -30,7 +30,11 @@ pub struct MeshScopeRuntime {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MeshScopeFrameEffect {
     NeedDocument,
     DocumentReceive {
@@ -93,7 +97,8 @@ impl MeshScopeRuntime {
         local_device_id: &str,
         remote_device_id: &str,
     ) -> Result<(), String> {
-        self.live.start_document_sync(local_device_id, remote_device_id)
+        self.live
+            .start_document_sync(local_device_id, remote_device_id)
     }
 
     /// Decode one authenticated frame and return the next host operation.
@@ -115,7 +120,9 @@ impl MeshScopeRuntime {
                 Ok(Some(MeshScopeFrameEffect::NeedDocument))
             }
             LiveSessionAction::Control(payload) => {
-                let plan = self.live.receive_plan(&LiveSessionAction::Control(payload))?;
+                let plan = self
+                    .live
+                    .receive_plan(&LiveSessionAction::Control(payload))?;
                 let control = plan.control.ok_or("Invalid mesh control plan")?;
                 Ok(Some(MeshScopeFrameEffect::Control {
                     control,
@@ -147,7 +154,10 @@ impl MeshScopeRuntime {
                     .receive_plan(&LiveSessionAction::Snapshot(payload.clone()))?;
                 if !matches!(
                     plan.effects.as_slice(),
-                    [LiveSessionEffect::MergeWorkspaceSnapshot, LiveSessionEffect::CloseSend]
+                    [
+                        LiveSessionEffect::MergeWorkspaceSnapshot,
+                        LiveSessionEffect::CloseSend
+                    ]
                 ) {
                     return Err("Workspace snapshots are only valid for workspace-set".into());
                 }
@@ -317,7 +327,7 @@ impl MeshScopeRuntime {
 
 #[cfg(test)]
 mod tests {
-    use automerge::{transaction::Transactable, AutoCommit, ROOT};
+    use automerge::{AutoCommit, ROOT, transaction::Transactable};
 
     use super::*;
 
@@ -343,7 +353,12 @@ mod tests {
             Some(MeshScopeFrameEffect::NeedDocument)
         ));
         let effect = receiver.provide_document(&baseline, None).unwrap();
-        let MeshScopeFrameEffect::DocumentReceive { document: _, should_persist, .. } = effect else {
+        let MeshScopeFrameEffect::DocumentReceive {
+            document: _,
+            should_persist,
+            ..
+        } = effect
+        else {
             panic!("expected document receive");
         };
         assert!(should_persist);
@@ -370,7 +385,10 @@ mod tests {
             .unwrap();
         assert!(matches!(
             runtime.receive_frame(&heartbeat).unwrap(),
-            Some(MeshScopeFrameEffect::Heartbeat { close_send: true, .. })
+            Some(MeshScopeFrameEffect::Heartbeat {
+                close_send: true,
+                ..
+            })
         ));
         let gossip = LiveWorkspaceSession::new("board", "secret")
             .unwrap()
@@ -396,11 +414,13 @@ mod tests {
             runtime.receive_frame(&durable).unwrap(),
             Some(MeshScopeFrameEffect::DurableBatch { .. })
         ));
-        assert!(runtime
-            .complete_saved_receive(true)
-            .unwrap()
-            .response
-            .is_some());
+        assert!(
+            runtime
+                .complete_saved_receive(true)
+                .unwrap()
+                .response
+                .is_some()
+        );
 
         let snapshot = sender.encode("sync-update", b"snapshot").unwrap();
         assert!(runtime.receive_frame(&snapshot).is_err());
