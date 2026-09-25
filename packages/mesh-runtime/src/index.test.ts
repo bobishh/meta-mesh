@@ -25,7 +25,7 @@ describe("Rust mesh runtime", () => {
       key: { workspaceId: "workspace", deviceId: "device", instanceId: "one" },
       connectionId: "replacement", remoteIssuedAt: "2026-09-21T00:00:00Z",
       remoteRouteSequence: 2, direction: "outgoing",
-    }, "incoming")
+    }, "outgoing")
 
     expect(first.decision).toBe("accepted")
     expect(sibling.decision).toBe("accepted")
@@ -38,10 +38,19 @@ describe("Rust mesh runtime", () => {
 })
 
 describe("MeshHandshakeCodec", () => {
+  it("accepts an empty old field and names a reported device when real legacy authority is rejected", () => {
+    const codec = new MeshHandshakeCodec()
+    const payload = { workspaceId: "board-1", peer: { advertisement: { payload: {
+      deviceId: "device-123456789", deviceName: "Bo's laptop",
+    } } }, capabilities: ["iroh-gossip-v1", "automerge-sync-v1", "device-revocation-v1"], breakGlassClaims: [] }
+    expect(codec.validate(payload, "board-1").workspaceId).toBe("board-1")
+    expect(() => codec.validate({ ...payload, breakGlassClaims: [{}] }, "board-1"))
+      .toThrow(/Reported device \(unverified\): "Bo's laptop" \(device-123\); workspace: board-1/)
+  })
   it("exposes negotiated features", () => {
     const codec = new MeshHandshakeCodec()
     expect(codec.features(["heartbeat-v1", "automerge-sync-v1", "blob-transfer-v1"])).toEqual({
-      heartbeatSupported: true, incrementalSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
+      heartbeatSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
       ownerWorkspaceOfferFrame: undefined,
       blobTransferSupported: true,
     })
@@ -49,9 +58,8 @@ describe("MeshHandshakeCodec", () => {
 
   it("uses owner workspace offers only with the renamed v2 protocol capability", () => {
     const codec = new MeshHandshakeCodec()
-    expect(codec.features(["owner-workspace-v1"])).toMatchObject({
-      ownerWorkspaceSupported: false, ownerWorkspaceOfferFrame: undefined,
-    })
+    expect(codec.features(["owner-workspace-v1"])).toMatchObject({ ownerWorkspaceSupported: false })
+    expect(codec.features(["owner-workspace-v1"])).not.toHaveProperty("ownerWorkspaceOfferFrame")
     expect(codec.features(["owner-workspace-v2"])).toMatchObject({
       ownerWorkspaceSupported: true, ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer",
     })

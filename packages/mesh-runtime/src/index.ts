@@ -1,23 +1,27 @@
-import { meshRustRuntime, type RustMeshRuntimeState } from "@meta-uber/mesh-replication/runtime"
+import { meshRustRuntime, type RustLiveWorkspaceSession, type RustMeshRuntimeState, type RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import type { DialNode, MeshConnection } from "@meta-uber/mesh-transport"
 
-export { mergeSuccessionState, type RuntimeWorkspaceCredential, type SuccessionHost } from "./succession"
-export { mergeOwnershipTransfers, type OwnershipTransferHost } from "./ownership"
-export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession, type BrowserGossipTopology } from "./browserGossip"
+export { BrowserMeshGossip, type BrowserGossipHost, type BrowserGossipSession } from "./browserGossip"
 export { BrowserMeshSessions, type BrowserMeshSession, type BrowserMeshSessionEntry, type BrowserMeshSessionHost } from "./browserSessions"
-export { BrowserMeshDocumentSessions, type BrowserDocumentSessionInput, type BrowserDocumentSyncEngine, type BrowserIncrementalDocumentSessionInput, type BrowserMeshDocumentSessionHost } from "./browserDocumentSessions"
+export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJoinHandoffGuest,
+  BrowserWorkspaceJoinHandoffHost, WorkspaceJoinHandoffRollbackError, WorkspaceJoinRejectedError,
+  type WorkspaceJoinConnection, type WorkspaceJoinHandoffMachine, type WorkspaceJoinHandoffOutcome,
+  type WorkspaceJoinMachine, type WorkspaceJoinResponse, type WorkspaceJoinStream } from "./browserWorkspaceJoin"
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
-export { credentialBelongsToProfile, activeCredentialsForProfile, type CredentialIdentityHost, type RuntimeAuthority, type RuntimeCredential, type RuntimeProfile } from "./credentials"
 export { MeshDialCancelled, MeshNodeRestart, isMeshDialNetworkFailure } from "./errors"
-export { BrowserMeshCredentials, type BrowserMeshCredentialsHost, type BrowserMeshOwnerCredential, type BrowserMeshOwnerProfile } from "./browserCredentials"
-export { BrowserMeshInvitations, type BrowserMeshInvitationCredential, type BrowserMeshInvitationEnvelope, type BrowserMeshInvitationsHost } from "./browserInvitations"
-export { BrowserMeshAuthority, BrowserMeshRecovery, BrowserMeshSuccession, type BrowserMeshAuthorityCredential, type BrowserMeshAuthorityHost, type BrowserMeshAuthorityProfile, type BrowserMeshRecoveryGrant, type BrowserMeshRecoveryHost, type BrowserMeshRecoveryPolicy, type BrowserMeshRecoveryVote, type BrowserMeshSuccessionHost } from "./browserAuthority"
-export { BrowserMeshCatalog, type BrowserMeshCatalogCredential, type BrowserMeshCatalogHost } from "./browserCatalog"
-export { BrowserMeshOwnershipTransfer, type BrowserMeshTransferCredential, type BrowserMeshTransferHost, type BrowserMeshTransferPeer, type BrowserMeshTransferProfile, type BrowserMeshTransferRecord } from "./browserOwnership"
 
 export type { RustMeshRuntimeState as MeshRuntimeState }
+export type { RustLiveSessionAction, RustLiveWorkspaceSession, RustMeshScopeFrameEffect, RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
+
+export function createLiveWorkspaceSession(workspaceId: string, secret: string): RustLiveWorkspaceSession {
+  return meshRustRuntime().createLiveWorkspaceSession(workspaceId, secret)
+}
+
+export function createMeshScopeRuntime(workspaceId: string, secret: string): RustMeshScopeRuntime {
+  return meshRustRuntime().createMeshScopeRuntime(workspaceId, secret)
+}
 
 /** Creates the shared Rust/WASM mesh runtime state machine. */
 export function createMeshRuntime(): RustMeshRuntimeState {
@@ -106,3 +110,4 @@ export class MeshReconnectPolicy {
 }
 
 export { BrowserMeshLifecycle, type BrowserMeshLifecycleHost } from "./browserLifecycle"
+export { BrowserMeshScopeSync, type MeshScopeHost, type MeshScopeStream } from "./browserScopeSync"

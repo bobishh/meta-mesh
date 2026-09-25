@@ -9,6 +9,7 @@ import {
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
+import { WasmIdentityCrypto } from "@meta-uber/mesh-transport/wasm"
 
 export type WorkspaceRole = "owner" | "editor" | "visitor"
 export type WorkspaceGrant = SignedEnvelope<{
@@ -93,6 +94,7 @@ export type WorkspaceRevocationPayload = {
   ownerPersonId: string
   personId: string
   epoch: number
+  workspaceHeads: string[]
   revokedAt: string
 }
 
@@ -226,142 +228,14 @@ export async function keyId(key: string): Promise<string> {
  * Returns the target device's public key (base64url) on success.
  */
 export async function verifyDeviceChain(
-  arg1: string | DeviceCertificate[] | VerifyDeviceChainOptions,
-  arg2?: string | DeviceCertificate[],
-  arg3?: string | DeviceCertificate[],
-  arg4?: DeviceCertificate[]
+  options: VerifyDeviceChainOptions,
 ): Promise<string> {
-  let personId: string | undefined
-  let publicKey: string
-  let deviceId: string
-  let certificates: DeviceCertificate[]
-
-  if (typeof arg1 === "object" && !Array.isArray(arg1)) {
-    personId = arg1.personId
-    publicKey = arg1.publicKey
-    deviceId = arg1.deviceId
-    certificates = arg1.certificates
-  } else if (Array.isArray(arg1)) {
-    certificates = arg1
-    publicKey = arg2 as string
-    deviceId = arg3 as string
-  } else if (
-    typeof arg1 === "string" &&
-    typeof arg2 === "string" &&
-    typeof arg3 === "string" &&
-    Array.isArray(arg4)
-  ) {
-    personId = arg1
-    publicKey = arg2
-    deviceId = arg3
-    certificates = arg4
-  } else if (typeof arg1 === "string" && typeof arg2 === "string" && Array.isArray(arg3)) {
-    publicKey = arg1
-    deviceId = arg2
-    certificates = arg3
-  } else {
-    throw new Error("Invalid arguments to verifyDeviceChain")
-  }
-
-  if (!publicKey || typeof publicKey !== "string") {
-    throw new Error("Invalid public key")
-  }
-  if (!deviceId || typeof deviceId !== "string") {
-    throw new Error("Invalid device ID")
-  }
-  if (
-    !Array.isArray(certificates) ||
-    certificates.length === 0 ||
-    certificates.length > MAX_CERT_CHAIN_LENGTH
-  ) {
-    throw new Error(`Invalid certificate chain: expected between 1 and ${MAX_CERT_CHAIN_LENGTH} certificates`)
-  }
-
-  // Verify identity hash
-  const derivedPersonId = await keyId(publicKey)
-  if (personId && personId !== derivedPersonId) {
-    throw new Error(`Identity does not match its key: expected ${personId}, derived ${derivedPersonId}`)
-  }
-  personId = derivedPersonId
-
-  // Build lookup by certificate hash
-  const byHash = new Map<string, DeviceCertificate>()
-  for (const cert of certificates) {
-    const hash = await certHashDefault(cert)
-    byHash.set(hash, cert)
-  }
-
-  // Find target device certificate
-  const first = certificates.find((c) => c?.payload?.deviceId === deviceId)
-  if (!first) {
-    throw new Error(`Missing device certificate for ${deviceId}`)
-  }
-
-  let cert: DeviceCertificate | undefined = first
-  const seenCertHashes = new Set<string>()
-  let depth = 0
-
-  while (cert) {
-    depth++
-    if (depth > MAX_CERT_CHAIN_LENGTH) {
-      throw new Error(`Certificate chain exceeds depth limit ${MAX_CERT_CHAIN_LENGTH}`)
-    }
-
-    const currentCertHash = await certHashDefault(cert)
-    if (seenCertHashes.has(currentCertHash)) {
-      throw new Error("Cycle detected in certificate chain")
-    }
-    seenCertHashes.add(currentCertHash)
-
-    const p = cert.payload
-    if (
-      !p ||
-      p.kind !== "device-certificate" ||
-      p.version !== 1 ||
-      p.personId !== personId ||
-      typeof p.devicePublicKey !== "string"
-    ) {
-      throw new Error("Invalid device certificate payload")
-    }
-
-    // Verify exact device hash
-    if ((await keyId(p.devicePublicKey)) !== p.deviceId) {
-      throw new Error(`Device key does not match deviceId ${p.deviceId}`)
-    }
-
-    // Check if root certificate
-    if (p.issuerCertificateHash === null) {
-      if (cert.signerKeyId !== personId) {
-        throw new Error(`Root certificate signerKeyId ${cert.signerKeyId} does not match personId ${personId}`)
-      }
-      const valid = await verifyEnvelope(cert, publicKey)
-      if (!valid) {
-        throw new Error("Invalid root certificate signature")
-      }
-      return first.payload.devicePublicKey
-    }
-
-    // Delegated certificate: walk to issuer
-    const issuerHash = p.issuerCertificateHash
-    const issuer = byHash.get(issuerHash)
-    if (!issuer) {
-      throw new Error(`Missing issuer certificate for hash ${issuerHash}`)
-    }
-    if (!issuer.payload.canEnrollDevices) {
-      throw new Error("Issuer certificate lacks canEnrollDevices capability")
-    }
-    if (cert.signerKeyId !== issuer.payload.deviceId) {
-      throw new Error("Delegated certificate signerKeyId does not match issuer deviceId")
-    }
-    const valid = await verifyEnvelope(cert, issuer.payload.devicePublicKey)
-    if (!valid) {
-      throw new Error("Invalid delegated certificate signature")
-    }
-
-    cert = issuer
-  }
-
-  throw new Error("Incomplete certificate chain")
+  const personId = options.personId ?? await keyId(options.publicKey)
+  return WasmIdentityCrypto.verifyDeviceCertificateChain({
+    personId,
+    publicKey: options.publicKey,
+    displayName: "",
+  }, options.deviceId, options.certificates)
 }
 
 /**
@@ -546,14 +420,16 @@ export async function verifyWorkspaceMemberBundle(
 export const verifyPeerAdvertisement = verifyWorkspaceMemberBundle
 
 export async function createWorkspaceRevocation(profile: LocalProfile, workspaceId: string, personId: string, epoch: number,
-  revokedAt = new Date().toISOString()): Promise<WorkspaceRevocation> {
+  workspaceHeads: string[], revokedAt = new Date().toISOString()): Promise<WorkspaceRevocation> {
   if (!workspaceId || !personId || personId === profile.identity.personId || !Number.isSafeInteger(epoch) || epoch < 2 ||
+    !Array.isArray(workspaceHeads) || !workspaceHeads.length || workspaceHeads.length > 256 ||
+    workspaceHeads.some(head => typeof head !== "string" || !head) ||
     !Number.isFinite(Date.parse(revokedAt)) || new Date(revokedAt).toISOString() !== revokedAt) throw new Error("Invalid workspace revocation")
   const key = profile.privateKeys.identityPrivateKey ?? profile.privateKeys.devicePrivateKey
   const signer = profile.privateKeys.identityPrivateKey ? profile.identity.personId : profile.device.deviceId
   return signEnvelope(key, {
     kind: "workspace-revocation", version: 1, workspaceId, ownerPersonId: profile.identity.personId,
-    personId, epoch, revokedAt,
+    personId, epoch, workspaceHeads, revokedAt,
   }, signer)
 }
 
@@ -690,15 +566,19 @@ export async function verifyWorkspaceSuccessionClaim(raw: unknown, workspaceId: 
 }
 
 export type WorkspaceDeviceRevocation = {
-  record: SignedEnvelope<{ kind: "workspace-device-revocation"; version: 1; workspaceId: string; personId: string; deviceId: string; revokedAt: string }>
+  record: SignedEnvelope<{ kind: "workspace-device-revocation"; version: 1; workspaceId: string; personId: string; deviceId: string; workspaceHeads: string[]; revokedAt: string }>
   authority: WorkspaceAuthority
 }
 
 export async function createWorkspaceDeviceRevocation(profile: LocalProfile, workspaceId: string,
-  personId: string, deviceId: string, certificates: DeviceCertificate[]): Promise<WorkspaceDeviceRevocation> {
+  personId: string, deviceId: string, workspaceHeads: string[], certificates: DeviceCertificate[]): Promise<WorkspaceDeviceRevocation> {
+  if (!workspaceId || !personId || !deviceId || !Array.isArray(workspaceHeads) || !workspaceHeads.length ||
+    workspaceHeads.length > 256 || workspaceHeads.some(head => typeof head !== "string" || !head)) {
+    throw new Error("Invalid workspace device revocation")
+  }
   const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
     kind: "workspace-device-revocation" as const, version: 1 as const, workspaceId, personId, deviceId,
-    revokedAt: new Date().toISOString(),
+    workspaceHeads, revokedAt: new Date().toISOString(),
   }, profile.device.deviceId)
   return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
 }
@@ -711,14 +591,18 @@ export function verifyWorkspaceDeviceRevocation(value: WorkspaceDeviceRevocation
 }
 
 export type WorkspaceDeparture = {
-  record: SignedEnvelope<{ kind: "workspace-departure"; version: 1; workspaceId: string; personId: string; accessEpoch: number; leftAt: string }>
+  record: SignedEnvelope<{ kind: "workspace-departure"; version: 1; workspaceId: string; personId: string; accessEpoch: number; workspaceHeads: string[]; leftAt: string }>
   authority: WorkspaceAuthority
 }
 export async function createWorkspaceDeparture(profile: LocalProfile, workspaceId: string, accessEpoch: number,
-  certificates: DeviceCertificate[]): Promise<WorkspaceDeparture> {
+  workspaceHeads: string[], certificates: DeviceCertificate[]): Promise<WorkspaceDeparture> {
+  if (!workspaceId || !Number.isSafeInteger(accessEpoch) || accessEpoch < 1 || !Array.isArray(workspaceHeads) ||
+    !workspaceHeads.length || workspaceHeads.length > 256 || workspaceHeads.some(head => typeof head !== "string" || !head)) {
+    throw new Error("Invalid workspace departure")
+  }
   const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
     kind: "workspace-departure" as const, version: 1 as const, workspaceId, personId: profile.identity.personId,
-    accessEpoch, leftAt: new Date().toISOString(),
+    accessEpoch, workspaceHeads, leftAt: new Date().toISOString(),
   }, profile.device.deviceId)
   return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
 }

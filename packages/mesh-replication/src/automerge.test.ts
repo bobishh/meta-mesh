@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest"
 import {
   AutomergeAntiEntropy,
   AutomergeDocumentCache,
-  AutomergeSyncScheduler,
   receiveAutomergeDeviceSync,
   syncAutomergeDocumentToDevice,
   type AutomergeAdmission,
@@ -169,20 +168,25 @@ describe("Automerge anti-entropy", () => {
     expect(adapter.commits).toBe(0)
   })
 
-  it("Given several repair triggers occur together, when scheduled, then one flush retains every reason", async () => {
-    const flush = vi.fn()
-    const scheduler = new AutomergeSyncScheduler(flush)
-    scheduler.trigger("chat-1", "local-commit")
-    scheduler.trigger("chat-1", "remote-commit")
-    scheduler.trigger("chat-1", "connection")
-    scheduler.trigger("chat-1", "scope-discovery")
-    scheduler.trigger("chat-1", "scheduled-repair")
+  it("Given a document admission is rejected, when the same signed sync frame is retried, then no unapproved state survives", async () => {
+    const base = Automerge.from<Chat>({ messages: [] })
+    const senderAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("approved later") }))
+    const receiverAdapter = new MemoryAdapter(Automerge.clone(base))
+    let reject = true
+    receiverAdapter.validateCandidate = async () => {
+      if (reject) throw new Error("Document permission denied")
+    }
+    const sender = new AutomergeAntiEntropy("sender", Automerge)
+    const receiver = new AutomergeAntiEntropy("receiver", Automerge)
+    const hello = await sender.generate(senderAdapter, "receiver")
+    const request = (await receiver.receive(receiverAdapter, "sender", hello!)).response
+    const change = (await sender.receive(senderAdapter, "receiver", request!)).response
 
-    await vi.waitFor(() => expect(flush).toHaveBeenCalledOnce())
-    const requests = flush.mock.calls[0][0]
-    expect([...requests.get("chat-1")]).toEqual([
-      "local-commit", "remote-commit", "connection", "scope-discovery", "scheduled-repair",
-    ])
+    await expect(receiver.receive(receiverAdapter, "sender", change!)).rejects.toThrow("Document permission denied")
+    expect(receiverAdapter.document.messages).toEqual([])
+    reject = false
+    await receiver.receive(receiverAdapter, "sender", change!)
+    expect(receiverAdapter.document.messages).toEqual(["approved later"])
   })
 
   it("Given one durable device has two routes, when the first route fails, then one native sync reaches the sibling route and returns a signed durable ACK", async () => {
@@ -228,5 +232,45 @@ describe("Automerge anti-entropy", () => {
     expect(trace.at(-1)).toBe("sync.converged")
     expect(rightAdapter.document.messages).toEqual(["one"])
     expect(Automerge.getHeads(rightAdapter.document)).toEqual(Automerge.getHeads(leftAdapter.document))
+  })
+
+  it("Given two live tabs share a device, when route speed changes, then one sync exchange stays on its selected tab", async () => {
+    const leftProfile = (await createRecoverableIdentity("better", "Left")).profile
+    const rightProfile = (await createRecoverableIdentity("better", "Right")).profile
+    const base = Automerge.from<Chat>({ messages: [] })
+    const leftAdapter = new MemoryAdapter(Automerge.change(base, doc => { doc.messages.push("one") }))
+    const tabs = new Map(["tab-a", "tab-b"].map(id => [id, {
+      engine: new AutomergeAntiEntropy(rightProfile.device.deviceId, Automerge),
+      adapter: new MemoryAdapter(Automerge.clone(base)),
+    }]))
+    const route = (instanceId: string): DeviceRoute => ({
+      kind: "mesh-device-route", version: 1, scopeId: "room-1", personId: rightProfile.identity.personId,
+      deviceId: rightProfile.device.deviceId, instanceId, endpoint: instanceId, sequence: 1,
+      issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      signerKeyId: rightProfile.device.deviceId, signature: "route-signature",
+    })
+    const calls = new Map<string, number>()
+    const result = await syncAutomergeDocumentToDevice({
+      engine: new AutomergeAntiEntropy(leftProfile.device.deviceId, Automerge),
+      adapter: leftAdapter,
+      targetDeviceId: rightProfile.device.deviceId,
+      routes: [route("tab-a"), route("tab-b")],
+      fallbackDelayMs: 0,
+      retryDelaysMs: [],
+      send: async (candidate, request) => {
+        const count = (calls.get(candidate.instanceId) ?? 0) + 1
+        calls.set(candidate.instanceId, count)
+        // First round selects A; later B would win if delivery raced again.
+        await new Promise(resolve => setTimeout(resolve, candidate.instanceId === "tab-a" ? (count === 1 ? 1 : 20) : (count === 1 ? 20 : 1)))
+        const tab = tabs.get(candidate.instanceId)!
+        return receiveAutomergeDeviceSync({ profile: rightProfile, engine: tab.engine, adapter: tab.adapter,
+          remoteDeviceId: leftProfile.device.deviceId, request })
+      },
+      verifyAck: async ack => verifySignedDurableBatchAck(ack,
+        await verifyDeviceCertificateChain(rightProfile.identity, rightProfile.device.deviceId, [rightProfile.certificate])),
+    })
+    expect(result.routeInstanceIds.length).toBeGreaterThan(1)
+    expect(new Set(result.routeInstanceIds)).toEqual(new Set(["tab-a"]))
+    expect(tabs.get("tab-a")!.adapter.document.messages).toEqual(["one"])
   })
 })

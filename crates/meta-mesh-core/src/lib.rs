@@ -1,42 +1,106 @@
+pub mod access;
 pub mod authority;
-pub mod catalog;
+pub mod authority_command;
+pub mod authority_flow;
 pub mod authorization;
 pub mod automerge;
-pub mod identity;
+pub mod automerge_delivery;
+pub mod bundle_reuse;
+pub mod catalog;
+pub mod change_admission_flow;
+pub mod credential_access;
+pub mod delivery_flow;
+pub mod dial_schedule;
+pub mod gossip_lifecycle;
+pub mod gossip_payload;
 pub mod handshake;
+pub mod handshake_flow;
+pub mod identity;
 pub mod invitation;
+pub mod invitation_plan;
+pub mod live_session;
 pub mod member;
+pub mod member_grant;
+pub mod ownership_adoption;
+pub mod ownership_merge;
 pub mod pairing;
 pub mod persistence;
 pub mod recovery;
 pub mod replication;
 pub mod runtime;
+pub mod scope_authority;
+pub mod scope_runtime;
+pub mod session_admission;
+pub mod session_lifecycle;
 pub mod state;
+pub mod succession_merge;
+pub mod transfer_selection;
+pub mod workspace_set;
+pub mod write_evidence;
+
+pub use access::{
+    WorkspaceAccessDecisionInput, WorkspaceDepartureEvidence, decide_workspace_access,
+};
 
 pub use authority::{
-    WorkspaceAuthority, WorkspaceOwnershipTransfer, WorkspaceOwnershipTransferPayload,
-    WorkspaceDeviceRevocation, WorkspaceDeviceRevocationPayload,
-    WorkspaceRevocation, WorkspaceRevocationPayload, WorkspaceSuccessionClaim,
-    WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy, WorkspaceSuccessionPolicyPayload,
-    WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload, SuccessionSummary, SuccessionVoteSummary,
-    summarize_succession, eligible_editor_person_ids, canonical_revocations,
-    plan_ownership_transitions,
-    has_conflicting_ownership_transfers,
+    SuccessionSummary, SuccessionVoteSummary, VerifiedOwnershipTransition, WorkspaceAuthority,
+    WorkspaceDeviceRevocation, WorkspaceDeviceRevocationPayload, WorkspaceOwnershipTransfer,
+    WorkspaceOwnershipTransferPayload, WorkspaceRevocation, WorkspaceRevocationPayload,
+    WorkspaceSuccessionClaim, WorkspaceSuccessionClaimPayload, WorkspaceSuccessionPolicy,
+    WorkspaceSuccessionPolicyPayload, WorkspaceSuccessionVote, WorkspaceSuccessionVotePayload,
+    canonical_revocations, eligible_editor_person_ids, has_conflicting_ownership_transfers,
+    next_verified_ownership_transition, plan_ownership_transitions, summarize_succession,
     verify_workspace_ownership_transfer, verify_workspace_revocation,
     verify_workspace_succession_claim, verify_workspace_succession_policy,
     verify_workspace_succession_vote,
 };
-pub use catalog::{MeshCatalog, validate_mesh_catalog};
+pub use authority_command::{AuthorityAction, AuthorityCommandInput, plan_authority_command};
+pub use authority_command::{
+    AuthorityImportAction, CatalogMergeAction, plan_authority_import, plan_catalog_merge,
+};
+pub use authority_flow::{
+    OwnershipAuthorityFlowInput, OwnershipAuthorityFlowPlan, plan_ownership_authority_flow,
+};
 pub use authorization::{
-    WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, verify_device_signed_envelope,
-    verify_workspace_grant, WorkspaceChangeAuthorization, WorkspaceChangeAuthorizationPayload,
-    IncomingWorkspaceChangeAuthorization, WorkspaceWriteAuthorizationSnapshot,
-    WorkspaceDeviceRevocationEvidence, AuthorizedWorkspaceChange,
+    AuthorizedWorkspaceChange, IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
+    WorkspaceChangeAuthorizationPayload, WorkspaceDeviceRevocationEvidence, WorkspaceGrant,
+    WorkspaceGrantPayload, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
     admit_workspace_change_authorization, admit_workspace_change_authorizations,
+    verify_device_signed_envelope, verify_workspace_grant,
 };
 pub use automerge::{
     AutomergeSyncEngine, AutomergeSyncFrame, AutomergeSyncResult, DEFAULT_MAX_AUTOMERGE_FRAME_BYTES,
 };
+pub use automerge_delivery::{
+    AutomergeDeviceSyncFlow, DeviceSyncConverged, DeviceSyncInbound, DeviceSyncRequest,
+    DeviceSyncRound, DeviceSyncStep, DeviceSyncWireFrame, decode_device_sync_request,
+    encode_device_sync_response,
+};
+pub use bundle_reuse::{BundleReuseInput, can_reuse_member_bundle};
+pub use catalog::{MeshCatalog, merge_verified_peer_catalog, validate_mesh_catalog};
+pub use change_admission_flow::{
+    ChangeAdmissionChange, ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
+    plan_change_admission_flow, unsigned_change_error,
+};
+pub use credential_access::{
+    CredentialPartition, CredentialPartitionInput, can_remove_workspace_device,
+    credential_belongs_to_profile, has_left_workspace, is_device_revoked, is_grant_revoked,
+    is_workspace_envelope, next_access_epoch, owned_workspace_ids, partition_credentials,
+};
+pub use delivery_flow::{BatchDeliveryAction, BatchDeliveryUpdate, MeshBatchDeliveryFlow};
+pub use dial_schedule::{DialRouteInput, DialScheduleInput, DialSchedulePlan, plan_dial_schedule};
+pub use gossip_lifecycle::{
+    DEFAULT_GOSSIP_TOPIC_PREFIX, GossipBroadcastPlan, GossipDeliveryAction,
+    GossipLifecycleNeighborChange, GossipLifecycleState, GossipNeighborPlan, GossipRebuildAction,
+    GossipRebuildInput, GossipRebuildPlan, GossipReceiveAction,
+};
+pub use gossip_payload::{encode_workspace_update, is_workspace_update};
+pub use handshake::{
+    MeshHandshake, MeshHandshakeBundleCandidate, decode_mesh_handshake, encode_mesh_handshake,
+    inspect_mesh_handshake, plan_mesh_handshake_authority_import, select_mesh_handshake_bundle,
+    should_advertise_owner_workspace_ids, validate_mesh_handshake,
+};
+pub use handshake_flow::{HandshakeStep, MeshHandshakeFlow};
 pub use identity::{
     DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
     MAX_CERTIFICATE_CHAIN_LENGTH, PublicIdentity, SignedEnvelope, canonicalize_json,
@@ -44,14 +108,39 @@ pub use identity::{
     sign_device_certificate, sign_json_envelope, signature_input, verify_device_certificate_chain,
     verify_signed_envelope,
 };
-pub use handshake::{MeshHandshake, validate_mesh_handshake};
 pub use invitation::{
     DeviceEnrollmentInvitation, InvitationIssuer, PairingInvite, ScopedInvitation, WorkspaceItem,
     WorkspaceJoinInvitation, create_device_enrollment_invitation, create_workspace_join_invitation,
     invitation_url, pairing_invite_url, parse_invitation, parse_pairing_invite,
 };
-pub use member::{PeerAdvertisement, PeerAdvertisementPayload, VerifiedWorkspaceMember, VerifyWorkspaceMemberOptions, verify_workspace_member_bundle};
-pub use pairing::{PAIRING_VERSION, PairingCodec, PairingFrameHeader};
+pub use invitation_plan::{
+    GuestAdvertisementEntry, GuestAdvertisementInput, InvitationCredentialInput,
+    InvitationPlanEntry, InvitationPlanInput, IssuerWorkspaceInput, knows_workspace_issuer,
+    missing_owner_workspaces, plan_guest_advertisements, plan_invitation,
+    plan_invitation_credential, validate_owner_workspace_offer,
+};
+pub use live_session::{
+    LiveSessionAction, LiveSessionEffect, LiveSessionPublishPlan, LiveSessionReceivePlan,
+    LiveSessionSnapshotPlan, LiveWorkspaceSession, PreparedLiveDocument, WorkspaceControlSnapshot,
+};
+pub use member::{
+    PeerAdvertisement, PeerAdvertisementPayload, VerifiedWorkspaceMember,
+    VerifyWorkspaceMemberOptions, verify_workspace_member_bundle,
+};
+pub use member_grant::{
+    MemberGrantInput, MemberGrantPlan, decide_owner_credential, plan_member_grant,
+    plan_owner_certificate_refresh,
+};
+pub use ownership_adoption::{
+    OwnershipAdoptionInput, OwnershipAdoptionPlan, OwnershipAdoptionRecord, plan_ownership_adoption,
+};
+pub use ownership_merge::{
+    OwnershipMergeInput, OwnershipMergePlan, OwnershipMergeStep, plan_ownership_merge,
+};
+pub use pairing::{
+    PAIRING_VERSION, PairingCodec, PairingFrameHeader, WorkspaceJoinAck, WorkspaceJoinHandoff,
+    WorkspaceJoinHandoffOutcome, WorkspaceJoinHandshake, WorkspaceJoinResponse,
+};
 pub use persistence::{
     ChangeAdmissionPlan, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
     OutboxClaimTransition, StoredDocumentChange, plan_change_admission, transition_outbox_claim,
@@ -70,12 +159,51 @@ pub use replication::{
     verify_device_route, verify_durable_batch_ack,
 };
 pub use runtime::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan, RelayDialPolicy, MESH_CAPABILITIES, validate_mesh_capabilities, MAX_CONTROL_FRAME_BYTES,
-    MAX_CONTROL_SNAPSHOT_BYTES, MeshRuntimeState, ReconnectState, RouteAttempt, RuntimeSession,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DialMode, DialPlan,
+    MAX_CONTROL_FRAME_BYTES, MAX_CONTROL_SNAPSHOT_BYTES, MESH_CAPABILITIES, MeshLifecycleState,
+    MeshRuntimeState, ReconnectState, RelayDialPolicy, RouteAttempt, RuntimeSession,
     SessionAdmission, SessionCandidate, SessionDirection, SessionKey, control_frames,
+    preferred_session_direction, validate_mesh_capabilities,
+};
+pub use runtime::{MeshHandshakeFeatures, mesh_handshake_features};
+pub use scope_authority::{
+    ScopeAuthority, ScopeAuthoritySnapshot, ScopeCapability, ScopeCapabilityGrant,
+    ScopeCapabilityGrantPayload, ScopeCapabilityRevocation, ScopeCapabilityRevocationPayload,
+    ScopeControlTransfer, ScopeControlTransferPayload, ScopeControlTransferPayloadInput,
+    ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload, ScopeGenesisPayloadInput,
+    ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, SignedScopeGenesis, ValidatedScopeAuthority,
+    create_scope_control_transfer_payload, create_scope_genesis, create_scope_genesis_payload,
+    plan_scope_genesis, sign_scope_record, validate_scope_authority, verify_scope_capability_grant,
+    verify_scope_capability_revocation, verify_scope_control_transfer, verify_scope_genesis,
+};
+pub use scope_runtime::{MeshScopeDocumentCompletion, MeshScopeFrameEffect, MeshScopeRuntime};
+pub use session_admission::{MeshAuthenticatedSessions, MeshPeerAdmission, admit_mesh_peer};
+pub use session_lifecycle::{
+    DEFAULT_SESSION_STABLE_AFTER_MS, MeshSessionLifecycleState, SessionCallbackEvent,
+    SessionCallbackPlan, SessionEvictionDecision, SessionInstallDecision,
+    SessionWorkspacePublishPlan,
 };
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
     ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,
     select_scoped_neighbors, validate_peer_record,
+};
+pub use succession_merge::{
+    SuccessionCatalogInput, SuccessionCatalogPlan, SuccessionMergeInput, SuccessionMergePlan,
+    SuccessionPolicyRefresh, plan_succession_catalog, plan_succession_merge,
+    plan_succession_policy_refresh,
+};
+pub use transfer_selection::{
+    TransferPeerInput, TransferRecordInput, TransferSelectionInput, TransferSelectionPlan,
+    select_ownership_transfer,
+};
+pub use workspace_set::{WorkspaceSetEntry, decode_workspace_set, encode_workspace_set};
+mod authority_merge;
+pub use authority_merge::{
+    AuthorityMergeInput, AuthorityMergePlan, AuthorityMergeRecords, SignedDeparture,
+    SignedDeviceRevocation, plan_authority_merge,
+};
+pub use write_evidence::{
+    WriteEvidenceInput, has_authority_conflict, prepare_write_evidence,
+    require_change_authorization_coverage,
 };

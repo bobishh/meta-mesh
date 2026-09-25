@@ -2045,6 +2045,7 @@ dependencies = [
 name = "meta-mesh-native"
 version = "0.1.0"
 dependencies = [
+ "automerge",
  "blake3",
  "bytes",
  "futures-lite",
@@ -2056,6 +2057,9 @@ dependencies = [
  "n0-future",
  "postcard",
  "rand",
+ "serde",
+ "serde_json",
+ "time",
  "tokio",
 ]
 

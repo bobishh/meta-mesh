@@ -673,6 +673,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_admit_peer_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_core_version(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_derive_device_seed(
@@ -686,6 +688,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_legacy_recovery_from_samples(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_func_mesh_next_verified_ownership_transition_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed(
     ): Int
@@ -741,11 +745,17 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_abort_prepared_receive(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_commit_prepared_receive(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_heads(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_prepare_receive_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json(
     ): Int
@@ -756,6 +766,52 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_broadcast(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_abort_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_commit_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_decode_automerge_payload_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_generate_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_prepare_document_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_reset_document(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_start_document_sync(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_saved_receipt(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_admit_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_clear(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_refresh_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_advance(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_step(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_add_blob(
     ): Int
@@ -781,15 +837,45 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_admit_session_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_begin_route_attempt_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_gossip(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnect(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnects_with_prefix(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_route_attempt(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_connected_devices(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_control_frames(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_due_reconnects(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_finish_route_attempt(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_is_running(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_plan_dial_json(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_receive_control_frame(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_reconnect_state_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_record_dial_success(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_record_network_failure(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_remove_session_json(
     ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_route_attempt_active(
+    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_schedule_reconnect_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_sessions_json(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_set_gossip_endpoints_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start(
     ): Int
@@ -804,6 +890,12 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilerpcrequest_respond_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_constructor_mobileliveworkspacesession_new(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshauthenticatedsessions_new(
+    ): Int
+    external fun uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshhandshakeflow_new(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start(
     ): Int
@@ -833,12 +925,18 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_constructor_mobileautomergesyncengine_new(`localDeviceId`: RustBuffer.ByValue,`maximumFrameBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_abort_prepared_receive(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_commit_prepared_receive(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_generate_json(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,`authorized`: Byte,`proofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_heads(`ptr`: Long,`documentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_load_document(`ptr`: Long,`scopeId`: RustBuffer.ByValue,`documentId`: RustBuffer.ByValue,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_prepare_receive_json(`ptr`: Long,`remoteDeviceId`: RustBuffer.ByValue,`frameJson`: RustBuffer.ByValue,`authorized`: Byte,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_receive_json(`ptr`: Long,`remoteDeviceId`: RustBuffer.ByValue,`frameJson`: RustBuffer.ByValue,`authorized`: Byte,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_reset(`ptr`: Long,`documentId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -852,6 +950,70 @@ internal object UniffiLib {
     external fun uniffi_meta_mesh_mobile_fn_method_mobilegossiptopic_broadcast(`ptr`: Long,`content`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobilegossiptopic_receive(`ptr`: Long,`timeoutMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_clone_mobileliveworkspacesession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_free_mobileliveworkspacesession(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_constructor_mobileliveworkspacesession_new(`workspaceId`: RustBuffer.ByValue,`secret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_abort_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_acknowledge_saved(`ptr`: Long,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_commit_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_changed(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_frames(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_decode_automerge_payload_json(`ptr`: Long,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode(`ptr`: Long,`frameType`: RustBuffer.ByValue,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(`ptr`: Long,`frameJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_generate_document(`ptr`: Long,`document`: RustBuffer.ByValue,`proofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(`ptr`: Long,`snapshot`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_prepare_document_json(`ptr`: Long,`payload`: RustBuffer.ByValue,`document`: RustBuffer.ByValue,`responseProofJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_receive_json(`ptr`: Long,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_reset_document(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_start_document_sync(`ptr`: Long,`localDeviceId`: RustBuffer.ByValue,`remoteDeviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_heartbeat_ack(`ptr`: Long,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_saved_receipt(`ptr`: Long,`frame`: RustBuffer.ByValue,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_clone_mobilemeshauthenticatedsessions(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_free_mobilemeshauthenticatedsessions(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_constructor_mobilemeshauthenticatedsessions_new(uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_admit_json(`ptr`: Long,`handshakeJson`: RustBuffer.ByValue,`snapshotJson`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_clear(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_refresh_json(`ptr`: Long,`snapshotJson`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_clone_mobilemeshhandshakeflow(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_free_mobilemeshhandshakeflow(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_constructor_mobilemeshhandshakeflow_new(`direction`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Long
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshhandshakeflow_advance(`ptr`: Long,`completed`: RustBuffer.ByValue,`decision`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshhandshakeflow_step(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_clone_mobilemeshnode(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Long
@@ -889,15 +1051,45 @@ internal object UniffiLib {
     ): Long
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_admit_session_json(`ptr`: Long,`candidateJson`: RustBuffer.ByValue,`preferredDirection`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_begin_route_attempt_json(`ptr`: Long,`routeKey`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_gossip(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnect(`ptr`: Long,`routeKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnects_with_prefix(`ptr`: Long,`prefix`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_route_attempt(`ptr`: Long,`routeKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_connected_devices(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_control_frames(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_due_reconnects(`ptr`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_finish_route_attempt(`ptr`: Long,`routeKey`: RustBuffer.ByValue,`token`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_is_running(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_plan_dial_json(`ptr`: Long,`peerKey`: RustBuffer.ByValue,`relayAvailable`: Byte,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_receive_control_frame(`ptr`: Long,`receiverId`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_reconnect_state_json(`ptr`: Long,`routeKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_record_dial_success(`ptr`: Long,`peerKey`: RustBuffer.ByValue,`mode`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_record_network_failure(`ptr`: Long,`peerKey`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_remove_session_json(`ptr`: Long,`keyJson`: RustBuffer.ByValue,`generation`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_route_attempt_active(`ptr`: Long,`routeKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Byte
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_schedule_reconnect_json(`ptr`: Long,`routeKey`: RustBuffer.ByValue,`nowMs`: Long,`baseDelayMs`: Long,`maximumDelayMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_sessions_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_set_gossip_endpoints_json(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`endpoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_start(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
@@ -915,6 +1107,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilerpcrequest_respond_json(`ptr`: Long,`responseJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_admit_peer_json(`handshakeJson`: RustBuffer.ByValue,`snapshotJson`: RustBuffer.ByValue,`remoteEndpoint`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_core_version(uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_derive_device_seed(`entropy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -928,6 +1122,8 @@ internal object UniffiLib {
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_legacy_recovery_from_samples(`samples`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_merge_peer_records_json(`existingJson`: RustBuffer.ByValue,`incomingJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    external fun uniffi_meta_mesh_mobile_fn_func_mesh_next_verified_ownership_transition_json(`recordsJson`: RustBuffer.ByValue,`workspaceId`: RustBuffer.ByValue,`currentOwnerJson`: RustBuffer.ByValue,`currentEpoch`: Long,`revokedPeople`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_func_mesh_open_identity_seed(`envelopeJson`: RustBuffer.ByValue,`recoveryKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
@@ -1102,6 +1298,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_admit_peer_json() and 0xFFFF) != 10383) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_core_version() and 0xFFFF) != 45672) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1121,6 +1320,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_merge_peer_records_json() and 0xFFFF) != 40981) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_next_verified_ownership_transition_json() and 0xFFFF) != 60254) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_open_identity_seed() and 0xFFFF) != 28030) {
@@ -1204,6 +1406,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_func_mesh_verify_workspace_succession_vote_json() and 0xFFFF) != 14625) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_abort_prepared_receive() and 0xFFFF) != 27215) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_commit_prepared_receive() and 0xFFFF) != 4697) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_generate_json() and 0xFFFF) != 63608) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1211,6 +1419,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_load_document() and 0xFFFF) != 20124) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_prepare_receive_json() and 0xFFFF) != 34923) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileautomergesyncengine_receive_json() and 0xFFFF) != 42173) {
@@ -1226,6 +1437,75 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilegossiptopic_receive() and 0xFFFF) != 60073) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_abort_document() and 0xFFFF) != 35754) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_acknowledge_saved() and 0xFFFF) != 17535) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_commit_document() and 0xFFFF) != 26158) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_changed() and 0xFFFF) != 59873) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_control_frames() and 0xFFFF) != 45796) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_decode_automerge_payload_json() and 0xFFFF) != 15012) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode() and 0xFFFF) != 4622) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_encode_automerge_frame() and 0xFFFF) != 60700) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_generate_document() and 0xFFFF) != 15947) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_mark_control_sent() and 0xFFFF) != 21253) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_prepare_document_json() and 0xFFFF) != 4286) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_receive_json() and 0xFFFF) != 17819) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_reset_document() and 0xFFFF) != 39027) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_start_document_sync() and 0xFFFF) != 62150) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_heartbeat_ack() and 0xFFFF) != 30873) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobileliveworkspacesession_verify_saved_receipt() and 0xFFFF) != 50855) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_admit_json() and 0xFFFF) != 59338) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_clear() and 0xFFFF) != 416) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_peer_json() and 0xFFFF) != 57798) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_refresh_json() and 0xFFFF) != 27884) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshauthenticatedsessions_remove() and 0xFFFF) != 5494) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_advance() and 0xFFFF) != 27410) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshhandshakeflow_step() and 0xFFFF) != 5840) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshnode_add_blob() and 0xFFFF) != 33943) {
@@ -1264,19 +1544,64 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_admit_session_json() and 0xFFFF) != 17058) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_begin_route_attempt_json() and 0xFFFF) != 60622) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_gossip() and 0xFFFF) != 23748) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnect() and 0xFFFF) != 21008) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnects_with_prefix() and 0xFFFF) != 45971) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_route_attempt() and 0xFFFF) != 36985) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_connected_devices() and 0xFFFF) != 27773) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_control_frames() and 0xFFFF) != 64260) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_due_reconnects() and 0xFFFF) != 36131) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_finish_route_attempt() and 0xFFFF) != 56337) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_is_running() and 0xFFFF) != 27110) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_plan_dial_json() and 0xFFFF) != 30375) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_receive_control_frame() and 0xFFFF) != 6272) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_reconnect_state_json() and 0xFFFF) != 53919) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_record_dial_success() and 0xFFFF) != 53688) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_record_network_failure() and 0xFFFF) != 30624) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_remove_session_json() and 0xFFFF) != 18204) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_route_attempt_active() and 0xFFFF) != 40788) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_schedule_reconnect_json() and 0xFFFF) != 11666) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_sessions_json() and 0xFFFF) != 14167) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_set_gossip_endpoints_json() and 0xFFFF) != 26153) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start() and 0xFFFF) != 32108) {
@@ -1298,6 +1623,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobileautomergesyncengine_new() and 0xFFFF) != 18983) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobileliveworkspacesession_new() and 0xFFFF) != 51681) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshauthenticatedsessions_new() and 0xFFFF) != 17309) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshhandshakeflow_new() and 0xFFFF) != 45887) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_constructor_mobilemeshnode_start() and 0xFFFF) != 5286) {
@@ -1756,11 +2090,17 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 
 public interface MobileAutomergeSyncEngineInterface {
 
+    fun `abortPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+
+    fun `commitPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+
     fun `generateJson`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String, `authorized`: kotlin.Boolean, `proofJson`: kotlin.String?): kotlin.String?
 
     fun `heads`(`documentId`: kotlin.String): List<kotlin.String>
 
     fun `loadDocument`(`scopeId`: kotlin.String, `documentId`: kotlin.String, `bytes`: kotlin.ByteArray)
+
+    fun `prepareReceiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String
 
     fun `receiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String
 
@@ -1883,6 +2223,36 @@ open class MobileAutomergeSyncEngine: Disposable, AutoCloseable, MobileAutomerge
     }
 
 
+    @Throws(MobileMeshException::class)override fun `abortPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_abort_prepared_receive(
+        it,
+
+        FfiConverterString.lower(`documentId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `commitPreparedReceive`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_commit_prepared_receive(
+        it,
+
+        FfiConverterString.lower(`documentId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
+
+
+
     @Throws(MobileMeshException::class)override fun `generateJson`(`documentId`: kotlin.String, `remoteDeviceId`: kotlin.String, `authorized`: kotlin.Boolean, `proofJson`: kotlin.String?): kotlin.String? {
             return FfiConverterOptionalString.lift(
     callWithHandle {
@@ -1929,6 +2299,24 @@ open class MobileAutomergeSyncEngine: Disposable, AutoCloseable, MobileAutomerge
 }
     }
 
+
+
+
+    @Throws(MobileMeshException::class)override fun `prepareReceiveJson`(`remoteDeviceId`: kotlin.String, `frameJson`: kotlin.String, `authorized`: kotlin.Boolean, `responseProofJson`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileautomergesyncengine_prepare_receive_json(
+        it,
+
+        FfiConverterString.lower(`remoteDeviceId`),
+        FfiConverterString.lower(`frameJson`),
+        FfiConverterBoolean.lower(`authorized`),
+        FfiConverterOptionalString.lower(`responseProofJson`),_status)
+}
+    }
+    )
+    }
 
 
 
@@ -2286,6 +2674,1144 @@ public object FfiConverterTypeMobileGossipTopic: FfiConverter<MobileGossipTopic,
     override fun allocationSize(value: MobileGossipTopic) = 8UL
 
     override fun write(value: MobileGossipTopic, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+public interface MobileLiveWorkspaceSessionInterface {
+
+    fun `abortDocument`()
+
+    fun `acknowledgeSaved`(`bytes`: kotlin.ByteArray): kotlin.ByteArray
+
+    fun `commitDocument`()
+
+    fun `controlChanged`(`snapshot`: kotlin.ByteArray): kotlin.Boolean
+
+    fun `controlFrames`(`snapshot`: kotlin.ByteArray): List<kotlin.ByteArray>
+
+    fun `decodeAutomergePayloadJson`(`payload`: kotlin.ByteArray): kotlin.String
+
+    fun `encode`(`frameType`: kotlin.String, `payload`: kotlin.ByteArray): kotlin.ByteArray
+
+    fun `encodeAutomergeFrame`(`frameJson`: kotlin.String): kotlin.ByteArray
+
+    fun `generateDocument`(`document`: kotlin.ByteArray, `proofJson`: kotlin.String?): kotlin.ByteArray?
+
+    fun `markControlSent`(`snapshot`: kotlin.ByteArray)
+
+    fun `prepareDocumentJson`(`payload`: kotlin.ByteArray, `document`: kotlin.ByteArray, `responseProofJson`: kotlin.String?): kotlin.String
+
+    fun `receiveJson`(`frame`: kotlin.ByteArray): kotlin.String
+
+    fun `resetDocument`()
+
+    fun `startDocumentSync`(`localDeviceId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+
+    fun `verifyHeartbeatAck`(`frame`: kotlin.ByteArray)
+
+    fun `verifySavedReceipt`(`frame`: kotlin.ByteArray, `bytes`: kotlin.ByteArray)
+
+    companion object
+}
+
+open class MobileLiveWorkspaceSession: Disposable, AutoCloseable, MobileLiveWorkspaceSessionInterface
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+    constructor(`workspaceId`: kotlin.String, `secret`: kotlin.String) :
+        this(UniffiWithHandle,
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_constructor_mobileliveworkspacesession_new(
+
+
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`secret`),_status)
+}
+    )
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_meta_mesh_mobile_fn_free_mobileliveworkspacesession(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_meta_mesh_mobile_fn_clone_mobileliveworkspacesession(handle, status)
+        }
+    }
+
+
+    @Throws(MobileMeshException::class)override fun `abortDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_abort_document(
+        it,
+        _status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `acknowledgeSaved`(`bytes`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_acknowledge_saved(
+        it,
+
+        FfiConverterByteArray.lower(`bytes`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `commitDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_commit_document(
+        it,
+        _status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `controlChanged`(`snapshot`: kotlin.ByteArray): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_changed(
+        it,
+
+        FfiConverterByteArray.lower(`snapshot`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `controlFrames`(`snapshot`: kotlin.ByteArray): List<kotlin.ByteArray> {
+            return FfiConverterSequenceByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_control_frames(
+        it,
+
+        FfiConverterByteArray.lower(`snapshot`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `decodeAutomergePayloadJson`(`payload`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_decode_automerge_payload_json(
+        it,
+
+        FfiConverterByteArray.lower(`payload`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `encode`(`frameType`: kotlin.String, `payload`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode(
+        it,
+
+        FfiConverterString.lower(`frameType`),
+        FfiConverterByteArray.lower(`payload`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `encodeAutomergeFrame`(`frameJson`: kotlin.String): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_encode_automerge_frame(
+        it,
+
+        FfiConverterString.lower(`frameJson`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `generateDocument`(`document`: kotlin.ByteArray, `proofJson`: kotlin.String?): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_generate_document(
+        it,
+
+        FfiConverterByteArray.lower(`document`),
+        FfiConverterOptionalString.lower(`proofJson`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `markControlSent`(`snapshot`: kotlin.ByteArray)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_mark_control_sent(
+        it,
+
+        FfiConverterByteArray.lower(`snapshot`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `prepareDocumentJson`(`payload`: kotlin.ByteArray, `document`: kotlin.ByteArray, `responseProofJson`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_prepare_document_json(
+        it,
+
+        FfiConverterByteArray.lower(`payload`),
+        FfiConverterByteArray.lower(`document`),
+        FfiConverterOptionalString.lower(`responseProofJson`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `receiveJson`(`frame`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_receive_json(
+        it,
+
+        FfiConverterByteArray.lower(`frame`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `resetDocument`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_reset_document(
+        it,
+        _status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `startDocumentSync`(`localDeviceId`: kotlin.String, `remoteDeviceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_start_document_sync(
+        it,
+
+        FfiConverterString.lower(`localDeviceId`),
+        FfiConverterString.lower(`remoteDeviceId`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `verifyHeartbeatAck`(`frame`: kotlin.ByteArray)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_heartbeat_ack(
+        it,
+
+        FfiConverterByteArray.lower(`frame`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `verifySavedReceipt`(`frame`: kotlin.ByteArray, `bytes`: kotlin.ByteArray)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobileliveworkspacesession_verify_saved_receipt(
+        it,
+
+        FfiConverterByteArray.lower(`frame`),
+        FfiConverterByteArray.lower(`bytes`),_status)
+}
+    }
+
+
+
+
+
+
+
+
+
+
+    /**
+     * @suppress
+     */
+    companion object
+
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileLiveWorkspaceSession: FfiConverter<MobileLiveWorkspaceSession, Long> {
+    override fun lower(value: MobileLiveWorkspaceSession): Long {
+        return value.uniffiCloneHandle()
+    }
+
+    override fun lift(value: Long): MobileLiveWorkspaceSession {
+        return MobileLiveWorkspaceSession(UniffiWithHandle, value)
+    }
+
+    override fun read(buf: ByteBuffer): MobileLiveWorkspaceSession {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: MobileLiveWorkspaceSession) = 8UL
+
+    override fun write(value: MobileLiveWorkspaceSession, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+public interface MobileMeshAuthenticatedSessionsInterface {
+
+    fun `admitJson`(`handshakeJson`: kotlin.String, `snapshotJson`: kotlin.String, `remoteEndpoint`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String
+
+    fun `clear`()
+
+    fun `peerJson`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.String?
+
+    fun `refreshJson`(`snapshotJson`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String
+
+    fun `remove`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.Boolean
+
+    companion object
+}
+
+open class MobileMeshAuthenticatedSessions: Disposable, AutoCloseable, MobileMeshAuthenticatedSessionsInterface
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+    constructor() :
+        this(UniffiWithHandle,
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_constructor_mobilemeshauthenticatedsessions_new(
+
+        _status)
+}
+    )
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_meta_mesh_mobile_fn_free_mobilemeshauthenticatedsessions(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_meta_mesh_mobile_fn_clone_mobilemeshauthenticatedsessions(handle, status)
+        }
+    }
+
+
+    @Throws(MobileMeshException::class)override fun `admitJson`(`handshakeJson`: kotlin.String, `snapshotJson`: kotlin.String, `remoteEndpoint`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_admit_json(
+        it,
+
+        FfiConverterString.lower(`handshakeJson`),
+        FfiConverterString.lower(`snapshotJson`),
+        FfiConverterString.lower(`remoteEndpoint`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `clear`()
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_clear(
+        it,
+        _status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `peerJson`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_peer_json(
+        it,
+
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`remoteEndpoint`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `refreshJson`(`snapshotJson`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_refresh_json(
+        it,
+
+        FfiConverterString.lower(`snapshotJson`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `remove`(`workspaceId`: kotlin.String, `remoteEndpoint`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshauthenticatedsessions_remove(
+        it,
+
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`remoteEndpoint`),_status)
+}
+    }
+    )
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * @suppress
+     */
+    companion object
+
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileMeshAuthenticatedSessions: FfiConverter<MobileMeshAuthenticatedSessions, Long> {
+    override fun lower(value: MobileMeshAuthenticatedSessions): Long {
+        return value.uniffiCloneHandle()
+    }
+
+    override fun lift(value: Long): MobileMeshAuthenticatedSessions {
+        return MobileMeshAuthenticatedSessions(UniffiWithHandle, value)
+    }
+
+    override fun read(buf: ByteBuffer): MobileMeshAuthenticatedSessions {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: MobileMeshAuthenticatedSessions) = 8UL
+
+    override fun write(value: MobileMeshAuthenticatedSessions, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+public interface MobileMeshHandshakeFlowInterface {
+
+    fun `advance`(`completed`: kotlin.String, `decision`: kotlin.Boolean?): kotlin.String
+
+    fun `step`(): kotlin.String
+
+    companion object
+}
+
+open class MobileMeshHandshakeFlow: Disposable, AutoCloseable, MobileMeshHandshakeFlowInterface
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+    constructor(`direction`: kotlin.String) :
+        this(UniffiWithHandle,
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_constructor_mobilemeshhandshakeflow_new(
+
+
+        FfiConverterString.lower(`direction`),_status)
+}
+    )
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_meta_mesh_mobile_fn_free_mobilemeshhandshakeflow(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_meta_mesh_mobile_fn_clone_mobilemeshhandshakeflow(handle, status)
+        }
+    }
+
+
+    @Throws(MobileMeshException::class)override fun `advance`(`completed`: kotlin.String, `decision`: kotlin.Boolean?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshhandshakeflow_advance(
+        it,
+
+        FfiConverterString.lower(`completed`),
+        FfiConverterOptionalBoolean.lower(`decision`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `step`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshhandshakeflow_step(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * @suppress
+     */
+    companion object
+
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileMeshHandshakeFlow: FfiConverter<MobileMeshHandshakeFlow, Long> {
+    override fun lower(value: MobileMeshHandshakeFlow): Long {
+        return value.uniffiCloneHandle()
+    }
+
+    override fun lift(value: Long): MobileMeshHandshakeFlow {
+        return MobileMeshHandshakeFlow(UniffiWithHandle, value)
+    }
+
+    override fun read(buf: ByteBuffer): MobileMeshHandshakeFlow {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: MobileMeshHandshakeFlow) = 8UL
+
+    override fun write(value: MobileMeshHandshakeFlow, buf: ByteBuffer) {
         buf.putLong(lower(value))
     }
 }
@@ -2828,15 +4354,45 @@ public interface MobileMeshRuntimeInterface {
 
     fun `admitSessionJson`(`candidateJson`: kotlin.String, `preferredDirection`: kotlin.String): kotlin.String
 
+    fun `beginRouteAttemptJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong): kotlin.String
+
+    fun `clearGossip`(`workspaceId`: kotlin.String)
+
+    fun `clearReconnect`(`routeKey`: kotlin.String)
+
+    fun `clearReconnectsWithPrefix`(`prefix`: kotlin.String)
+
+    fun `clearRouteAttempt`(`routeKey`: kotlin.String)
+
+    fun `connectedDevices`(`workspaceId`: kotlin.String): List<kotlin.String>
+
     fun `controlFrames`(`workspaceId`: kotlin.String, `bytes`: kotlin.ByteArray): List<kotlin.ByteArray>
 
     fun `dueReconnects`(`nowMs`: kotlin.ULong): List<kotlin.String>
 
+    fun `finishRouteAttempt`(`routeKey`: kotlin.String, `token`: kotlin.ULong): kotlin.Boolean
+
+    fun `isRunning`(): kotlin.Boolean
+
+    fun `planDialJson`(`peerKey`: kotlin.String, `relayAvailable`: kotlin.Boolean, `nowMs`: kotlin.ULong): kotlin.String
+
     fun `receiveControlFrame`(`receiverId`: kotlin.String, `workspaceId`: kotlin.String, `frame`: kotlin.ByteArray): kotlin.ByteArray?
+
+    fun `reconnectStateJson`(`routeKey`: kotlin.String): kotlin.String?
+
+    fun `recordDialSuccess`(`peerKey`: kotlin.String, `mode`: kotlin.String, `nowMs`: kotlin.ULong)
+
+    fun `recordNetworkFailure`(`peerKey`: kotlin.String, `nowMs`: kotlin.ULong)
 
     fun `removeSessionJson`(`keyJson`: kotlin.String, `generation`: kotlin.ULong): kotlin.String?
 
+    fun `routeAttemptActive`(`routeKey`: kotlin.String): kotlin.Boolean
+
     fun `scheduleReconnectJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong, `baseDelayMs`: kotlin.ULong, `maximumDelayMs`: kotlin.ULong): kotlin.String
+
+    fun `sessionsJson`(): kotlin.String
+
+    fun `setGossipEndpointsJson`(`workspaceId`: kotlin.String, `endpoints`: List<kotlin.String>): kotlin.String
 
     fun `start`()
 
@@ -2971,6 +4527,93 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
 
 
 
+    @Throws(MobileMeshException::class)override fun `beginRouteAttemptJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_begin_route_attempt_json(
+        it,
+
+        FfiConverterString.lower(`routeKey`),
+        FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `clearGossip`(`workspaceId`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_gossip(
+        it,
+
+        FfiConverterString.lower(`workspaceId`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `clearReconnect`(`routeKey`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnect(
+        it,
+
+        FfiConverterString.lower(`routeKey`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `clearReconnectsWithPrefix`(`prefix`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnects_with_prefix(
+        it,
+
+        FfiConverterString.lower(`prefix`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `clearRouteAttempt`(`routeKey`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_route_attempt(
+        it,
+
+        FfiConverterString.lower(`routeKey`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `connectedDevices`(`workspaceId`: kotlin.String): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_connected_devices(
+        it,
+
+        FfiConverterString.lower(`workspaceId`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileMeshException::class)override fun `controlFrames`(`workspaceId`: kotlin.String, `bytes`: kotlin.ByteArray): List<kotlin.ByteArray> {
             return FfiConverterSequenceByteArray.lift(
     callWithHandle {
@@ -3002,6 +4645,53 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
 
 
 
+    @Throws(MobileMeshException::class)override fun `finishRouteAttempt`(`routeKey`: kotlin.String, `token`: kotlin.ULong): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_finish_route_attempt(
+        it,
+
+        FfiConverterString.lower(`routeKey`),
+        FfiConverterULong.lower(`token`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `isRunning`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_is_running(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `planDialJson`(`peerKey`: kotlin.String, `relayAvailable`: kotlin.Boolean, `nowMs`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_plan_dial_json(
+        it,
+
+        FfiConverterString.lower(`peerKey`),
+        FfiConverterBoolean.lower(`relayAvailable`),
+        FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileMeshException::class)override fun `receiveControlFrame`(`receiverId`: kotlin.String, `workspaceId`: kotlin.String, `frame`: kotlin.ByteArray): kotlin.ByteArray? {
             return FfiConverterOptionalByteArray.lift(
     callWithHandle {
@@ -3016,6 +4706,52 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
     }
     )
     }
+
+
+
+    @Throws(MobileMeshException::class)override fun `reconnectStateJson`(`routeKey`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_reconnect_state_json(
+        it,
+
+        FfiConverterString.lower(`routeKey`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `recordDialSuccess`(`peerKey`: kotlin.String, `mode`: kotlin.String, `nowMs`: kotlin.ULong)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_record_dial_success(
+        it,
+
+        FfiConverterString.lower(`peerKey`),
+        FfiConverterString.lower(`mode`),
+        FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+
+
+
+
+    @Throws(MobileMeshException::class)override fun `recordNetworkFailure`(`peerKey`: kotlin.String, `nowMs`: kotlin.ULong)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_record_network_failure(
+        it,
+
+        FfiConverterString.lower(`peerKey`),
+        FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+
 
 
 
@@ -3035,6 +4771,21 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
 
 
 
+    @Throws(MobileMeshException::class)override fun `routeAttemptActive`(`routeKey`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_route_attempt_active(
+        it,
+
+        FfiConverterString.lower(`routeKey`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileMeshException::class)override fun `scheduleReconnectJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong, `baseDelayMs`: kotlin.ULong, `maximumDelayMs`: kotlin.ULong): kotlin.String {
             return FfiConverterString.lift(
     callWithHandle {
@@ -3046,6 +4797,36 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
         FfiConverterULong.lower(`nowMs`),
         FfiConverterULong.lower(`baseDelayMs`),
         FfiConverterULong.lower(`maximumDelayMs`),_status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `sessionsJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_sessions_json(
+        it,
+        _status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(MobileMeshException::class)override fun `setGossipEndpointsJson`(`workspaceId`: kotlin.String, `endpoints`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_set_gossip_endpoints_json(
+        it,
+
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterSequenceString.lower(`endpoints`),_status)
 }
     }
     )
@@ -3592,6 +5373,38 @@ public object FfiConverterOptionalULong: FfiConverterRustBuffer<kotlin.ULong?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalBoolean: FfiConverterRustBuffer<kotlin.Boolean?> {
+    override fun read(buf: ByteBuffer): kotlin.Boolean? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterBoolean.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Boolean?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterBoolean.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Boolean?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterBoolean.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
     override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
@@ -3828,7 +5641,22 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
             FfiConverterByteArray.write(it, buf)
         }
     }
-} fun `meshCoreVersion`(): kotlin.String {
+}
+    @Throws(MobileMeshException::class) fun `meshAdmitPeerJson`(`handshakeJson`: kotlin.String, `snapshotJson`: kotlin.String, `remoteEndpoint`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_admit_peer_json(
+
+
+        FfiConverterString.lower(`handshakeJson`),
+        FfiConverterString.lower(`snapshotJson`),
+        FfiConverterString.lower(`remoteEndpoint`),
+        FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+
+ fun `meshCoreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_core_version(
@@ -3908,6 +5736,23 @@ public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.
 
         FfiConverterString.lower(`existingJson`),
         FfiConverterString.lower(`incomingJson`),_status)
+}
+    )
+    }
+
+
+    @Throws(MobileMeshException::class) fun `meshNextVerifiedOwnershipTransitionJson`(`recordsJson`: kotlin.String, `workspaceId`: kotlin.String, `currentOwnerJson`: kotlin.String, `currentEpoch`: kotlin.ULong, `revokedPeople`: List<kotlin.String>, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(MobileMeshException) { _status ->
+    UniffiLib.uniffi_meta_mesh_mobile_fn_func_mesh_next_verified_ownership_transition_json(
+
+
+        FfiConverterString.lower(`recordsJson`),
+        FfiConverterString.lower(`workspaceId`),
+        FfiConverterString.lower(`currentOwnerJson`),
+        FfiConverterULong.lower(`currentEpoch`),
+        FfiConverterSequenceString.lower(`revokedPeople`),
+        FfiConverterLong.lower(`nowMs`),_status)
 }
     )
     }

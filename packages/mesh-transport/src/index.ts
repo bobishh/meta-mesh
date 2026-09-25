@@ -5,6 +5,7 @@ export type IrohStream = {
 }
 
 export type IrohConnection = {
+  readonly remoteEndpointId?: string
   openStream(): Promise<IrohStream>
   acceptStream(): Promise<IrohStream>
   close(): Promise<void>
@@ -27,45 +28,42 @@ export type IrohModule = {
     inspect(frame: Uint8Array): unknown
     decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
   } }
-  WasmStateCore?: {
-    validateMeshCatalog(raw: unknown): unknown
-    validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
-    meshCapabilities(): string[]
-    validateMeshCapabilities(capabilities: unknown): void
-    verifyWorkspaceMemberBundle(raw: unknown, options: unknown, nowMs: number): unknown
-    verifyWorkspaceGrant(grant: unknown, workspaceId: string, memberPersonId: string, authority: unknown): "owner" | "editor" | "visitor"
-    admitWorkspaceChangeAuthorization(authorization: unknown, snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
-      hash: string; role: "owner" | "editor" | "visitor"
-    }>
-    admitWorkspaceChangeAuthorizations(authorizations: unknown[], snapshot: unknown, neededHashes: string[], nowMs: number): Array<{
-      hash: string; role: "owner" | "editor" | "visitor"
-    }>
-    hasConflictingOwnershipTransfers(records: unknown): boolean
-    planOwnershipTransitions(records: unknown, initialOwnerPersonId: string, initialEpoch: number): { records: unknown[], conflicted: boolean }
-    summarizeSuccession(policy: unknown, claims: unknown, votes: unknown, transfers: unknown, revocations: unknown, epoch: number): unknown
-    eligibleEditorPersonIds(peers: unknown): string[]
-    canonicalRevocations(records: unknown): unknown
-    verifyWorkspaceRevocation(record: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceOwnershipTransfer(record: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, nowMs: number): unknown
-    verifyWorkspaceSuccessionPolicy(policy: unknown, workspaceId: string, authority: unknown, nowMs: number): unknown
-    verifyWorkspaceSuccessionVote(vote: unknown, policy: unknown, candidatePersonId: string, authority: unknown, revoked: string[], nowMs: number): unknown
-    verifyWorkspaceSuccessionClaim(claim: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, revoked: string[], nowMs: number): unknown
-    planChangeAdmission(documentId: string, changes: unknown, verifiedAt: string): unknown
-    transitionOutboxClaim(current: unknown, input: unknown): unknown
-    mergePeerRecords(existing: unknown, incoming: unknown): unknown
-    reconcileReplicaSets(left: unknown, right: unknown): unknown
-    selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]
-    validateDeviceRoute(route: unknown): void
-    validateDeviceRoutePayload(payload: unknown): void
-    validateDurableAckPayload(payload: unknown): void
-    verifyDeviceRoute(envelope: unknown, publicKey: string, nowMs: number, allowExpired: boolean): unknown
-    verifyDurableAck(envelope: unknown, publicKey: string): unknown
-    durableAckMatches(ack: unknown, batch: unknown, targetDeviceId: string): boolean
-    orderDeliveryRoutes(targetDeviceId: string, routes: unknown): unknown
-  }
+  WasmWorkspaceJoinHandshake?: { new(secret: string, side: "host" | "guest"): {
+    sendRequest(payload: Uint8Array): Uint8Array
+    receiveRequest(frame: Uint8Array): Uint8Array
+    respond(payload: Uint8Array): Uint8Array
+    reject(message: string): Uint8Array
+    receiveResponse(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
+    acknowledgeRejection(): Uint8Array
+    acknowledgeSuccess(payload: Uint8Array): Uint8Array
+    rejectAcceptedResponse(message: string): Uint8Array
+    receiveAck(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
+  } }
+  WasmWorkspaceJoinHandoff?: { new(secret: string, side: "host" | "guest"): {
+    guestRequest(): Uint8Array
+    hostReceiveRequest(frame: Uint8Array): Uint8Array
+    guestReceiveReady(frame: Uint8Array): void
+    guestTransportFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
+    guestResumeSucceeded(): void
+    guestResumeFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
+    guestBeginConfirmation(): Uint8Array
+    guestConfirmationSent(): "retry" | "failed" | "adopted" | "complete"
+    guestConfirmationFailed(): "retry" | "failed" | "adopted" | "complete"
+    hostReceiveConfirmation(frame: Uint8Array): void
+  } }
+  WasmStateCore?: typeof import("../wasm/meta_mesh.js").WasmStateCore
   WasmDeviceRouteCatalog?: { new(): any }
   WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
+  WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/meta_mesh.js").WasmAutomergeDeviceSyncFlow
+  WasmMeshBatchDeliveryFlow?: typeof import("../wasm/meta_mesh.js").WasmMeshBatchDeliveryFlow
   WasmMeshRuntimeState?: { new(): any }
+  WasmMeshLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmMeshLifecycleState
+  WasmGossipLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmGossipLifecycleState
+  WasmMeshSessionLifecycle?: typeof import("../wasm/meta_mesh.js").WasmMeshSessionLifecycle
+  WasmLiveWorkspaceSession?: typeof import("../wasm/meta_mesh.js").WasmLiveWorkspaceSession
+  WasmMeshScopeRuntime?: typeof import("../wasm/meta_mesh.js").WasmMeshScopeRuntime
+  WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
+  WasmMeshAuthenticatedSessions?: { new(): any }
 }
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
@@ -77,6 +75,7 @@ export type MeshStream = {
 }
 
 export type MeshConnection = {
+  readonly remoteEndpointId?: string
   openStream(): Promise<MeshStream>
   acceptStream(): Promise<MeshStream>
   close(): Promise<void>
@@ -88,6 +87,7 @@ export type DialNode<TConnection extends MeshConnection = MeshConnection> = {
 }
 
 export class MeshNetworkError extends Error {}
+export class MeshTerminalError extends Error {}
 
 export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   try { return await operation }
@@ -102,6 +102,7 @@ export function meshNetworkConnection<TConnection extends MeshConnection>(connec
   })
   return {
     ...connection,
+    remoteEndpointId: connection.remoteEndpointId,
     openStream: async () => stream(await meshNetworkIO(connection.openStream())),
     acceptStream: async () => stream(await meshNetworkIO(connection.acceptStream())),
     close: () => connection.close().catch(() => undefined),
@@ -109,6 +110,7 @@ export function meshNetworkConnection<TConnection extends MeshConnection>(connec
 }
 
 export function isMeshNetworkFailure(error: unknown): boolean {
+  if (error instanceof MeshTerminalError) return false
   if (error instanceof AggregateError) {
     return error.errors.length > 0 && error.errors.every(isMeshNetworkFailure)
   }

@@ -1,3 +1,5 @@
+import { meshRustRuntime, type RustMeshLifecycleState } from "@meta-uber/mesh-replication/runtime"
+
 export type BrowserMeshLifecycleHost = {
   canStart(): Promise<boolean>
   acquireInstance(): Promise<void>
@@ -17,60 +19,100 @@ export class BrowserMeshLifecycle {
   private task: Promise<void> | undefined
   private abortController: AbortController | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
-  private _stopped = true
-  private _externallyPaused = false
-  private _disposed = false
+  private startGeneration = 0
+  private acquisitionTask: Promise<void> | undefined
+  private stopTask: Promise<void> | undefined
+  private releaseAfterStop: (() => Promise<void>) | undefined
+  private releaseRequested = false
+  private readonly state: RustMeshLifecycleState
 
-  constructor(private readonly host: BrowserMeshLifecycleHost) {}
+  constructor(private readonly host: BrowserMeshLifecycleHost) {
+    this.state = meshRustRuntime().createMeshLifecycleState()
+  }
 
-  get stopped(): boolean { return this._stopped }
-  get externallyPaused(): boolean { return this._externallyPaused }
-  get disposed(): boolean { return this._disposed }
+  get stopped(): boolean { return this.state.stopped }
+  get externallyPaused(): boolean { return this.state.externallyPaused }
+  get disposed(): boolean { return this.state.disposed }
 
   async start(): Promise<void> {
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    if (!await this.host.canStart()) return
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    await this.host.acquireInstance()
-    if (!this._stopped || this._externallyPaused || this._disposed) return
-    this._stopped = false
+    if (this.stopTask) await this.stopTask
+    if (!this.state.beginStart()) return
+    const generation = ++this.startGeneration
+    try {
+      const allowed = await this.host.canStart()
+      if (generation !== this.startGeneration) return
+      if (!allowed) { this.state.cancelStart(); return }
+      if (!this.state.canContinueStart()) return
+      const acquisition = this.host.acquireInstance()
+      this.acquisitionTask = acquisition
+      try { await acquisition }
+      finally { if (this.acquisitionTask === acquisition) this.acquisitionTask = undefined }
+      if (generation !== this.startGeneration || !this.state.completeStart()) return
+    } catch (error) {
+      if (generation !== this.startGeneration) return
+      this.state.cancelStart()
+      throw error
+    }
     this.host.trace("mesh.start")
-    await this.host.notify()
+    if (this.state.stopped) return
     this.abortController = new AbortController()
     this.task = this.run(this.abortController.signal)
   }
 
-  async stop(releaseInstance = true, release?: () => Promise<void>): Promise<void> {
-    if (this._stopped) {
-      if (releaseInstance) await release?.()
-      return
+  stop(releaseInstance = true, release?: () => Promise<void>): Promise<void> {
+    ++this.startGeneration
+    if (releaseInstance) {
+      this.releaseRequested = true
+      this.releaseAfterStop ??= release
     }
-    this._stopped = true
-    this.host.trace("mesh.stop")
-    this.clearWait()
-    this.abortController?.abort()
-    this.abortController = undefined
-    this.host.retryChanged()
-    await this.host.shutdown()
-    await this.task?.catch(() => {})
-    this.task = undefined
-    await this.host.shutdown()
-    if (releaseInstance) await release?.()
+    if (this.stopTask) return this.stopTask
+    const operation = this.performStop()
+    let tracked!: Promise<void>
+    tracked = operation.finally(() => {
+      if (this.stopTask !== tracked) return
+      this.stopTask = undefined
+      this.releaseAfterStop = undefined
+      this.releaseRequested = false
+    })
+    this.stopTask = tracked
+    return tracked
+  }
+
+  private async performStop(): Promise<void> {
+    const shouldShutdown = this.state.stop()
+    try {
+      if (shouldShutdown) {
+        this.host.trace("mesh.stop")
+        this.clearWait()
+        this.abortController?.abort()
+        this.abortController = undefined
+        this.host.retryChanged()
+        await this.shutdownAfterRun()
+        await this.task?.catch(() => {})
+        this.task = undefined
+        await this.shutdownAfterRun()
+      } else {
+        await this.acquisitionTask?.catch(() => {})
+      }
+      if (this.releaseRequested) {
+        this.releaseRequested = false
+        await this.releaseAfterStop?.()
+      }
+    } finally { if (shouldShutdown) this.state.finishStop() }
   }
 
   async pause(release?: () => Promise<void>): Promise<void> {
-    this._externallyPaused = true
+    this.state.pause()
     await this.stop(false, release)
   }
 
   async resume(start: () => Promise<void>): Promise<void> {
-    if (this._disposed) return
-    this._externallyPaused = false
+    if (!this.state.resume()) return
     await start()
   }
 
   async dispose(stop: () => Promise<void>): Promise<void> {
-    this._disposed = true
+    this.state.dispose()
     await stop()
   }
 
@@ -91,13 +133,25 @@ export class BrowserMeshLifecycle {
   private async run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
-        await this.host.runOnce(signal)
+        await this.host.notify()
+        if (!signal.aborted) await this.host.runOnce(signal)
       } catch (error) {
         if (!signal.aborted) this.host.reportRestart(error)
       } finally {
-        await this.host.shutdown()
+        await this.shutdownAfterRun(signal)
       }
       if (!signal.aborted) await this.wait(1_000, signal)
+    }
+  }
+
+  private async shutdownAfterRun(signal?: AbortSignal): Promise<void> {
+    // A failed cleanup must neither kill the supervisor nor start a second
+    // node over resources which the host has not finished releasing.
+    while (true) {
+      try { await this.host.shutdown(); return }
+      catch (error) { this.host.reportRestart(error) }
+      if (!signal || signal.aborted) return
+      await this.wait(1_000, signal)
     }
   }
 

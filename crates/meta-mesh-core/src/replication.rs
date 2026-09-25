@@ -485,8 +485,14 @@ mod tests {
         assert!(!durable_ack_matches(&empty, &batch, "target"));
         let partial_batch = DeviceBatch {
             changes: vec![
-                DeviceChange { hash: "h".into(), bytes: vec![1] },
-                DeviceChange { hash: "second".into(), bytes: vec![2] },
+                DeviceChange {
+                    hash: "h".into(),
+                    bytes: vec![1],
+                },
+                DeviceChange {
+                    hash: "second".into(),
+                    bytes: vec![2],
+                },
             ],
             ..batch.clone()
         };

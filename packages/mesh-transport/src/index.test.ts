@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
-import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohNode, type IrohStream, type MeshConnection } from "./index"
+import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, meshNetworkConnection, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohNode, type IrohStream, type MeshConnection } from "./index"
 import { MeshReconnectPolicy } from "@meta-uber/mesh-runtime"
 
 describe("mesh transport wire", () => {
+  it("preserves the authenticated remote endpoint from a WASM connection getter", () => {
+    class Connection {
+      get remoteEndpointId() { return "remote-endpoint" }
+      async openStream(): Promise<IrohStream> { throw new Error("unused") }
+      async acceptStream(): Promise<IrohStream> { throw new Error("unused") }
+      async close() {}
+    }
+    expect(meshNetworkConnection(new Connection()).remoteEndpointId).toBe("remote-endpoint")
+  })
+
   it("Given a structured payload, when sent over the wire, then its shape survives", () => {
     const payload = { kind: "sync", roomId: "one", bytes: [1, 2, 3] }
     expect(decodeWireMessage(encodeWireMessage(payload))).toEqual(payload)

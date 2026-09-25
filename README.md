@@ -13,6 +13,7 @@ The npm workspace is marked `private` so root-package publishing cannot happen a
 
 See [replication protocol](docs/replication.md) for identity boundaries, route lifecycle, delivery guarantees, browser-instance behavior, security checks, and operational traces.
 See [verification measurements](docs/measurements.md) for current topology, byte, duplicate, reconnect, and limitation evidence.
+See [protocol models](formal/README.md) for bounded TLA+ checks of authority epochs, session generations, and durable batch acknowledgements.
 
 Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recovery phrase derives an AES-256-GCM wrapping key with PBKDF2-HMAC-SHA-256 and 600,000 iterations; it never derives the identity itself. Rewrapping with newly generated words changes recovery strength without changing the person ID. Applications own storage and replication of the encrypted version-3 recovery envelope.
 
@@ -36,3 +37,11 @@ Run generated Swift and Kotlin clients against the native runtime, including den
 ```sh
 ./scripts/test-mobile-language-interop.sh
 ```
+
+## Browser release artifacts
+
+`scripts/build-wasm.sh` omits the WebAssembly debugging `name` section from
+the shipped browser artifact. This keeps Rust symbol names out of the download;
+exports and executable sections are preserved. For symbolized local debugging,
+run `wasm-bindgen` on `target/wasm32-unknown-unknown/release/meta_mesh.wasm`
+without `--remove-name-section` into a separate local output directory.

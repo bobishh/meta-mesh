@@ -5,7 +5,7 @@ import {
   type LocalProfile,
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
-import { meshRustRuntime, type RustDeviceRouteCatalog } from "./runtime"
+import { meshRustRuntime, type RustBatchDeliveryAction, type RustBatchDeliveryFlow, type RustDeviceRouteCatalog } from "./runtime"
 
 export type ReplicaId = string
 
@@ -328,61 +328,25 @@ export async function connectToDevice<T>(options: {
   trace?: MeshReplicationTrace
   signal?: AbortSignal
 }): Promise<DeviceRouteConnection<T>> {
-  const routes = meshRustRuntime().state.orderDeliveryRoutes(
-    options.targetDeviceId,
-    options.routes.map(route => ({ route, health: options.routeHealth?.(route) ?? 0 })),
-  ) as DeviceRoute[]
-  const fallbackDelayMs = options.fallbackDelayMs ?? 250
-  if (!Number.isFinite(fallbackDelayMs) || fallbackDelayMs < 0) throw new Error("Invalid fallback delay")
-  if (options.signal?.aborted) throw options.signal.reason ?? new Error("Connection aborted")
-
-  return new Promise<DeviceRouteConnection<T>>((resolve, reject) => {
-    const controllers = routes.map(() => new AbortController())
-    const attemptedRouteIds: string[] = []
-    const failures: unknown[] = []
-    let next = 0
-    let pending = 0
-    let settled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-
-    const finishFailure = () => {
-      if (!settled && next >= routes.length && pending === 0) {
-        settled = true
-        reject(new AggregateError(failures, `All routes failed for device ${options.targetDeviceId}`))
-      }
-    }
-    const launch = () => {
-      if (settled || next >= routes.length) return finishFailure()
-      const index = next++
-      const route = routes[index]!
-      attemptedRouteIds.push(route.instanceId)
-      options.trace?.("route.attempt", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, endpoint: route.endpoint })
-      pending += 1
-      void options.connect(route, controllers[index]!.signal).then(async value => {
-        if (options.accept && !await options.accept(value, route)) throw new Error(`Rejected connection from ${route.instanceId}`)
-        if (settled) return
-        settled = true
-        if (timer) clearTimeout(timer)
-        controllers.forEach((controller, candidate) => {
-          if (candidate !== index) controller.abort(new Error("Another route connected"))
-        })
-        options.trace?.("route.selected", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, endpoint: route.endpoint })
-        resolve({ route, value, attemptedRouteIds: [...attemptedRouteIds] })
-      }).catch(error => {
-        failures.push(error)
-        options.trace?.("route.failed", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, error: error instanceof Error ? error.message : String(error) })
-        if (!settled && next < routes.length) launch()
-      }).finally(() => { pending -= 1; finishFailure() })
-      if (next < routes.length && !timer) timer = setTimeout(() => { timer = undefined; launch() }, fallbackDelayMs)
-    }
-    options.signal?.addEventListener("abort", () => {
-      if (settled) return
-      settled = true
-      if (timer) clearTimeout(timer)
-      controllers.forEach(controller => controller.abort(options.signal?.reason))
-      reject(options.signal?.reason ?? new Error("Connection aborted"))
-    }, { once: true })
-    launch()
+  return runBatchDeliveryFlow({
+    targetDeviceId: options.targetDeviceId,
+    routes: options.routes,
+    fallbackDelayMs: options.fallbackDelayMs,
+    routeHealth: options.routeHealth,
+    signal: options.signal,
+    abortMessage: "Connection aborted",
+    exhaustedMessage: `All routes failed for device ${options.targetDeviceId}`,
+    execute: async (route, signal) => {
+      const value = await options.connect(route, signal)
+      if (options.accept && !await options.accept(value, route)) throw new Error(`Rejected connection from ${route.instanceId}`)
+      return value
+    },
+    onAttempt: route => options.trace?.("route.attempt", { targetDeviceId: options.targetDeviceId,
+      instanceId: route.instanceId, endpoint: route.endpoint }),
+    onFailure: (route, error) => options.trace?.("route.failed", { targetDeviceId: options.targetDeviceId,
+      instanceId: route.instanceId, error: error instanceof Error ? error.message : String(error) }),
+    onSelected: route => options.trace?.("route.selected", { targetDeviceId: options.targetDeviceId,
+      instanceId: route.instanceId, endpoint: route.endpoint }),
   })
 }
 
@@ -419,112 +383,167 @@ function ackMatches(ack: DurableBatchAck, batch: DeviceBatch, targetDeviceId: Re
   return meshRustRuntime().state.durableAckMatches(ack, batch, targetDeviceId)
 }
 
-async function deliverBatchRound(options: DeliveryOptions): Promise<DeviceDeliveryResult> {
-  const routes = options.routes
-  if (routes.length === 0) throw new Error(`No routes for device ${options.targetDeviceId}`)
-  const delay = options.fallbackDelayMs ?? 250
-  if (!Number.isFinite(delay) || delay < 0) throw new Error("Invalid fallback delay")
-  if (options.signal?.aborted) throw options.signal.reason ?? new Error("Delivery aborted")
-
-  return new Promise<DeviceDeliveryResult>((resolve, reject) => {
-    const controllers = routes.map(() => new AbortController())
-    const attemptedRouteIds: string[] = []
-    const failures: unknown[] = []
-    let nextIndex = 0
-    let pending = 0
-    let settled = false
-    let fallbackTimer: ReturnType<typeof setTimeout> | undefined
-
-    const finishFailure = (): void => {
-      if (!settled && nextIndex >= routes.length && pending === 0) {
-        settled = true
-        reject(new AggregateError(failures, `All routes failed for device ${options.targetDeviceId}`))
-      }
-    }
-
-    const launch = (): void => {
-      if (settled || nextIndex >= routes.length) {
-        finishFailure()
-        return
-      }
-      const index = nextIndex++
-      const route = routes[index]
-      attemptedRouteIds.push(route.instanceId)
-      options.trace?.("delivery.route.attempt", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId })
-      pending += 1
-      void options.send(route, options.batch, controllers[index].signal).then(async ack => {
-        if (!ackMatches(ack, options.batch, options.targetDeviceId) || !await options.verifyAck(ack)) {
-          throw new Error(`Invalid durable acknowledgement from ${route.instanceId}`)
-        }
-        if (settled) return
-        settled = true
-        if (fallbackTimer) clearTimeout(fallbackTimer)
-        controllers.forEach((controller, routeIndex) => {
-          if (routeIndex !== index) controller.abort(new Error("Another route acknowledged"))
-        })
-        options.trace?.("delivery.ack.durable", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId, acceptedChanges: ack.acceptedHashes.length })
-        resolve({ route, ack, attemptedRouteIds: [...attemptedRouteIds] })
-      }).catch(error => {
-        failures.push(error)
-        options.trace?.("delivery.route.failed", { targetDeviceId: options.targetDeviceId, instanceId: route.instanceId, batchId: options.batch.batchId, error: error instanceof Error ? error.message : String(error) })
-        if (!settled && nextIndex < routes.length) launch()
-      }).finally(() => {
-        pending -= 1
-        finishFailure()
-      })
-
-      if (nextIndex < routes.length && !fallbackTimer) {
-        fallbackTimer = setTimeout(() => {
-          fallbackTimer = undefined
-          launch()
-        }, delay)
-      }
-    }
-
-    const abort = (): void => {
-      if (settled) return
-      settled = true
-      if (fallbackTimer) clearTimeout(fallbackTimer)
-      controllers.forEach(controller => controller.abort(options.signal?.reason))
-      reject(options.signal?.reason ?? new Error("Delivery aborted"))
-    }
-    options.signal?.addEventListener("abort", abort, { once: true })
-    launch()
-  })
+type RouteFlowOptions<T> = {
+  targetDeviceId: ReplicaId
+  routes: readonly DeviceRoute[]
+  fallbackDelayMs?: number
+  retryDelaysMs?: readonly number[]
+  routeHealth?: (route: DeviceRoute) => number
+  signal?: AbortSignal
+  abortMessage: string
+  exhaustedMessage?: string
+  execute: (route: DeviceRoute, signal: AbortSignal) => Promise<T>
+  onAttempt?: (route: DeviceRoute) => void
+  onFailure?: (route: DeviceRoute, error: unknown) => void
+  onSelected?: (route: DeviceRoute) => void
 }
 
-function waitForRetry(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) return Promise.reject(new Error("Invalid retry delay"))
-  if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Delivery aborted"))
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, milliseconds)
-    signal?.addEventListener("abort", () => {
-      clearTimeout(timer)
-      reject(signal.reason ?? new Error("Delivery aborted"))
-    }, { once: true })
-  })
-}
-
-export async function deliverBatchToDevice(options: DeliveryOptions): Promise<DeviceDeliveryResult> {
+async function runBatchDeliveryFlow<T>(options: RouteFlowOptions<T>): Promise<DeviceRouteConnection<T>> {
   const routes = meshRustRuntime().state.orderDeliveryRoutes(
     options.targetDeviceId,
     options.routes.map(route => ({ route, health: options.routeHealth?.(route) ?? 0 })),
   ) as DeviceRoute[]
-  const retryDelays = options.retryDelaysMs ?? []
-  const attemptedRouteIds: string[] = []
-  const failures: unknown[] = []
-
-  for (let round = 0; round <= retryDelays.length; round += 1) {
-    try {
-      const result = await deliverBatchRound({ ...options, routes, retryDelaysMs: [] })
-      return { ...result, attemptedRouteIds: [...attemptedRouteIds, ...result.attemptedRouteIds] }
-    } catch (error) {
-      if (options.signal?.aborted) throw options.signal.reason ?? error
-      failures.push(error)
-      if (round === retryDelays.length) break
-      attemptedRouteIds.push(...routes.map(route => route.instanceId))
-      await waitForRetry(retryDelays[round], options.signal)
-    }
+  const flow: RustBatchDeliveryFlow = meshRustRuntime().createBatchDeliveryFlow(options.targetDeviceId, routes.map(route => route.instanceId),
+    options.fallbackDelayMs ?? 250, [...(options.retryDelaysMs ?? [])])
+  if (options.signal?.aborted) {
+    flow.abort()
+    flow.free?.()
+    throw options.signal.reason ?? new Error(options.abortMessage)
   }
-  throw new AggregateError(failures, `Delivery retries exhausted for device ${options.targetDeviceId}`)
+
+  return new Promise<DeviceRouteConnection<T>>((resolve, reject) => {
+    const controllers = new Map<string, AbortController>()
+    const timers = new Map<string, ReturnType<typeof setTimeout>>()
+    const values = new Map<string, { route: DeviceRoute; value: T }>()
+    const failures: unknown[] = []
+    let settled = false
+    const token = (round: number, index: number) => `${round}:${index}`
+    const clearTimer = (name: string) => {
+      const timer = timers.get(name)
+      if (timer !== undefined) clearTimeout(timer)
+      timers.delete(name)
+    }
+    const cleanup = () => {
+      for (const timer of timers.values()) clearTimeout(timer)
+      timers.clear()
+      options.signal?.removeEventListener("abort", onAbort)
+      flow.free?.()
+    }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      controllers.forEach(controller => controller.abort(error))
+      reject(error)
+    }
+    const finish = (action: RustBatchDeliveryAction) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (action.kind === "completed") {
+        const result = values.get(token(action.round, action.routeIndex))
+        if (!result) reject(new Error("Missing route result"))
+        else {
+          try {
+            options.onSelected?.(result.route)
+            resolve({ ...result, attemptedRouteIds: action.attemptedRouteIds })
+          } catch (error) { reject(error) }
+        }
+      } else if (action.kind === "exhausted") reject(new AggregateError(failures, options.exhaustedMessage ?? action.message))
+      else if (action.kind === "aborted") reject(options.signal?.reason ?? new Error(options.abortMessage))
+    }
+    const dispatch = (update: { actions: RustBatchDeliveryAction[] }): void => {
+      try {
+        for (const action of update.actions) {
+          if (settled) return
+          switch (action.kind) {
+          case "launchRoute": {
+            const route = routes[action.routeIndex]
+            if (!route) {
+              const error = new Error("Rust delivery selected unknown route")
+              failures.push(error)
+              settled = true
+              cleanup()
+              controllers.forEach(controller => controller.abort(error))
+              reject(error)
+              return
+            }
+            const id = token(action.round, action.routeIndex)
+            const controller = new AbortController()
+            controllers.set(id, controller)
+            options.onAttempt?.(route)
+            void Promise.resolve().then(() => options.execute(route, controller.signal)).then(value => {
+              if (settled) return
+              values.set(id, { route, value })
+              dispatch(flow.routeResult(action.round, action.routeIndex, true, ""))
+            }).catch(error => {
+              if (settled) return
+              failures.push(error)
+              try { options.onFailure?.(route, error) } catch (traceError) { failures.push(traceError) }
+              dispatch(flow.routeResult(action.round, action.routeIndex, false,
+                error instanceof Error ? error.message : String(error)))
+            }).finally(() => controllers.delete(id))
+            break
+          }
+          case "armFallback":
+          case "armRetry": {
+            const name = `${action.kind === "armFallback" ? "fallback" : "retry"}:${action.round}`
+            clearTimer(name)
+            timers.set(name, setTimeout(() => {
+              timers.delete(name)
+              dispatch(action.kind === "armFallback" ? flow.fallbackElapsed(action.round) : flow.retryElapsed(action.round))
+            }, action.delayMs))
+            break
+          }
+          case "cancelOtherRoutes":
+            clearTimer(`fallback:${action.round}`)
+            for (const [id, controller] of controllers) {
+              if (id !== token(action.round, action.routeIndex)) controller.abort(new Error("Another route succeeded"))
+            }
+            break
+          case "cancelAllRoutes":
+            clearTimer(`fallback:${action.round}`)
+            clearTimer(`retry:${action.round}`)
+            controllers.forEach(controller => controller.abort(options.signal?.reason))
+            break
+          case "completed":
+          case "exhausted":
+          case "aborted":
+            finish(action)
+            break
+          }
+        }
+      } catch (error) { fail(error) }
+    }
+    const onAbort = () => dispatch(flow.abort())
+    options.signal?.addEventListener("abort", onAbort, { once: true })
+    if (options.signal?.aborted) onAbort()
+    else dispatch(flow.start())
+  })
+}
+
+export async function deliverBatchToDevice(options: DeliveryOptions): Promise<DeviceDeliveryResult> {
+  const result = await runBatchDeliveryFlow({
+    targetDeviceId: options.targetDeviceId,
+    routes: options.routes,
+    fallbackDelayMs: options.fallbackDelayMs,
+    retryDelaysMs: options.retryDelaysMs,
+    routeHealth: options.routeHealth,
+    signal: options.signal,
+    abortMessage: "Delivery aborted",
+    onAttempt: route => options.trace?.("delivery.route.attempt", { targetDeviceId: options.targetDeviceId,
+      instanceId: route.instanceId, batchId: options.batch.batchId }),
+    onFailure: (route, error) => options.trace?.("delivery.route.failed", { targetDeviceId: options.targetDeviceId,
+      instanceId: route.instanceId, batchId: options.batch.batchId,
+      error: error instanceof Error ? error.message : String(error) }),
+    execute: async (route, signal) => {
+      const ack = await options.send(route, options.batch, signal)
+      const verified = ackMatches(ack, options.batch, options.targetDeviceId) && await options.verifyAck(ack)
+      if (!verified) throw new Error(`Invalid durable acknowledgement from ${route.instanceId}`)
+      options.trace?.("delivery.ack.durable", { targetDeviceId: options.targetDeviceId,
+        instanceId: route.instanceId, batchId: options.batch.batchId, acceptedChanges: ack.acceptedHashes.length })
+      return ack
+    },
+  })
+  return { route: result.route, ack: result.value, attemptedRouteIds: result.attemptedRouteIds }
 }

@@ -37,6 +37,7 @@ pub struct NativeNodeOptions {
     pub secret: Option<[u8; 32]>,
     pub allowed_peers: Vec<EndpointId>,
     pub allow_any: bool,
+    pub accept_unlisted_browser_rpc: bool,
     pub storage_path: Option<PathBuf>,
     pub bind_addr: SocketAddr,
     pub relay_mode: RelayMode,
@@ -48,6 +49,7 @@ impl Default for NativeNodeOptions {
             secret: None,
             allowed_peers: Vec::new(),
             allow_any: false,
+            accept_unlisted_browser_rpc: false,
             storage_path: None,
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             relay_mode: RelayMode::Default,
@@ -59,11 +61,15 @@ impl Default for NativeNodeOptions {
 struct AccessHook {
     allowed_remotes: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
+    accept_unlisted_browser_rpc: bool,
 }
 
 impl EndpointHooks for AccessHook {
     async fn after_handshake<'a>(&'a self, connection: &'a Connection) -> AfterHandshakeOutcome {
-        if connection.side().is_client() || self.allow_any {
+        if connection.side().is_client()
+            || self.allow_any
+            || (self.accept_unlisted_browser_rpc && connection.alpn() == BROWSER_RPC_ALPN)
+        {
             return AfterHandshakeOutcome::Accept;
         }
         if self
@@ -90,6 +96,61 @@ pub struct NativeNode {
     allowed_peers: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
     rpc_inbox: Arc<NativeRpcInbox>,
+}
+
+/// One browser-compatible Iroh connection for multi-stream protocols such as
+/// workspace invitation and handoff. A normal `request` opens a new connection
+/// for every frame, which the browser invitation host cannot accept.
+pub struct NativeBrowserConnection {
+    connection: Connection,
+}
+
+pub struct NativeBrowserRequest {
+    payload: Vec<u8>,
+    send: iroh::endpoint::SendStream,
+}
+
+impl NativeBrowserRequest {
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub async fn respond(mut self, response: &[u8]) -> Result<(), BoxError> {
+        if response.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC response exceeds size limit"));
+        }
+        self.send.write_all(response).await?;
+        self.send.finish()?;
+        Ok(())
+    }
+}
+
+impl NativeBrowserConnection {
+    pub async fn accept(&self) -> Result<NativeBrowserRequest, BoxError> {
+        let (send, mut receive) = self.connection.accept_bi().await?;
+        let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
+        Ok(NativeBrowserRequest { payload, send })
+    }
+
+    pub async fn exchange(&self, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, BoxError> {
+        if payload.len() > MAX_RPC_BYTES {
+            return Err(io_error("RPC request exceeds size limit"));
+        }
+        tokio::time::timeout(timeout, async {
+            let (mut send, mut receive) = self.connection.open_bi().await?;
+            send.write_all(payload).await?;
+            send.finish()?;
+            let response = receive.read_to_end(MAX_RPC_BYTES).await?;
+            Ok(response)
+        })
+        .await
+        .map_err(|_| io_error("Browser RPC request timed out"))?
+    }
+
+    pub fn close(&self) {
+        self.connection
+            .close(0u32.into(), b"browser session complete");
+    }
 }
 
 #[derive(Debug)]
@@ -234,6 +295,7 @@ impl NativeNode {
             secret,
             allowed_peers,
             allow_any: false,
+            accept_unlisted_browser_rpc: false,
             storage_path: None,
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             relay_mode: RelayMode::Disabled,
@@ -254,6 +316,7 @@ impl NativeNode {
             .hooks(AccessHook {
                 allowed_remotes: allowed_peers.clone(),
                 allow_any: options.allow_any,
+                accept_unlisted_browser_rpc: options.accept_unlisted_browser_rpc,
             })
             .bind()
             .await?;
@@ -320,6 +383,20 @@ impl NativeNode {
 
     pub fn rpc_inbox(&self) -> Arc<NativeRpcInbox> {
         self.rpc_inbox.clone()
+    }
+
+    pub async fn connect_browser(
+        &self,
+        endpoint_addr: EndpointAddr,
+        timeout: Duration,
+    ) -> Result<NativeBrowserConnection, BoxError> {
+        let connection = tokio::time::timeout(
+            timeout,
+            self.endpoint.connect(endpoint_addr, BROWSER_RPC_ALPN),
+        )
+        .await
+        .map_err(|_| io_error("Browser RPC connection timed out"))??;
+        Ok(NativeBrowserConnection { connection })
     }
 
     pub async fn request(
@@ -457,5 +534,73 @@ mod tests {
         let restarted = NativeNode::start(Some(secret), vec![]).await.unwrap();
         assert_eq!(restarted.endpoint_id(), endpoint_id);
         restarted.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn browser_session_exchanges_invitation_and_ack_on_one_connection() {
+        let guest = NativeNode::start(Some([17; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([18; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let session = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let first = inbox.receive().await.unwrap();
+            assert_eq!(first.payload(), b"workspace-join-request");
+            first.respond(b"workspace-join-response".to_vec()).unwrap();
+            let second = inbox.receive().await.unwrap();
+            assert_eq!(second.payload(), b"sync-ack");
+            second.respond(Vec::new()).unwrap();
+        });
+        assert_eq!(
+            session
+                .exchange(b"workspace-join-request", Duration::from_secs(5))
+                .await
+                .unwrap(),
+            b"workspace-join-response"
+        );
+        assert!(
+            session
+                .exchange(b"sync-ack", Duration::from_secs(5))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        responder.await.unwrap();
+        session.close();
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn unlisted_browser_sync_can_reach_signed_admission_without_blob_access() {
+        let guest = NativeNode::start(Some([31; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start_with_options(NativeNodeOptions {
+            secret: Some([32; 32]),
+            accept_unlisted_browser_rpc: true,
+            ..NativeNodeOptions::default()
+        })
+        .await
+        .unwrap();
+        assert!(!host.is_peer_authorized(&guest.endpoint_id()));
+        let browser = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        browser.close();
+        let blobs = guest
+            .endpoint
+            .connect(host.addr(), BLOBS_ALPN)
+            .await
+            .unwrap();
+        let denied = tokio::time::timeout(Duration::from_secs(5), blobs.closed())
+            .await
+            .unwrap();
+        assert!(denied.to_string().contains("unauthorized"), "{denied}");
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
     }
 }

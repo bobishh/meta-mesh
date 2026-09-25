@@ -331,6 +331,101 @@ export class IntoUnderlyingSource {
 }
 if (Symbol.dispose) IntoUnderlyingSource.prototype[Symbol.dispose] = IntoUnderlyingSource.prototype.free;
 
+export class WasmAutomergeDeviceSyncFlow {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmAutomergeDeviceSyncFlowFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmautomergedevicesyncflow_free(ptr, 0);
+    }
+    /**
+     * @param {string} route_instance_id
+     * @param {any} response
+     * @returns {any}
+     */
+    completeRound(route_instance_id, response) {
+        const ptr0 = passStringToWasm0(route_instance_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergedevicesyncflow_completeRound(this.__wbg_ptr, ptr0, len0, response);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} request
+     * @param {string} expected_remote_device_id
+     * @returns {any}
+     */
+    static decodeIncomingRequest(request, expected_remote_device_id) {
+        const ptr0 = passStringToWasm0(expected_remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergedevicesyncflow_decodeIncomingRequest(request, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} batch_id
+     * @param {any} ack
+     * @param {any} frame
+     * @returns {any}
+     */
+    static encodeResponse(batch_id, ack, frame) {
+        const ptr0 = passStringToWasm0(batch_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergedevicesyncflow_encodeResponse(ptr0, len0, ack, frame);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} target_device_id
+     * @param {string} document_id
+     * @param {number} maximum_rounds
+     */
+    constructor(target_device_id, document_id, maximum_rounds) {
+        const ptr0 = passStringToWasm0(target_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(document_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergedevicesyncflow_new(ptr0, len0, ptr1, len1, maximum_rounds);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmAutomergeDeviceSyncFlowFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {any} frame
+     * @returns {any}
+     */
+    nextRound(frame) {
+        const ret = wasm.wasmautomergedevicesyncflow_nextRound(this.__wbg_ptr, frame);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} response
+     */
+    validateResponse(response) {
+        const ret = wasm.wasmautomergedevicesyncflow_validateResponse(this.__wbg_ptr, response);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+}
+if (Symbol.dispose) WasmAutomergeDeviceSyncFlow.prototype[Symbol.dispose] = WasmAutomergeDeviceSyncFlow.prototype.free;
+
 export class WasmAutomergeSyncEngine {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -341,6 +436,31 @@ export class WasmAutomergeSyncEngine {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_wasmautomergesyncengine_free(ptr, 0);
+    }
+    /**
+     * @param {string} document_id
+     * @param {string} remote_device_id
+     */
+    abortPreparedReceive(document_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(document_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.wasmautomergesyncengine_abortPreparedReceive(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @param {string} document_id
+     * @param {string} remote_device_id
+     */
+    commitPreparedReceive(document_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(document_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergesyncengine_commitPreparedReceive(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * @param {string} document_id
@@ -406,6 +526,22 @@ export class WasmAutomergeSyncEngine {
         this.__wbg_ptr = ret[0] >>> 0;
         WasmAutomergeSyncEngineFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * @param {string} remote_device_id
+     * @param {any} frame
+     * @param {boolean} authorized
+     * @param {any} response_proof
+     * @returns {any}
+     */
+    prepareReceive(remote_device_id, frame, authorized, response_proof) {
+        const ptr0 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmautomergesyncengine_prepareReceive(this.__wbg_ptr, ptr0, len0, frame, authorized, response_proof);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * @param {string} remote_device_id
@@ -733,6 +869,166 @@ export class WasmGossipEngine {
     }
 }
 if (Symbol.dispose) WasmGossipEngine.prototype[Symbol.dispose] = WasmGossipEngine.prototype.free;
+
+export class WasmGossipLifecycleState {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmGossipLifecycleStateFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmgossiplifecyclestate_free(ptr, 0);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {boolean} driver_available
+     * @returns {any}
+     */
+    broadcastPlan(workspace_id, driver_available) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_broadcastPlan(this.__wbg_ptr, ptr0, len0, driver_available);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} workspace_id
+     */
+    close(workspace_id) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_close(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    closeAll() {
+        wasm.wasmgossiplifecyclestate_closeAll(this.__wbg_ptr);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {string} topic
+     * @param {boolean} session_available
+     * @param {boolean} packet_valid
+     * @returns {any}
+     */
+    deliveryAction(workspace_id, topic, session_available, packet_valid) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(topic, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_deliveryAction(this.__wbg_ptr, ptr0, len0, ptr1, len1, session_available, packet_valid);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string | null} [topic_prefix]
+     */
+    constructor(topic_prefix) {
+        var ptr0 = isLikeNone(topic_prefix) ? 0 : passStringToWasm0(topic_prefix, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_new(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmGossipLifecycleStateFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {number} count
+     * @returns {any}
+     */
+    observeNeighbors(workspace_id, count) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_observeNeighbors(this.__wbg_ptr, ptr0, len0, count);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    planRebuild(raw) {
+        const ret = wasm.wasmgossiplifecyclestate_planRebuild(this.__wbg_ptr, raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {boolean} driver_available
+     * @param {boolean} session_available
+     * @returns {any}
+     */
+    receiveAction(workspace_id, driver_available, session_available) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_receiveAction(this.__wbg_ptr, ptr0, len0, driver_available, session_available);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} workspace_id
+     */
+    startFailed(workspace_id) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_startFailed(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {string} workspace_id
+     */
+    started(workspace_id) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmgossiplifecyclestate_started(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {string} workspace_id
+     * @returns {string}
+     */
+    topic(workspace_id) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmgossiplifecyclestate_topic(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) WasmGossipLifecycleState.prototype[Symbol.dispose] = WasmGossipLifecycleState.prototype.free;
 
 export class WasmIdentityCrypto {
     __destroy_into_raw() {
@@ -1251,6 +1547,701 @@ export class WasmInvitations {
 }
 if (Symbol.dispose) WasmInvitations.prototype[Symbol.dispose] = WasmInvitations.prototype.free;
 
+export class WasmLiveWorkspaceSession {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmLiveWorkspaceSessionFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmliveworkspacesession_free(ptr, 0);
+    }
+    abortDocument() {
+        wasm.wasmliveworkspacesession_abortDocument(this.__wbg_ptr);
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {Uint8Array}
+     */
+    acknowledgeSaved(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_acknowledgeSaved(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    commitDocument() {
+        const ret = wasm.wasmliveworkspacesession_commitDocument(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint8Array} snapshot
+     * @returns {boolean}
+     */
+    controlChanged(snapshot) {
+        const ptr0 = passArray8ToWasm0(snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_controlChanged(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * @param {Uint8Array} snapshot
+     * @returns {any}
+     */
+    controlFrames(snapshot) {
+        const ptr0 = passArray8ToWasm0(snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_controlFrames(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @returns {any}
+     */
+    decodeAutomergePayload(payload) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_decodeAutomergePayload(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {any}
+     */
+    decodeControl(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_decodeControl(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} frame_type
+     * @param {Uint8Array} payload
+     * @returns {Uint8Array}
+     */
+    encode(frame_type, payload) {
+        const ptr0 = passStringToWasm0(frame_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_encode(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v3;
+    }
+    /**
+     * @param {any} frame
+     * @returns {Uint8Array}
+     */
+    encodeAutomergeFrame(frame) {
+        const ret = wasm.wasmliveworkspacesession_encodeAutomergeFrame(this.__wbg_ptr, frame);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {any} authorization
+     * @param {any} chat
+     * @param {any} mesh
+     * @returns {Uint8Array}
+     */
+    encodeControl(authorization, chat, mesh) {
+        const ret = wasm.wasmliveworkspacesession_encodeControl(this.__wbg_ptr, authorization, chat, mesh);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} control_snapshot
+     * @param {boolean} all_frames_sent
+     */
+    finishPublish(control_snapshot, all_frames_sent) {
+        const ptr0 = passArray8ToWasm0(control_snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmliveworkspacesession_finishPublish(this.__wbg_ptr, ptr0, len0, all_frames_sent);
+    }
+    /**
+     * @param {Uint8Array} document
+     * @param {any} proof
+     * @returns {Uint8Array | undefined}
+     */
+    generateDocument(document, proof) {
+        const ptr0 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_generateDocument(this.__wbg_ptr, ptr0, len0, proof);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        let v2;
+        if (ret[0] !== 0) {
+            v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+            wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        }
+        return v2;
+    }
+    /**
+     * @param {Uint8Array} snapshot
+     */
+    markControlSent(snapshot) {
+        const ptr0 = passArray8ToWasm0(snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmliveworkspacesession_markControlSent(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {string} secret
+     */
+    constructor(workspace_id, secret) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_new(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmLiveWorkspaceSessionFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {any} authorization
+     * @param {any} chat
+     * @param {any} mesh
+     * @returns {any}
+     */
+    prepareControlPublish(authorization, chat, mesh) {
+        const ret = wasm.wasmliveworkspacesession_prepareControlPublish(this.__wbg_ptr, authorization, chat, mesh);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @param {Uint8Array} document
+     * @param {any} response_proof
+     * @returns {any}
+     */
+    prepareDocument(payload, document, response_proof) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_prepareDocument(this.__wbg_ptr, ptr0, len0, ptr1, len1, response_proof);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} document
+     * @param {any} proof
+     * @param {any} authorization
+     * @param {any} chat
+     * @param {any} mesh
+     * @returns {any}
+     */
+    preparePublish(document, proof, authorization, chat, mesh) {
+        const ptr0 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_preparePublish(this.__wbg_ptr, ptr0, len0, proof, authorization, chat, mesh);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} snapshot
+     * @returns {any}
+     */
+    prepareSnapshotPublish(snapshot) {
+        const ptr0 = passArray8ToWasm0(snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_prepareSnapshotPublish(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    receive(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_receive(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    receiveWithPlan(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_receiveWithPlan(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    resetDocument() {
+        wasm.wasmliveworkspacesession_resetDocument(this.__wbg_ptr);
+    }
+    /**
+     * @param {string} local_device_id
+     * @param {string} remote_device_id
+     */
+    startDocumentSync(local_device_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_startDocumentSync(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint8Array} frame
+     */
+    verifyHeartbeatAck(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_verifyHeartbeatAck(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @param {Uint8Array} bytes
+     */
+    verifySavedReceipt(frame, bytes) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmliveworkspacesession_verifySavedReceipt(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+}
+if (Symbol.dispose) WasmLiveWorkspaceSession.prototype[Symbol.dispose] = WasmLiveWorkspaceSession.prototype.free;
+
+export class WasmMeshAuthenticatedSessions {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshAuthenticatedSessionsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshauthenticatedsessions_free(ptr, 0);
+    }
+    /**
+     * @param {any} handshake
+     * @param {any} snapshot
+     * @param {string} remote_endpoint
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    admit(handshake, snapshot, remote_endpoint, now_ms) {
+        const ptr0 = passStringToWasm0(remote_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshauthenticatedsessions_admit(this.__wbg_ptr, handshake, snapshot, ptr0, len0, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    clear() {
+        wasm.wasmmeshauthenticatedsessions_clear(this.__wbg_ptr);
+    }
+    constructor() {
+        const ret = wasm.wasmmeshauthenticatedsessions_new();
+        this.__wbg_ptr = ret >>> 0;
+        WasmMeshAuthenticatedSessionsFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {string} remote_endpoint
+     * @returns {any}
+     */
+    peer(workspace_id, remote_endpoint) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshauthenticatedsessions_peer(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} snapshot
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    refresh(snapshot, now_ms) {
+        const ret = wasm.wasmmeshauthenticatedsessions_refresh(this.__wbg_ptr, snapshot, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {string} remote_endpoint
+     * @returns {boolean}
+     */
+    remove(workspace_id, remote_endpoint) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshauthenticatedsessions_remove(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        return ret !== 0;
+    }
+}
+if (Symbol.dispose) WasmMeshAuthenticatedSessions.prototype[Symbol.dispose] = WasmMeshAuthenticatedSessions.prototype.free;
+
+export class WasmMeshBatchDeliveryFlow {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshBatchDeliveryFlowFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshbatchdeliveryflow_free(ptr, 0);
+    }
+    /**
+     * @returns {any}
+     */
+    abort() {
+        const ret = wasm.wasmmeshbatchdeliveryflow_abort(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {number} round
+     * @returns {any}
+     */
+    fallbackElapsed(round) {
+        const ret = wasm.wasmmeshbatchdeliveryflow_fallbackElapsed(this.__wbg_ptr, round);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} target_device_id
+     * @param {any} route_ids
+     * @param {number} fallback_delay_ms
+     * @param {any} retry_delays_ms
+     */
+    constructor(target_device_id, route_ids, fallback_delay_ms, retry_delays_ms) {
+        const ptr0 = passStringToWasm0(target_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshbatchdeliveryflow_new(ptr0, len0, route_ids, fallback_delay_ms, retry_delays_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmMeshBatchDeliveryFlowFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} round
+     * @returns {any}
+     */
+    retryElapsed(round) {
+        const ret = wasm.wasmmeshbatchdeliveryflow_retryElapsed(this.__wbg_ptr, round);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {number} round
+     * @param {number} route_index
+     * @param {boolean} accepted
+     * @param {string} failure
+     * @returns {any}
+     */
+    routeResult(round, route_index, accepted, failure) {
+        const ptr0 = passStringToWasm0(failure, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshbatchdeliveryflow_routeResult(this.__wbg_ptr, round, route_index, accepted, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    start() {
+        const ret = wasm.wasmmeshbatchdeliveryflow_start(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+}
+if (Symbol.dispose) WasmMeshBatchDeliveryFlow.prototype[Symbol.dispose] = WasmMeshBatchDeliveryFlow.prototype.free;
+
+export class WasmMeshHandshakeFlow {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshHandshakeFlowFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshhandshakeflow_free(ptr, 0);
+    }
+    /**
+     * @param {string} completed
+     * @param {boolean | null} [decision]
+     * @returns {string}
+     */
+    advance(completed, decision) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(completed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmmeshhandshakeflow_advance(this.__wbg_ptr, ptr0, len0, isLikeNone(decision) ? 0xFFFFFF : decision ? 1 : 0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {any} grant
+     * @param {string} device_id
+     * @returns {boolean}
+     */
+    isPeerRevoked(credential, person_id, grant, device_id) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshhandshakeflow_isPeerRevoked(this.__wbg_ptr, credential, ptr0, len0, grant, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {string} verified_device_id
+     * @param {string} verified_person_id
+     * @param {string} verified_endpoint
+     * @param {string} admitted_device_id
+     * @param {string} admitted_person_id
+     * @param {string} admitted_endpoint
+     * @returns {boolean}
+     */
+    matchesAdmittedPeer(verified_device_id, verified_person_id, verified_endpoint, admitted_device_id, admitted_person_id, admitted_endpoint) {
+        const ptr0 = passStringToWasm0(verified_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(verified_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(verified_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(admitted_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(admitted_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(admitted_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshhandshakeflow_matchesAdmittedPeer(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+        return ret !== 0;
+    }
+    /**
+     * @param {string} expected_device_id
+     * @param {string} verified_device_id
+     * @returns {boolean}
+     */
+    matchesExpectedPeer(expected_device_id, verified_device_id) {
+        const ptr0 = passStringToWasm0(expected_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(verified_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshhandshakeflow_matchesExpectedPeer(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        return ret !== 0;
+    }
+    /**
+     * @param {string} direction_name
+     */
+    constructor(direction_name) {
+        const ptr0 = passStringToWasm0(direction_name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshhandshakeflow_new(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmMeshHandshakeFlowFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @returns {string}
+     */
+    step() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmmeshhandshakeflow_step(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) WasmMeshHandshakeFlow.prototype[Symbol.dispose] = WasmMeshHandshakeFlow.prototype.free;
+
+export class WasmMeshLifecycleState {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshLifecycleStateFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshlifecyclestate_free(ptr, 0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    beginStart() {
+        const ret = wasm.wasmmeshlifecyclestate_beginStart(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    canContinueStart() {
+        const ret = wasm.wasmmeshlifecyclestate_canContinueStart(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    cancelStart() {
+        wasm.wasmmeshlifecyclestate_cancelStart(this.__wbg_ptr);
+    }
+    /**
+     * @returns {boolean}
+     */
+    completeStart() {
+        const ret = wasm.wasmmeshlifecyclestate_completeStart(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    dispose() {
+        wasm.wasmmeshlifecyclestate_dispose(this.__wbg_ptr);
+    }
+    /**
+     * @returns {boolean}
+     */
+    get disposed() {
+        const ret = wasm.wasmmeshlifecyclestate_disposed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get externallyPaused() {
+        const ret = wasm.wasmmeshlifecyclestate_externallyPaused(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    finishStop() {
+        wasm.wasmmeshlifecyclestate_finishStop(this.__wbg_ptr);
+    }
+    constructor() {
+        const ret = wasm.wasmmeshlifecyclestate_new();
+        this.__wbg_ptr = ret >>> 0;
+        WasmMeshLifecycleStateFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    pause() {
+        wasm.wasmmeshlifecyclestate_pause(this.__wbg_ptr);
+    }
+    /**
+     * @returns {boolean}
+     */
+    resume() {
+        const ret = wasm.wasmmeshlifecyclestate_resume(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    stop() {
+        const ret = wasm.wasmmeshlifecyclestate_stop(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {boolean}
+     */
+    get stopped() {
+        const ret = wasm.wasmmeshlifecyclestate_stopped(this.__wbg_ptr);
+        return ret !== 0;
+    }
+}
+if (Symbol.dispose) WasmMeshLifecycleState.prototype[Symbol.dispose] = WasmMeshLifecycleState.prototype.free;
+
 export class WasmMeshRuntimeState {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -1289,14 +2280,6 @@ export class WasmMeshRuntimeState {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * @param {string} workspace_id
-     */
-    clearGossip(workspace_id) {
-        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.wasmmeshruntimestate_clearGossip(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * @param {string} route_key
@@ -1363,6 +2346,21 @@ export class WasmMeshRuntimeState {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {string} workspace_id
+     * @param {string} nonce
+     * @returns {Uint8Array}
+     */
+    encodeWorkspaceUpdate(workspace_id, nonce) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(nonce, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshruntimestate_encodeWorkspaceUpdate(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v3;
+    }
+    /**
      * @param {string} route_key
      * @param {number} token
      * @returns {boolean}
@@ -1375,6 +2373,19 @@ export class WasmMeshRuntimeState {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] !== 0;
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @param {string} workspace_id
+     * @returns {boolean}
+     */
+    isWorkspaceUpdate(payload, workspace_id) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshruntimestate_isWorkspaceUpdate(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        return ret !== 0;
     }
     constructor() {
         const ret = wasm.wasmmeshruntimestate_new();
@@ -1513,20 +2524,6 @@ export class WasmMeshRuntimeState {
         }
         return takeFromExternrefTable0(ret[0]);
     }
-    /**
-     * @param {string} workspace_id
-     * @param {any} endpoints
-     * @returns {any}
-     */
-    setGossipEndpoints(workspace_id, endpoints) {
-        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmmeshruntimestate_setGossipEndpoints(this.__wbg_ptr, ptr0, len0, endpoints);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
     start() {
         wasm.wasmmeshruntimestate_start(this.__wbg_ptr);
     }
@@ -1542,6 +2539,277 @@ export class WasmMeshRuntimeState {
     }
 }
 if (Symbol.dispose) WasmMeshRuntimeState.prototype[Symbol.dispose] = WasmMeshRuntimeState.prototype.free;
+
+/**
+ * WASM host boundary for one authenticated workspace scope stream.
+ */
+export class WasmMeshScopeRuntime {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshScopeRuntimeFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshscoperuntime_free(ptr, 0);
+    }
+    /**
+     * @param {boolean} persisted
+     * @returns {any}
+     */
+    completeDocumentReceive(persisted) {
+        const ret = wasm.wasmmeshscoperuntime_completeDocumentReceive(this.__wbg_ptr, persisted);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {boolean} persisted
+     * @returns {any}
+     */
+    completeSavedReceive(persisted) {
+        const ret = wasm.wasmmeshscoperuntime_completeSavedReceive(this.__wbg_ptr, persisted);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} control_snapshot
+     * @param {boolean} all_frames_sent
+     */
+    finishPublish(control_snapshot, all_frames_sent) {
+        const ptr0 = passArray8ToWasm0(control_snapshot, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmmeshscoperuntime_finishPublish(this.__wbg_ptr, ptr0, len0, all_frames_sent);
+    }
+    /**
+     * @param {string} workspace_id
+     * @param {string} secret
+     */
+    constructor(workspace_id, secret) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_new(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmMeshScopeRuntimeFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} document
+     * @param {any} proof
+     * @param {any} authorization
+     * @param {any} chat
+     * @param {any} mesh
+     * @returns {any}
+     */
+    preparePublish(document, proof, authorization, chat, mesh) {
+        const ptr0 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_preparePublish(this.__wbg_ptr, ptr0, len0, proof, authorization, chat, mesh);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} document
+     * @param {any} response_proof
+     * @returns {any}
+     */
+    provideDocument(document, response_proof) {
+        const ptr0 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_provideDocument(this.__wbg_ptr, ptr0, len0, response_proof);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} document
+     * @param {any} proof
+     * @returns {Uint8Array | undefined}
+     */
+    publishFrame(document, proof) {
+        const ptr0 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_publishFrame(this.__wbg_ptr, ptr0, len0, proof);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        let v2;
+        if (ret[0] !== 0) {
+            v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+            wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        }
+        return v2;
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    receiveFrame(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_receiveFrame(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    rejectDocumentReceive() {
+        const ret = wasm.wasmmeshscoperuntime_rejectDocumentReceive(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    resetDocument() {
+        wasm.wasmmeshscoperuntime_resetDocument(this.__wbg_ptr);
+    }
+    /**
+     * @param {string} local_device_id
+     * @param {string} remote_device_id
+     */
+    startDocumentSync(local_device_id, remote_device_id) {
+        const ptr0 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshscoperuntime_startDocumentSync(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+}
+if (Symbol.dispose) WasmMeshScopeRuntime.prototype[Symbol.dispose] = WasmMeshScopeRuntime.prototype.free;
+
+export class WasmMeshSessionLifecycle {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmMeshSessionLifecycleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmmeshsessionlifecycle_free(ptr, 0);
+    }
+    /**
+     * @param {any} key
+     * @param {number} generation
+     * @param {string} event
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    callbackPlan(key, generation, event, now_ms) {
+        const ptr0 = passStringToWasm0(event, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshsessionlifecycle_callbackPlan(this.__wbg_ptr, key, generation, ptr0, len0, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    clear() {
+        wasm.wasmmeshsessionlifecycle_clear(this.__wbg_ptr);
+    }
+    /**
+     * @param {any} key
+     * @param {number} generation
+     * @returns {any}
+     */
+    evict(key, generation) {
+        const ret = wasm.wasmmeshsessionlifecycle_evict(this.__wbg_ptr, key, generation);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} key
+     * @param {number} generation
+     * @param {number} now_ms
+     * @returns {boolean}
+     */
+    markStable(key, generation, now_ms) {
+        const ret = wasm.wasmmeshsessionlifecycle_markStable(this.__wbg_ptr, key, generation, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {number | null} [stable_after_ms]
+     */
+    constructor(stable_after_ms) {
+        const ret = wasm.wasmmeshsessionlifecycle_new(!isLikeNone(stable_after_ms), isLikeNone(stable_after_ms) ? 0 : stable_after_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmMeshSessionLifecycleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @returns {any}
+     */
+    publishPlan() {
+        const ret = wasm.wasmmeshsessionlifecycle_publishPlan(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} key
+     * @param {number} generation
+     * @returns {boolean}
+     */
+    publishRecovery(key, generation) {
+        const ret = wasm.wasmmeshsessionlifecycle_publishRecovery(this.__wbg_ptr, key, generation);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} key
+     * @param {string} connection_id
+     * @param {number} generation
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    register(key, connection_id, generation, now_ms) {
+        const ptr0 = passStringToWasm0(connection_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmeshsessionlifecycle_register(this.__wbg_ptr, key, ptr0, len0, generation, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} key
+     * @param {number} generation
+     * @returns {boolean}
+     */
+    reportFailure(key, generation) {
+        const ret = wasm.wasmmeshsessionlifecycle_reportFailure(this.__wbg_ptr, key, generation);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+}
+if (Symbol.dispose) WasmMeshSessionLifecycle.prototype[Symbol.dispose] = WasmMeshSessionLifecycle.prototype.free;
 
 export class WasmPairingCodec {
     __destroy_into_raw() {
@@ -1630,6 +2898,22 @@ export class WasmStateCore {
         wasm.__wbg_wasmstatecore_free(ptr, 0);
     }
     /**
+     * @param {any} handshake
+     * @param {any} snapshot
+     * @param {string} remote_endpoint
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static admitMeshPeer(handshake, snapshot, remote_endpoint, now_ms) {
+        const ptr0 = passStringToWasm0(remote_endpoint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_admitMeshPeer(handshake, snapshot, ptr0, len0, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} authorization
      * @param {any} snapshot
      * @param {any} needed_hashes
@@ -1658,11 +2942,176 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} credential
+     * @param {string} local_person_id
+     * @param {string} local_public_key
+     * @param {string} local_device_id
+     * @param {string} target_person_id
+     * @param {string} target_device_id
+     * @param {string | null} [peer_person_id]
+     * @returns {boolean}
+     */
+    static canRemoveWorkspaceDevice(credential, local_person_id, local_public_key, local_device_id, target_person_id, target_device_id, peer_person_id) {
+        const ptr0 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(target_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(target_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        var ptr5 = isLikeNone(peer_person_id) ? 0 : passStringToWasm0(peer_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len5 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_canRemoveWorkspaceDevice(credential, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static canReuseMemberBundle(raw) {
+        const ret = wasm.wasmstatecore_canReuseMemberBundle(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {any} records
      * @returns {any}
      */
     static canonicalRevocations(records) {
         const ret = wasm.wasmstatecore_canonicalRevocations(records);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static createScopeControlTransferPayload(raw) {
+        const ret = wasm.wasmstatecore_createScopeControlTransferPayload(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static createScopeGenesis(raw) {
+        const ret = wasm.wasmstatecore_createScopeGenesis(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static createScopeGenesisPayload(raw) {
+        const ret = wasm.wasmstatecore_createScopeGenesisPayload(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {string} public_key
+     * @returns {boolean}
+     */
+    static credentialBelongsToProfile(credential, person_id, public_key) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_credentialBelongsToProfile(credential, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {string | null | undefined} existing_owner_person_id
+     * @param {string} local_person_id
+     * @returns {string}
+     */
+    static decideOwnerCredential(existing_owner_person_id, local_person_id) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            var ptr0 = isLikeNone(existing_owner_person_id) ? 0 : passStringToWasm0(existing_owner_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            var len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmstatecore_decideOwnerCredential(ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
+    }
+    /**
+     * @param {any} raw
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static decideWorkspaceAccess(raw, now_ms) {
+        const ret = wasm.wasmstatecore_decideWorkspaceAccess(raw, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @param {string} expected_type
+     * @param {string} secret
+     * @param {string} workspace_id
+     * @returns {any}
+     */
+    static decodeMeshHandshake(frame, expected_type, secret, workspace_id) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(expected_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_decodeMeshHandshake(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @param {any} allowed_ids
+     * @returns {any}
+     */
+    static decodeWorkspaceSet(bytes, allowed_ids) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_decodeWorkspaceSet(ptr0, len0, allowed_ids);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1695,11 +3144,145 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {string} frame_type
+     * @param {string} secret
+     * @param {any} raw
+     * @returns {Uint8Array}
+     */
+    static encodeMeshHandshake(frame_type, secret, raw) {
+        const ptr0 = passStringToWasm0(frame_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_encodeMeshHandshake(ptr0, len0, ptr1, len1, raw);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v3;
+    }
+    /**
+     * @param {any} entries
+     * @returns {Uint8Array}
+     */
+    static encodeWorkspaceSet(entries) {
+        const ret = wasm.wasmstatecore_encodeWorkspaceSet(entries);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static hasAuthorityConflict(raw) {
+        const ret = wasm.wasmstatecore_hasAuthorityConflict(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {any} records
      * @returns {boolean}
      */
     static hasConflictingOwnershipTransfers(records) {
         const ret = wasm.wasmstatecore_hasConflictingOwnershipTransfers(records);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {any} grant
+     * @returns {boolean}
+     */
+    static hasLeftWorkspace(credential, person_id, grant) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_hasLeftWorkspace(credential, ptr0, len0, grant);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    static inspectMeshHandshake(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_inspectMeshHandshake(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {string} device_id
+     * @returns {boolean}
+     */
+    static isDeviceRevoked(credential, person_id, device_id) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_isDeviceRevoked(credential, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} credential
+     * @param {string} person_id
+     * @param {any} grant
+     * @returns {boolean}
+     */
+    static isGrantRevoked(credential, person_id, grant) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_isGrantRevoked(credential, ptr0, len0, grant);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @returns {boolean}
+     */
+    static isWorkspaceEnvelope(raw) {
+        const ret = wasm.wasmstatecore_isWorkspaceEnvelope(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {any} raw
+     * @param {string} issuer_person_id
+     * @param {string} local_person_id
+     * @param {string} local_device_id
+     * @returns {boolean}
+     */
+    static knowsWorkspaceIssuer(raw, issuer_person_id, local_person_id, local_device_id) {
+        const ptr0 = passStringToWasm0(issuer_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_knowsWorkspaceIssuer(raw, ptr0, len0, ptr1, len1, ptr2, len2);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1728,6 +3311,59 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static meshHandshakeFeatures(raw) {
+        const ret = wasm.wasmstatecore_meshHandshakeFeatures(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} owned
+     * @param {any} remote
+     * @returns {any}
+     */
+    static missingOwnerWorkspaces(owned, remote) {
+        const ret = wasm.wasmstatecore_missingOwnerWorkspaces(owned, remote);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {any} issued_grants
+     * @returns {number}
+     */
+    static nextAccessEpoch(credential, issued_grants) {
+        const ret = wasm.wasmstatecore_nextAccessEpoch(credential, issued_grants);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * @param {any} records
+     * @param {string} workspace_id
+     * @param {any} current_owner
+     * @param {number} current_epoch
+     * @param {any} revoked_people
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static nextVerifiedOwnershipTransition(records, workspace_id, current_owner, current_epoch, revoked_people, now_ms) {
+        const ptr0 = passStringToWasm0(workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_nextVerifiedOwnershipTransition(records, ptr0, len0, current_owner, current_epoch, revoked_people, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {string} target_device_id
      * @param {any} routes
      * @returns {any}
@@ -1736,6 +3372,81 @@ export class WasmStateCore {
         const ptr0 = passStringToWasm0(target_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.wasmstatecore_orderDeliveryRoutes(ptr0, len0, routes);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credentials
+     * @param {string} person_id
+     * @param {string} public_key
+     * @returns {any}
+     */
+    static ownedWorkspaceIds(credentials, person_id, public_key) {
+        const ptr0 = passStringToWasm0(person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(public_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_ownedWorkspaceIds(credentials, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static partitionCredentials(raw) {
+        const ret = wasm.wasmstatecore_partitionCredentials(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planAuthorityCommand(raw) {
+        const ret = wasm.wasmstatecore_planAuthorityCommand(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} kind
+     * @param {boolean} has_revocations
+     * @param {boolean} has_transfers
+     * @returns {any}
+     */
+    static planAuthorityImport(kind, has_revocations, has_transfers) {
+        const ptr0 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_planAuthorityImport(ptr0, len0, has_revocations, has_transfers);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planAuthorityMerge(raw) {
+        const ret = wasm.wasmstatecore_planAuthorityMerge(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    static planCatalogMerge() {
+        const ret = wasm.wasmstatecore_planCatalogMerge();
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1759,6 +3470,134 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} raw
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static planChangeAdmissionFlow(raw, now_ms) {
+        const ret = wasm.wasmstatecore_planChangeAdmissionFlow(raw, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planDialSchedule(raw) {
+        const ret = wasm.wasmstatecore_planDialSchedule(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planGuestAdvertisements(raw) {
+        const ret = wasm.wasmstatecore_planGuestAdvertisements(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planInvitation(raw) {
+        const ret = wasm.wasmstatecore_planInvitation(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planInvitationCredential(raw) {
+        const ret = wasm.wasmstatecore_planInvitationCredential(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planMemberGrant(raw) {
+        const ret = wasm.wasmstatecore_planMemberGrant(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    static planMeshHandshakeAuthorityImport() {
+        const ret = wasm.wasmstatecore_planMeshHandshakeAuthorityImport();
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} credential
+     * @param {string} local_person_id
+     * @param {any} certificates
+     * @param {string} updated_at
+     * @returns {any}
+     */
+    static planOwnerCertificateRefresh(credential, local_person_id, certificates, updated_at) {
+        const ptr0 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(updated_at, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_planOwnerCertificateRefresh(credential, ptr0, len0, certificates, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planOwnershipAdoption(raw) {
+        const ret = wasm.wasmstatecore_planOwnershipAdoption(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planOwnershipAuthorityFlow(raw) {
+        const ret = wasm.wasmstatecore_planOwnershipAuthorityFlow(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planOwnershipMerge(raw) {
+        const ret = wasm.wasmstatecore_planOwnershipMerge(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} records
      * @param {string} initial_owner_person_id
      * @param {number} initial_epoch
@@ -1774,12 +3613,130 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planScopeGenesis(raw) {
+        const ret = wasm.wasmstatecore_planScopeGenesis(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static planSuccessionCatalog(raw) {
+        const ret = wasm.wasmstatecore_planSuccessionCatalog(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static planSuccessionMerge(raw, now_ms) {
+        const ret = wasm.wasmstatecore_planSuccessionMerge(raw, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} current
+     * @param {any} eligible
+     * @param {number} epoch
+     * @returns {any}
+     */
+    static planSuccessionPolicyRefresh(current, eligible, epoch) {
+        const ret = wasm.wasmstatecore_planSuccessionPolicyRefresh(current, eligible, epoch);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} local_device_id
+     * @param {string} local_instance_id
+     * @param {string} remote_device_id
+     * @param {string} remote_instance_id
+     * @returns {any}
+     */
+    static preferredSessionDirection(local_device_id, local_instance_id, remote_device_id, remote_instance_id) {
+        const ptr0 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_instance_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(remote_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(remote_instance_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_preferredSessionDirection(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static prepareWriteEvidence(raw) {
+        const ret = wasm.wasmstatecore_prepareWriteEvidence(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} left
      * @param {any} right
      * @returns {any}
      */
     static reconcileReplicaSets(left, right) {
         const ret = wasm.wasmstatecore_reconcileReplicaSets(left, right);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} change_hashes
+     * @param {any} records
+     */
+    static requireChangeAuthorizationCoverage(change_hashes, records) {
+        const ret = wasm.wasmstatecore_requireChangeAuthorizationCoverage(change_hashes, records);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {any} candidates
+     * @param {string} local_device_id
+     * @param {string} local_instance_id
+     * @returns {any}
+     */
+    static selectMeshHandshakeBundle(candidates, local_device_id, local_instance_id) {
+        const ptr0 = passStringToWasm0(local_device_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_instance_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_selectMeshHandshakeBundle(candidates, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static selectOwnershipTransfer(raw) {
+        const ret = wasm.wasmstatecore_selectOwnershipTransfer(raw);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1803,6 +3760,22 @@ export class WasmStateCore {
         var v2 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v2;
+    }
+    /**
+     * @param {string} credential_owner_person_id
+     * @param {string} local_person_id
+     * @param {string} remote_person_id
+     * @returns {boolean}
+     */
+    static shouldAdvertiseOwnerWorkspaceIds(credential_owner_person_id, local_person_id, remote_person_id) {
+        const ptr0 = passStringToWasm0(credential_owner_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(remote_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_shouldAdvertiseOwnerWorkspaceIds(ptr0, len0, ptr1, len1, ptr2, len2);
+        return ret !== 0;
     }
     /**
      * @param {Uint8Array} seed
@@ -1922,6 +3895,45 @@ export class WasmStateCore {
         var ptr0 = isLikeNone(expected_workspace_id) ? 0 : passStringToWasm0(expected_workspace_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         var len0 = WASM_VECTOR_LEN;
         const ret = wasm.wasmstatecore_validateMeshHandshake(raw, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} raw
+     * @param {string} remote_person_id
+     * @param {string} local_person_id
+     * @returns {string}
+     */
+    static validateOwnerWorkspaceOffer(raw, remote_person_id, local_person_id) {
+        let deferred4_0;
+        let deferred4_1;
+        try {
+            const ptr0 = passStringToWasm0(remote_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(local_person_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmstatecore_validateOwnerWorkspaceOffer(raw, ptr0, len0, ptr1, len1);
+            var ptr3 = ret[0];
+            var len3 = ret[1];
+            if (ret[3]) {
+                ptr3 = 0; len3 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred4_0 = ptr3;
+            deferred4_1 = len3;
+            return getStringFromWasm0(ptr3, len3);
+        } finally {
+            wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+        }
+    }
+    /**
+     * @param {any} raw
+     * @returns {any}
+     */
+    static validateScopeAuthority(raw) {
+        const ret = wasm.wasmstatecore_validateScopeAuthority(raw);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2110,6 +4122,349 @@ export class WasmStateCore {
     }
 }
 if (Symbol.dispose) WasmStateCore.prototype[Symbol.dispose] = WasmStateCore.prototype.free;
+
+export class WasmWorkspaceJoinHandoff {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmWorkspaceJoinHandoffFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmworkspacejoinhandoff_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    guestBeginConfirmation() {
+        const ret = wasm.wasmworkspacejoinhandoff_guestBeginConfirmation(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {string}
+     */
+    guestConfirmationFailed() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.wasmworkspacejoinhandoff_guestConfirmationFailed(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    guestConfirmationSent() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.wasmworkspacejoinhandoff_guestConfirmationSent(this.__wbg_ptr);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * @param {Uint8Array} frame
+     */
+    guestReceiveReady(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandoff_guestReceiveReady(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    guestRequest() {
+        const ret = wasm.wasmworkspacejoinhandoff_guestRequest(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {boolean} retryable
+     * @returns {string}
+     */
+    guestResumeFailed(retryable) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.wasmworkspacejoinhandoff_guestResumeFailed(this.__wbg_ptr, retryable);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    guestResumeSucceeded() {
+        const ret = wasm.wasmworkspacejoinhandoff_guestResumeSucceeded(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {boolean} retryable
+     * @returns {string}
+     */
+    guestTransportFailed(retryable) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.wasmworkspacejoinhandoff_guestTransportFailed(this.__wbg_ptr, retryable);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * @param {Uint8Array} frame
+     */
+    hostReceiveConfirmation(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandoff_hostReceiveConfirmation(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {Uint8Array}
+     */
+    hostReceiveRequest(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandoff_hostReceiveRequest(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {string} secret
+     * @param {string} side
+     */
+    constructor(secret, side) {
+        const ptr0 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(side, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandoff_new(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmWorkspaceJoinHandoffFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) WasmWorkspaceJoinHandoff.prototype[Symbol.dispose] = WasmWorkspaceJoinHandoff.prototype.free;
+
+export class WasmWorkspaceJoinHandshake {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmWorkspaceJoinHandshakeFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmworkspacejoinhandshake_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    acknowledgeRejection() {
+        const ret = wasm.wasmworkspacejoinhandshake_acknowledgeRejection(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @returns {Uint8Array}
+     */
+    acknowledgeSuccess(payload) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_acknowledgeSuccess(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {string} secret
+     * @param {string} side
+     */
+    constructor(secret, side) {
+        const ptr0 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(side, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_new(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        WasmWorkspaceJoinHandshakeFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    receiveAck(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_receiveAck(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {Uint8Array}
+     */
+    receiveRequest(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_receiveRequest(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {Uint8Array} frame
+     * @returns {any}
+     */
+    receiveResponse(frame) {
+        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_receiveResponse(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} message
+     * @returns {Uint8Array}
+     */
+    reject(message) {
+        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_reject(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {string} message
+     * @returns {Uint8Array}
+     */
+    rejectAcceptedResponse(message) {
+        const ptr0 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_rejectAcceptedResponse(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @returns {Uint8Array}
+     */
+    respond(payload) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_respond(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @returns {Uint8Array}
+     */
+    sendRequest(payload) {
+        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmworkspacejoinhandshake_sendRequest(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+}
+if (Symbol.dispose) WasmWorkspaceJoinHandshake.prototype[Symbol.dispose] = WasmWorkspaceJoinHandshake.prototype.free;
 
 /**
  * @returns {boolean}
@@ -2958,57 +5313,57 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3576, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3677, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6189, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6330, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
             return ret;
         },
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 3135, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 3236, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 1604, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 1706, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 4066, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 4167, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 1604, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 1706, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5);
             return ret;
         },
         __wbindgen_cast_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 1604, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 1706, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6);
             return ret;
         },
         __wbindgen_cast_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3525, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3626, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000009: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3585, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3686, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_cast_000000000000000a: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3608, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3709, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
             const ret = makeClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_cast_000000000000000b: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 5301, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 5402, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__3_);
             return ret;
         },
@@ -3158,6 +5513,9 @@ const IntoUnderlyingSinkFinalization = (typeof FinalizationRegistry === 'undefin
 const IntoUnderlyingSourceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_intounderlyingsource_free(ptr >>> 0, 1));
+const WasmAutomergeDeviceSyncFlowFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmautomergedevicesyncflow_free(ptr >>> 0, 1));
 const WasmAutomergeSyncEngineFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmautomergesyncengine_free(ptr >>> 0, 1));
@@ -3170,21 +5528,51 @@ const WasmDeviceRouteCatalogFinalization = (typeof FinalizationRegistry === 'und
 const WasmGossipEngineFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmgossipengine_free(ptr >>> 0, 1));
+const WasmGossipLifecycleStateFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmgossiplifecyclestate_free(ptr >>> 0, 1));
 const WasmIdentityCryptoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmidentitycrypto_free(ptr >>> 0, 1));
 const WasmInvitationsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasminvitations_free(ptr >>> 0, 1));
+const WasmLiveWorkspaceSessionFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmliveworkspacesession_free(ptr >>> 0, 1));
+const WasmMeshAuthenticatedSessionsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshauthenticatedsessions_free(ptr >>> 0, 1));
+const WasmMeshBatchDeliveryFlowFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshbatchdeliveryflow_free(ptr >>> 0, 1));
+const WasmMeshHandshakeFlowFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshhandshakeflow_free(ptr >>> 0, 1));
+const WasmMeshLifecycleStateFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshlifecyclestate_free(ptr >>> 0, 1));
 const WasmMeshRuntimeStateFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshruntimestate_free(ptr >>> 0, 1));
+const WasmMeshScopeRuntimeFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshscoperuntime_free(ptr >>> 0, 1));
+const WasmMeshSessionLifecycleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmmeshsessionlifecycle_free(ptr >>> 0, 1));
 const WasmPairingCodecFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmpairingcodec_free(ptr >>> 0, 1));
 const WasmStateCoreFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmstatecore_free(ptr >>> 0, 1));
+const WasmWorkspaceJoinHandoffFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmworkspacejoinhandoff_free(ptr >>> 0, 1));
+const WasmWorkspaceJoinHandshakeFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmworkspacejoinhandshake_free(ptr >>> 0, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

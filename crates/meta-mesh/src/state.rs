@@ -1,19 +1,510 @@
+use std::collections::HashSet;
+
 use meta_mesh_core::{
     DeviceRoute, DeviceRouteCatalog, DeviceRoutePayload, DurableBatchAck, DurableBatchAckPayload,
-    GossipBounds, GossipCandidate, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
-    ReplicaSet, RouteHealth, SignedDeviceRoute, SignedDurableBatchAck, WorkspaceAuthority,
-    WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord, WorkspaceRevocation,
-    WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy, WorkspaceSuccessionVote,
-    VerifyWorkspaceMemberOptions, IncomingWorkspaceChangeAuthorization,
-    WorkspaceWriteAuthorizationSnapshot,
+    GossipBounds, GossipCandidate, IncomingDocumentChange, IncomingWorkspaceChangeAuthorization,
+    OutboxClaim, OutboxClaimInput, ReplicaSet, RouteHealth, SignedDeviceRoute,
+    SignedDurableBatchAck, VerifyWorkspaceMemberOptions, WorkspaceAccessDecisionInput,
+    WorkspaceAuthority, WorkspaceGrant, WorkspaceOwnershipTransfer, WorkspacePeerRecord,
+    WorkspaceRevocation, WorkspaceSuccessionClaim, WorkspaceSuccessionPolicy,
+    WorkspaceSuccessionVote, WorkspaceWriteAuthorizationSnapshot,
 };
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+pub struct WasmMeshAuthenticatedSessions {
+    inner: meta_mesh_core::MeshAuthenticatedSessions,
+}
+
+#[wasm_bindgen]
+impl WasmMeshAuthenticatedSessions {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            inner: meta_mesh_core::MeshAuthenticatedSessions::default(),
+        }
+    }
+
+    pub fn admit(
+        &mut self,
+        handshake: JsValue,
+        snapshot: JsValue,
+        remote_endpoint: &str,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let handshake: serde_json::Value = from_value(handshake)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let admitted = self
+            .inner
+            .admit(
+                handshake,
+                &snapshot,
+                remote_endpoint,
+                i128::from(integer(now_ms, "Invalid member timestamp")?),
+            )
+            .map_err(js_error)?;
+        to_value(&admitted)
+    }
+
+    pub fn peer(&self, workspace_id: &str, remote_endpoint: &str) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.peer(workspace_id, remote_endpoint))
+    }
+
+    pub fn refresh(&mut self, snapshot: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let evicted = self
+            .inner
+            .refresh(
+                &snapshot,
+                i128::from(integer(now_ms, "Invalid member timestamp")?),
+            )
+            .map_err(js_error)?;
+        to_value(&evicted)
+    }
+
+    pub fn remove(&mut self, workspace_id: &str, remote_endpoint: &str) -> bool {
+        self.inner.remove(workspace_id, remote_endpoint)
+    }
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+}
 
 #[wasm_bindgen]
 pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = validateScopeAuthority)]
+    pub fn validate_scope_authority(raw: JsValue) -> Result<JsValue, JsValue> {
+        let snapshot: meta_mesh_core::ScopeAuthoritySnapshot = from_value(raw)?;
+        to_value(&meta_mesh_core::validate_scope_authority(&snapshot).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = requireChangeAuthorizationCoverage)]
+    pub fn require_change_authorization_coverage(
+        change_hashes: JsValue,
+        records: JsValue,
+    ) -> Result<(), JsValue> {
+        let hashes: Vec<String> = from_value(change_hashes)?;
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        meta_mesh_core::require_change_authorization_coverage(&hashes, &records).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = createScopeGenesis)]
+    pub fn create_scope_genesis(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeGenesisInput = from_value(raw)?;
+        to_value(&meta_mesh_core::create_scope_genesis(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = createScopeGenesisPayload)]
+    pub fn create_scope_genesis_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeGenesisPayloadInput = from_value(raw)?;
+        to_value(&meta_mesh_core::create_scope_genesis_payload(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planScopeGenesis)]
+    pub fn plan_scope_genesis(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeGenesisPlanInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_scope_genesis(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = createScopeControlTransferPayload)]
+    pub fn create_scope_control_transfer_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ScopeControlTransferPayloadInput = from_value(raw)?;
+        to_value(&meta_mesh_core::create_scope_control_transfer_payload(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = preferredSessionDirection)]
+    pub fn preferred_session_direction(
+        local_device_id: &str,
+        local_instance_id: &str,
+        remote_device_id: &str,
+        remote_instance_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::preferred_session_direction(
+            local_device_id,
+            local_instance_id,
+            remote_device_id,
+            remote_instance_id,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = hasAuthorityConflict)]
+    pub fn has_authority_conflict(raw: JsValue) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(raw)?;
+        Ok(meta_mesh_core::has_authority_conflict(&credential))
+    }
+
+    #[wasm_bindgen(js_name = prepareWriteEvidence)]
+    pub fn prepare_write_evidence(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::WriteEvidenceInput = from_value(raw)?;
+        to_value(&meta_mesh_core::prepare_write_evidence(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planSuccessionCatalog)]
+    pub fn plan_succession_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::SuccessionCatalogInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_succession_catalog(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planOwnershipMerge)]
+    pub fn plan_ownership_merge(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::OwnershipMergeInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_ownership_merge(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = canRemoveWorkspaceDevice)]
+    pub fn can_remove_workspace_device(
+        credential: JsValue,
+        local_person_id: &str,
+        local_public_key: &str,
+        local_device_id: &str,
+        target_person_id: &str,
+        target_device_id: &str,
+        peer_person_id: Option<String>,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        meta_mesh_core::can_remove_workspace_device(
+            &credential,
+            local_person_id,
+            local_public_key,
+            local_device_id,
+            target_person_id,
+            target_device_id,
+            peer_person_id.as_deref(),
+        )
+        .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = partitionCredentials)]
+    pub fn partition_credentials(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::CredentialPartitionInput = from_value(raw)?;
+        to_value(&meta_mesh_core::partition_credentials(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = ownedWorkspaceIds)]
+    pub fn owned_workspace_ids(
+        credentials: JsValue,
+        person_id: &str,
+        public_key: &str,
+    ) -> Result<JsValue, JsValue> {
+        let credentials: Vec<serde_json::Value> = from_value(credentials)?;
+        to_value(&meta_mesh_core::owned_workspace_ids(
+            &credentials,
+            person_id,
+            public_key,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = planAuthorityImport)]
+    pub fn plan_authority_import(
+        kind: &str,
+        has_revocations: bool,
+        has_transfers: bool,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &meta_mesh_core::plan_authority_import(kind, has_revocations, has_transfers)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planMeshHandshakeAuthorityImport)]
+    pub fn plan_mesh_handshake_authority_import() -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::plan_mesh_handshake_authority_import().map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = selectMeshHandshakeBundle)]
+    pub fn select_mesh_handshake_bundle(
+        candidates: JsValue,
+        local_device_id: &str,
+        local_instance_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        let candidates: Vec<meta_mesh_core::MeshHandshakeBundleCandidate> = from_value(candidates)?;
+        to_value(&meta_mesh_core::select_mesh_handshake_bundle(
+            &candidates,
+            local_device_id,
+            local_instance_id,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = shouldAdvertiseOwnerWorkspaceIds)]
+    pub fn should_advertise_owner_workspace_ids(
+        credential_owner_person_id: &str,
+        local_person_id: &str,
+        remote_person_id: &str,
+    ) -> bool {
+        meta_mesh_core::should_advertise_owner_workspace_ids(
+            credential_owner_person_id,
+            local_person_id,
+            remote_person_id,
+        )
+    }
+
+    #[wasm_bindgen(js_name = meshHandshakeFeatures)]
+    pub fn mesh_handshake_features(raw: JsValue) -> Result<JsValue, JsValue> {
+        let capabilities: Vec<String> = from_value(raw)?;
+        to_value(&meta_mesh_core::mesh_handshake_features(&capabilities))
+    }
+
+    #[wasm_bindgen(js_name = credentialBelongsToProfile)]
+    pub fn credential_belongs_to_profile(
+        credential: JsValue,
+        person_id: &str,
+        public_key: &str,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        meta_mesh_core::credential_belongs_to_profile(&credential, person_id, public_key)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = canReuseMemberBundle)]
+    pub fn can_reuse_member_bundle(raw: JsValue) -> Result<bool, JsValue> {
+        let input: meta_mesh_core::BundleReuseInput = from_value(raw)?;
+        Ok(meta_mesh_core::can_reuse_member_bundle(input))
+    }
+
+    #[wasm_bindgen(js_name = planSuccessionPolicyRefresh)]
+    pub fn plan_succession_policy_refresh(
+        current: JsValue,
+        eligible: JsValue,
+        epoch: f64,
+    ) -> Result<JsValue, JsValue> {
+        let current: meta_mesh_core::WorkspaceSuccessionPolicy = from_value(current)?;
+        let eligible: Vec<String> = from_value(eligible)?;
+        let epoch = u64::try_from(integer(epoch, "Invalid authority epoch")?).map_err(js_error)?;
+        to_value(&meta_mesh_core::plan_succession_policy_refresh(
+            &current, &eligible, epoch,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = missingOwnerWorkspaces)]
+    pub fn missing_owner_workspaces(owned: JsValue, remote: JsValue) -> Result<JsValue, JsValue> {
+        let owned: Vec<String> = from_value(owned)?;
+        let remote: serde_json::Value = from_value(remote)?;
+        to_value(&meta_mesh_core::missing_owner_workspaces(&owned, &remote))
+    }
+
+    #[wasm_bindgen(js_name = planGuestAdvertisements)]
+    pub fn plan_guest_advertisements(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::GuestAdvertisementInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_guest_advertisements(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = validateOwnerWorkspaceOffer)]
+    pub fn validate_owner_workspace_offer(
+        raw: JsValue,
+        remote_person_id: &str,
+        local_person_id: &str,
+    ) -> Result<String, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        meta_mesh_core::validate_owner_workspace_offer(&raw, remote_person_id, local_person_id)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = knowsWorkspaceIssuer)]
+    pub fn knows_workspace_issuer(
+        raw: JsValue,
+        issuer_person_id: &str,
+        local_person_id: &str,
+        local_device_id: &str,
+    ) -> Result<bool, JsValue> {
+        let raw: Vec<meta_mesh_core::IssuerWorkspaceInput> = from_value(raw)?;
+        Ok(meta_mesh_core::knows_workspace_issuer(
+            &raw,
+            issuer_person_id,
+            local_person_id,
+            local_device_id,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = nextAccessEpoch)]
+    pub fn next_access_epoch(credential: JsValue, issued_grants: JsValue) -> Result<f64, JsValue> {
+        let credential: Option<serde_json::Value> = from_value(credential)?;
+        let issued_grants: Vec<serde_json::Value> = from_value(issued_grants)?;
+        Ok(
+            meta_mesh_core::next_access_epoch(credential.as_ref(), &issued_grants)
+                .map_err(js_error)? as f64,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planInvitationCredential)]
+    pub fn plan_invitation_credential(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::InvitationCredentialInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_invitation_credential(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planCatalogMerge)]
+    pub fn plan_catalog_merge() -> Result<JsValue, JsValue> {
+        to_value(&meta_mesh_core::plan_catalog_merge())
+    }
+
+    #[wasm_bindgen(js_name = selectOwnershipTransfer)]
+    pub fn select_ownership_transfer(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::TransferSelectionInput = from_value(raw)?;
+        to_value(&meta_mesh_core::select_ownership_transfer(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planOwnershipAuthorityFlow)]
+    pub fn plan_ownership_authority_flow(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::OwnershipAuthorityFlowInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_ownership_authority_flow(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = isWorkspaceEnvelope)]
+    pub fn is_workspace_envelope(raw: JsValue) -> Result<bool, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        meta_mesh_core::is_workspace_envelope(&raw).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = hasLeftWorkspace)]
+    pub fn has_left_workspace(
+        credential: JsValue,
+        person_id: &str,
+        grant: JsValue,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        let grant: Option<serde_json::Value> = from_value(grant)?;
+        Ok(meta_mesh_core::has_left_workspace(
+            &credential,
+            person_id,
+            grant.as_ref(),
+        ))
+    }
+
+    #[wasm_bindgen(js_name = isGrantRevoked)]
+    pub fn is_grant_revoked(
+        credential: JsValue,
+        person_id: &str,
+        grant: JsValue,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        let grant: Option<serde_json::Value> = from_value(grant)?;
+        Ok(meta_mesh_core::is_grant_revoked(
+            &credential,
+            person_id,
+            grant.as_ref(),
+        ))
+    }
+
+    #[wasm_bindgen(js_name = isDeviceRevoked)]
+    pub fn is_device_revoked(
+        credential: JsValue,
+        person_id: &str,
+        device_id: &str,
+    ) -> Result<bool, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        Ok(meta_mesh_core::is_device_revoked(
+            &credential,
+            person_id,
+            device_id,
+        ))
+    }
+
+    #[wasm_bindgen(js_name = planDialSchedule)]
+    pub fn plan_dial_schedule(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::DialScheduleInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_dial_schedule(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planOwnerCertificateRefresh)]
+    pub fn plan_owner_certificate_refresh(
+        credential: JsValue,
+        local_person_id: &str,
+        certificates: JsValue,
+        updated_at: &str,
+    ) -> Result<JsValue, JsValue> {
+        let credential: serde_json::Value = from_value(credential)?;
+        let certificates: Vec<meta_mesh_core::DeviceCertificate> = from_value(certificates)?;
+        to_value(
+            &meta_mesh_core::plan_owner_certificate_refresh(
+                credential,
+                local_person_id,
+                certificates,
+                updated_at,
+            )
+            .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = decideOwnerCredential)]
+    pub fn decide_owner_credential(
+        existing_owner_person_id: Option<String>,
+        local_person_id: &str,
+    ) -> Result<String, JsValue> {
+        meta_mesh_core::decide_owner_credential(
+            existing_owner_person_id.as_deref(),
+            local_person_id,
+        )
+        .map(str::to_string)
+        .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = planInvitation)]
+    pub fn plan_invitation(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::InvitationPlanInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_invitation(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planMemberGrant)]
+    pub fn plan_member_grant(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::MemberGrantInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_member_grant(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planAuthorityMerge)]
+    pub fn plan_authority_merge(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::AuthorityMergeInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_authority_merge(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planOwnershipAdoption)]
+    pub fn plan_ownership_adoption(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::OwnershipAdoptionInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_ownership_adoption(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planSuccessionMerge)]
+    pub fn plan_succession_merge(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::SuccessionMergeInput = from_value(raw)?;
+        to_value(
+            &meta_mesh_core::plan_succession_merge(
+                input,
+                i128::from(integer(now_ms, "Invalid authority timestamp")?),
+            )
+            .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = encodeWorkspaceSet)]
+    pub fn encode_workspace_set(entries: JsValue) -> Result<Vec<u8>, JsValue> {
+        let entries: Vec<meta_mesh_core::WorkspaceSetEntry> = from_value(entries)?;
+        meta_mesh_core::encode_workspace_set(&entries).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = decodeWorkspaceSet)]
+    pub fn decode_workspace_set(bytes: &[u8], allowed_ids: JsValue) -> Result<JsValue, JsValue> {
+        let allowed_ids: Vec<String> = from_value(allowed_ids)?;
+        to_value(&meta_mesh_core::decode_workspace_set(bytes, &allowed_ids).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = planAuthorityCommand)]
+    pub fn plan_authority_command(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::AuthorityCommandInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_authority_command(input).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = decideWorkspaceAccess)]
+    pub fn decide_workspace_access(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: WorkspaceAccessDecisionInput = from_value(raw)?;
+        let role = meta_mesh_core::decide_workspace_access(
+            &input,
+            i128::from(integer(now_ms, "Invalid access decision timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&role)
+    }
+
     #[wasm_bindgen(js_name = validateMeshCatalog)]
     pub fn validate_mesh_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
@@ -22,10 +513,63 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = validateMeshHandshake)]
-    pub fn validate_mesh_handshake(raw: JsValue, expected_workspace_id: Option<String>) -> Result<JsValue, JsValue> {
+    pub fn validate_mesh_handshake(
+        raw: JsValue,
+        expected_workspace_id: Option<String>,
+    ) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
-        let handshake = meta_mesh_core::validate_mesh_handshake(raw, expected_workspace_id.as_deref()).map_err(js_error)?;
+        let handshake =
+            meta_mesh_core::validate_mesh_handshake(raw, expected_workspace_id.as_deref())
+                .map_err(js_error)?;
         to_value(&handshake)
+    }
+
+    #[wasm_bindgen(js_name = encodeMeshHandshake)]
+    pub fn encode_mesh_handshake(
+        frame_type: &str,
+        secret: &str,
+        raw: JsValue,
+    ) -> Result<Vec<u8>, JsValue> {
+        let raw: serde_json::Value = from_value(raw)?;
+        meta_mesh_core::encode_mesh_handshake(frame_type, secret, raw).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = inspectMeshHandshake)]
+    pub fn inspect_mesh_handshake(frame: &[u8]) -> Result<JsValue, JsValue> {
+        let header = meta_mesh_core::inspect_mesh_handshake(frame).map_err(js_error)?;
+        to_value(&serde_json::json!({ "type": header.frame_type, "secret": header.secret }))
+    }
+
+    #[wasm_bindgen(js_name = decodeMeshHandshake)]
+    pub fn decode_mesh_handshake(
+        frame: &[u8],
+        expected_type: &str,
+        secret: &str,
+        workspace_id: &str,
+    ) -> Result<JsValue, JsValue> {
+        let handshake =
+            meta_mesh_core::decode_mesh_handshake(frame, expected_type, secret, workspace_id)
+                .map_err(js_error)?;
+        to_value(&handshake)
+    }
+
+    #[wasm_bindgen(js_name = admitMeshPeer)]
+    pub fn admit_mesh_peer(
+        handshake: JsValue,
+        snapshot: JsValue,
+        remote_endpoint: &str,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let handshake: serde_json::Value = from_value(handshake)?;
+        let snapshot: WorkspaceWriteAuthorizationSnapshot = from_value(snapshot)?;
+        let admitted = meta_mesh_core::admit_mesh_peer(
+            handshake,
+            &snapshot,
+            remote_endpoint,
+            i128::from(integer(now_ms, "Invalid member timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&admitted)
     }
 
     #[wasm_bindgen(js_name = meshCapabilities)]
@@ -51,7 +595,8 @@ impl WasmStateCore {
             raw,
             options,
             i128::from(integer(now_ms, "Invalid member timestamp")?),
-        ).map_err(js_error)?;
+        )
+        .map_err(js_error)?;
         to_value(&verified)
     }
 
@@ -94,7 +639,8 @@ impl WasmStateCore {
             &snapshot,
             &needed_hashes,
             i128::from(integer(now_ms, "Invalid authority timestamp")?),
-        ).map_err(js_error)?;
+        )
+        .map_err(js_error)?;
         to_value(&admitted)
     }
 
@@ -113,7 +659,8 @@ impl WasmStateCore {
             &snapshot,
             &needed_hashes,
             i128::from(integer(now_ms, "Invalid authority timestamp")?),
-        ).map_err(js_error)?;
+        )
+        .map_err(js_error)?;
         to_value(&admitted)
     }
 
@@ -139,6 +686,30 @@ impl WasmStateCore {
         ))
     }
 
+    #[wasm_bindgen(js_name = nextVerifiedOwnershipTransition)]
+    pub fn next_verified_ownership_transition(
+        records: JsValue,
+        workspace_id: &str,
+        current_owner: JsValue,
+        current_epoch: f64,
+        revoked_people: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
+        let records: Vec<serde_json::Value> = from_value(records)?;
+        let current_owner: WorkspaceAuthority = from_value(current_owner)?;
+        let revoked_people: Vec<String> = from_value(revoked_people)?;
+        let plan = meta_mesh_core::next_verified_ownership_transition(
+            &records,
+            workspace_id,
+            &current_owner,
+            unsigned_integer(current_epoch, "Invalid ownership epoch")?,
+            &revoked_people.into_iter().collect::<HashSet<_>>(),
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
+        to_value(&plan)
+    }
+
     #[wasm_bindgen(js_name = summarizeSuccession)]
     pub fn summarize_succession(
         policy: JsValue,
@@ -153,8 +724,17 @@ impl WasmStateCore {
         let votes: Vec<serde_json::Value> = from_value(votes)?;
         let transfers: Vec<serde_json::Value> = from_value(transfers)?;
         let revocations: Vec<serde_json::Value> = from_value(revocations)?;
-        to_value(&meta_mesh_core::summarize_succession(policy.as_ref(), &claims, &votes, &transfers,
-            &revocations, unsigned_integer(epoch, "Invalid succession epoch")?).map_err(js_error)?)
+        to_value(
+            &meta_mesh_core::summarize_succession(
+                policy.as_ref(),
+                &claims,
+                &votes,
+                &transfers,
+                &revocations,
+                unsigned_integer(epoch, "Invalid succession epoch")?,
+            )
+            .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = eligibleEditorPersonIds)]
@@ -170,21 +750,42 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = verifyWorkspaceDeparture)]
-    pub fn verify_workspace_departure(record: JsValue, workspace_id: &str, authority: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+    pub fn verify_workspace_departure(
+        record: JsValue,
+        workspace_id: &str,
+        authority: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
         let record: meta_mesh_core::authority::WorkspaceDeparture = from_value(record)?;
         let authority: WorkspaceAuthority = from_value(authority)?;
-        meta_mesh_core::authority::verify_workspace_departure(&record, workspace_id, &authority,
-            i128::from(integer(now_ms, "Invalid authority timestamp")?)).map_err(js_error)?;
+        meta_mesh_core::authority::verify_workspace_departure(
+            &record,
+            workspace_id,
+            &authority,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&record)
     }
 
     #[wasm_bindgen(js_name = verifyWorkspaceDeviceRevocation)]
-    pub fn verify_workspace_device_revocation(record: JsValue, workspace_id: &str,
-        owner_person_id: &str, authority: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+    pub fn verify_workspace_device_revocation(
+        record: JsValue,
+        workspace_id: &str,
+        owner_person_id: &str,
+        authority: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
         let record: meta_mesh_core::authority::WorkspaceDeviceRevocation = from_value(record)?;
         let authority: WorkspaceAuthority = from_value(authority)?;
-        meta_mesh_core::authority::verify_workspace_device_revocation(&record, workspace_id,
-            owner_person_id, &authority, i128::from(integer(now_ms, "Invalid authority timestamp")?)).map_err(js_error)?;
+        meta_mesh_core::authority::verify_workspace_device_revocation(
+            &record,
+            workspace_id,
+            owner_person_id,
+            &authority,
+            i128::from(integer(now_ms, "Invalid authority timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&record)
     }
 
@@ -305,6 +906,17 @@ impl WasmStateCore {
         let changes: Vec<IncomingDocumentChange> = from_value(changes)?;
         let plan = meta_mesh_core::plan_change_admission(document_id, changes, verified_at)
             .map_err(js_error)?;
+        to_value(&plan)
+    }
+
+    #[wasm_bindgen(js_name = planChangeAdmissionFlow)]
+    pub fn plan_change_admission_flow(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::ChangeAdmissionFlowInput = from_value(raw)?;
+        let plan = meta_mesh_core::plan_change_admission_flow(
+            input,
+            i128::from(integer(now_ms, "Invalid change authorization timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&plan)
     }
 

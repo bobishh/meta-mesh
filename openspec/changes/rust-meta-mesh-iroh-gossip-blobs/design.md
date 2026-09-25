@@ -45,6 +45,12 @@ Rewriting `meta-mesh` in Rust brings native performance, eliminates duplicate pr
 - **Alternatives Considered**:
   - Rewriting all of `match` and `twang` in Rust: Out of scope; both are Vue/Svelte web applications with substantial UI code.
 
+### 5. Scope authority shared by workspaces, conversations, and future channels
+- **Choice**: Rust owns a scope authority state machine keyed by an immutable scope ID and genesis creator. The signed genesis controller, and only the controller selected by an explicit signed transfer chain, has the full base capability set (read, write, invite, manage members, grant, control). Signed grants carry capabilities rather than product role names; signed revocations and explicit control transfers advance an authority epoch. A grant issuer cannot delegate capabilities it does not hold, and loss of a local credential never creates a new controller.
+- **Product boundary**: Match maps owner/editor/visitor to capabilities and stores board documents. Twang maps creator/admin/member to capabilities and stores conversation documents. A future broadcast channel can grant read to subscribers, publish to editors, and member management to admins without adding a channel-specific authority protocol. Product commands still enforce content rules after mesh authorization.
+- **Recovery**: Missing or incompatible authority evidence leaves the old scope read-only. Content may be copied into a new scope with a new ID and signed genesis, then members are invited again. Chat profile records, cached grants, device names, and UI roles cannot imply ownership of an old scope.
+- **Compatibility**: Existing workspace and conversation envelopes remain explicitly versioned adapters while the common verifier is introduced. Do not silently reinterpret one product's grants as another product's authority, or auto-migrate old break-glass records.
+
 ## Risks / Trade-offs
 
 - [WASM compilation requirements on macOS] → Mitigation: Use Homebrew LLVM/LLD tools (`$llvm_prefix/bin/clang` and `ld.lld`) with automated build scripts verified in both local and CI environments.

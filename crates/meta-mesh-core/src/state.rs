@@ -122,10 +122,14 @@ pub fn merge_peer_records(
     let mut advertisement = dominant.advertisement.clone();
     if let Some(authorized) = newer_grant_record(existing, incoming) {
         role = authorized.role;
-        if let (Some(target), Some(source)) = (advertisement.as_mut(), authorized.advertisement.as_ref()) {
+        if let (Some(target), Some(source)) =
+            (advertisement.as_mut(), authorized.advertisement.as_ref())
+        {
             copy_grant(target, source);
             for instance in instances.values_mut() {
-                if let Some(bundle) = instance.advertisement.as_mut() { copy_grant(bundle, source); }
+                if let Some(bundle) = instance.advertisement.as_mut() {
+                    copy_grant(bundle, source);
+                }
             }
         }
     }
@@ -155,15 +159,31 @@ pub fn merge_peer_records(
     })
 }
 
-fn newer_grant_record<'a>(left: &'a WorkspacePeerRecord, right: &'a WorkspacePeerRecord) -> Option<&'a WorkspacePeerRecord> {
-    if left.person_id != right.person_id { return None; }
+fn newer_grant_record<'a>(
+    left: &'a WorkspacePeerRecord,
+    right: &'a WorkspacePeerRecord,
+) -> Option<&'a WorkspacePeerRecord> {
+    if left.person_id != right.person_id {
+        return None;
+    }
     let a = left.advertisement.as_ref()?;
     let b = right.advertisement.as_ref()?;
-    if a.get("ownerPublicKey")?.as_str()? != b.get("ownerPublicKey")?.as_str()? { return None; }
+    if a.get("ownerPublicKey")?.as_str()? != b.get("ownerPublicKey")?.as_str()? {
+        return None;
+    }
     let epoch = |bundle: &Value| -> Option<u64> {
         let payload = bundle.get("grant")?.get("payload")?;
-        if payload.get("workspaceId")?.as_str()? != left.workspace_id || payload.get("personId")?.as_str()? != left.person_id { return None; }
-        Some(payload.get("accessEpoch").and_then(Value::as_u64).unwrap_or(1))
+        if payload.get("workspaceId")?.as_str()? != left.workspace_id
+            || payload.get("personId")?.as_str()? != left.person_id
+        {
+            return None;
+        }
+        Some(
+            payload
+                .get("accessEpoch")
+                .and_then(Value::as_u64)
+                .unwrap_or(1),
+        )
     };
     match epoch(a)?.cmp(&epoch(b)?) {
         std::cmp::Ordering::Greater => Some(left),
@@ -175,7 +195,9 @@ fn newer_grant_record<'a>(left: &'a WorkspacePeerRecord, right: &'a WorkspacePee
 fn copy_grant(target: &mut Value, source: &Value) {
     if let Some(object) = target.as_object_mut() {
         for key in ["grant", "ownerPublicKey", "ownerCertificates"] {
-            if let Some(value) = source.get(key) { object.insert(key.to_string(), value.clone()); }
+            if let Some(value) = source.get(key) {
+                object.insert(key.to_string(), value.clone());
+            }
         }
     }
 }
@@ -554,7 +576,10 @@ mod tests {
         let merged = merge_peer_records(&promoted, &stale).unwrap();
         assert_eq!(merged.endpoint, "new");
         assert_eq!(merged.role, WorkspaceRole::Editor);
-        assert_eq!(merged.advertisement.as_ref().unwrap()["grant"], promoted.advertisement.as_ref().unwrap()["grant"]);
+        assert_eq!(
+            merged.advertisement.as_ref().unwrap()["grant"],
+            promoted.advertisement.as_ref().unwrap()["grant"]
+        );
         assert_eq!(merge_peer_records(&stale, &promoted).unwrap(), merged);
     }
 

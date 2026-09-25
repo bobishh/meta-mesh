@@ -1,9 +1,8 @@
 import type * as Automerge from "@automerge/automerge"
-import { fromBase64Url, sha256Base64Url, toBase64Url, type LocalProfile } from "@meta-uber/mesh-identity"
+import type { LocalProfile } from "@meta-uber/mesh-identity"
 import {
   createSignedDurableBatchAck,
   deliverBatchToDevice,
-  type DeviceBatch,
   type DeviceRoute,
   type DurableBatchAck,
   type SignedDurableBatchAck,
@@ -42,8 +41,6 @@ export class AutomergeDocumentCache<T extends Record<string, unknown>> {
     this.documents.clear()
   }
 }
-
-export type SyncTrigger = "local-commit" | "remote-commit" | "connection" | "scope-discovery" | "scheduled-repair"
 
 export type AutomergeSyncFrame = {
   version: 1
@@ -95,27 +92,6 @@ export type AutomergeDeviceSyncResponse = {
   frame?: Omit<AutomergeSyncFrame, "message"> & { message: string }
 }
 
-function encodeFrame(frame: AutomergeSyncFrame): AutomergeDeviceSyncRequest["frame"] {
-  return { ...frame, message: toBase64Url(frame.message) }
-}
-
-function decodeFrame(frame: AutomergeDeviceSyncRequest["frame"]): AutomergeSyncFrame {
-  if (!frame || typeof frame.message !== "string") throw new Error("Invalid Automerge device sync frame")
-  return { ...frame, message: fromBase64Url(frame.message) }
-}
-
-async function syncBatch(frame: AutomergeSyncFrame, batchId?: string): Promise<DeviceBatch> {
-  const hash = await sha256Base64Url(frame.message)
-  if (batchId !== undefined && batchId !== hash) throw new Error("Automerge sync batch does not match frame")
-  return {
-    protocolVersion: 1,
-    scopeId: frame.scopeId,
-    documentId: frame.documentId,
-    batchId: hash,
-    changes: [{ hash, bytes: frame.message }],
-  }
-}
-
 export async function receiveAutomergeDeviceSync<T extends Record<string, unknown>>(options: {
   profile: LocalProfile
   engine: AutomergeAntiEntropy
@@ -123,12 +99,8 @@ export async function receiveAutomergeDeviceSync<T extends Record<string, unknow
   remoteDeviceId: string
   request: AutomergeDeviceSyncRequest
 }): Promise<AutomergeDeviceSyncResponse> {
-  const request = options.request
-  if (request?.kind !== "mesh-automerge-device-sync" || request.version !== 1 || !request.batchId) {
-    throw new Error("Invalid Automerge device sync request")
-  }
-  const frame = decodeFrame(request.frame)
-  const batch = await syncBatch(frame, request.batchId)
+  const { frame: rawFrame, batch } = meshRustRuntime().decodeAutomergeDeviceSyncRequest(options.request, options.remoteDeviceId)
+  const frame = normalizeRustFrame(rawFrame as AutomergeSyncFrame)
   const result = await options.engine.receive(options.adapter, options.remoteDeviceId, frame)
   const ack = await createSignedDurableBatchAck(options.profile, {
     scopeId: batch.scopeId,
@@ -138,13 +110,7 @@ export async function receiveAutomergeDeviceSync<T extends Record<string, unknow
     acceptedHeads: result.heads,
     committedAt: new Date().toISOString(),
   })
-  return {
-    kind: "mesh-automerge-device-sync-response",
-    version: 1,
-    batchId: batch.batchId,
-    ack,
-    ...(result.response ? { frame: encodeFrame(result.response) } : {}),
-  }
+  return meshRustRuntime().encodeAutomergeDeviceSyncResponse(batch.batchId, ack, result.response) as AutomergeDeviceSyncResponse
 }
 
 export async function syncAutomergeDocumentToDevice<T extends Record<string, unknown>>(options: {
@@ -161,54 +127,59 @@ export async function syncAutomergeDocumentToDevice<T extends Record<string, unk
   trace?: import("./protocol.js").MeshReplicationTrace
   signal?: AbortSignal
 }): Promise<{ rounds: number; routeInstanceIds: string[] }> {
-  const maximumRounds = options.maximumRounds ?? 64
-  if (!Number.isSafeInteger(maximumRounds) || maximumRounds < 1) throw new Error("Invalid Automerge sync round limit")
-  const routeInstanceIds: string[] = []
-  let frame = await options.engine.generate(options.adapter, options.targetDeviceId)
-  for (let rounds = 0; rounds < maximumRounds; rounds += 1) {
-    if (!frame) {
-      options.trace?.("sync.converged", { targetDeviceId: options.targetDeviceId, documentId: options.adapter.documentId, rounds })
-      return { rounds, routeInstanceIds }
+  const flow = meshRustRuntime().createAutomergeDeviceSyncFlow(options.targetDeviceId,
+    options.adapter.documentId, options.maximumRounds ?? 64)
+  try {
+    let frame = await options.engine.generate(options.adapter, options.targetDeviceId)
+    while (true) {
+      const step = flow.nextRound(frame)
+      if (step.kind === "converged") {
+        options.trace?.("sync.converged", { targetDeviceId: options.targetDeviceId,
+          documentId: options.adapter.documentId, rounds: step.value.rounds })
+        return step.value
+      }
+      const plan = step.value
+      const batch = { ...plan.batch, changes: plan.batch.changes.map(change => ({ ...change,
+        bytes: new Uint8Array(change.bytes) })) }
+      const request = plan.request as AutomergeDeviceSyncRequest
+      options.trace?.("sync.round", { targetDeviceId: options.targetDeviceId,
+        documentId: options.adapter.documentId, round: plan.round, batchId: batch.batchId })
+      const selectedRoute = plan.selectedRouteInstanceId
+        ? options.routes.find(route => route.instanceId === plan.selectedRouteInstanceId) : undefined
+      if (plan.selectedRouteInstanceId && !selectedRoute) throw new Error("Selected Automerge sync route disappeared")
+      const responses = new Map<string, AutomergeDeviceSyncResponse>()
+      const delivery = await deliverBatchToDevice({
+        targetDeviceId: options.targetDeviceId,
+        routes: selectedRoute ? [selectedRoute] : options.routes,
+        batch,
+        fallbackDelayMs: options.fallbackDelayMs,
+        retryDelaysMs: options.retryDelaysMs,
+        routeHealth: options.routeHealth,
+        trace: options.trace,
+        signal: options.signal,
+        send: async (route, _batch, signal) => {
+          const response = await options.send(route, request, signal)
+          flow.validateResponse(response)
+          responses.set(route.instanceId, response)
+          return options.verifyAck(response.ack)
+        },
+        verifyAck: () => true,
+      })
+      const response = responses.get(delivery.route.instanceId)
+      if (!response) throw new Error("Missing Automerge sync route response")
+      const responseFrame = flow.completeRound(delivery.route.instanceId, response) as AutomergeSyncFrame | null
+      frame = responseFrame
+        ? (await options.engine.receive(options.adapter, options.targetDeviceId, normalizeRustFrame(responseFrame))).response
+        : await options.engine.generate(options.adapter, options.targetDeviceId)
     }
-    const batch = await syncBatch(frame)
-    options.trace?.("sync.round", { targetDeviceId: options.targetDeviceId, documentId: options.adapter.documentId, round: rounds + 1, batchId: batch.batchId })
-    const request: AutomergeDeviceSyncRequest = {
-      kind: "mesh-automerge-device-sync",
-      version: 1,
-      batchId: batch.batchId,
-      frame: encodeFrame(frame),
-    }
-    const responses = new Map<string, AutomergeDeviceSyncResponse>()
-    const delivery = await deliverBatchToDevice({
-      targetDeviceId: options.targetDeviceId,
-      routes: options.routes,
-      batch,
-      fallbackDelayMs: options.fallbackDelayMs,
-      retryDelaysMs: options.retryDelaysMs,
-      routeHealth: options.routeHealth,
-      trace: options.trace,
-      signal: options.signal,
-      send: async (route, _batch, signal) => {
-        const response = await options.send(route, request, signal)
-        if (response?.kind !== "mesh-automerge-device-sync-response" || response.version !== 1 || response.batchId !== batch.batchId) {
-          throw new Error("Invalid Automerge device sync response")
-        }
-        responses.set(route.instanceId, response)
-        return options.verifyAck(response.ack)
-      },
-      verifyAck: () => true,
-    })
-    routeInstanceIds.push(delivery.route.instanceId)
-    const response = responses.get(delivery.route.instanceId)?.frame
-    frame = response
-      ? (await options.engine.receive(options.adapter, options.targetDeviceId, decodeFrame(response))).response
-      : await options.engine.generate(options.adapter, options.targetDeviceId)
+  } finally {
+    flow.free?.()
   }
-  throw new Error("Automerge device sync exceeded round limit")
 }
 
 export class AutomergeAntiEntropy {
   private readonly busy = new Set<string>()
+  private readonly documentQueues = new Map<string, Promise<void>>()
   private readonly engine: RustAutomergeSyncEngine
 
   constructor(
@@ -230,10 +201,19 @@ export class AutomergeAntiEntropy {
     this.engine.reset(documentId, remoteDeviceId)
   }
 
-  private async exclusive<T>(key: string, run: () => Promise<T>): Promise<T> {
+  private async exclusive<T>(key: string, documentId: string, run: () => Promise<T>): Promise<T> {
     if (this.busy.has(key)) throw new Error("Automerge sync backpressure")
     this.busy.add(key)
-    try { return await run() } finally { this.busy.delete(key) }
+    const previous = this.documentQueues.get(documentId)
+    let release!: () => void
+    const current = new Promise<void>(resolve => { release = resolve })
+    this.documentQueues.set(documentId, current)
+    await previous
+    try { return await run() } finally {
+      this.busy.delete(key)
+      release()
+      if (this.documentQueues.get(documentId) === current) this.documentQueues.delete(documentId)
+    }
   }
 
   async generate<T extends Record<string, unknown>>(
@@ -241,7 +221,7 @@ export class AutomergeAntiEntropy {
     remoteDeviceId: string,
   ): Promise<AutomergeSyncFrame | null> {
     const key = this.key(adapter.documentId, remoteDeviceId)
-    return this.exclusive(key, async () => {
+    return this.exclusive(key, adapter.documentId, async () => {
       if (!await adapter.authorize(remoteDeviceId, undefined, "send")) throw new Error("Unauthorized Automerge sync")
       const document = await adapter.current()
       this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(document))
@@ -257,34 +237,43 @@ export class AutomergeAntiEntropy {
     frame: AutomergeSyncFrame,
   ): Promise<AutomergeSyncResult> {
     const key = this.key(adapter.documentId, remoteDeviceId)
-    return this.exclusive(key, async () => {
+    return this.exclusive(key, adapter.documentId, async () => {
       if (!await adapter.authorize(remoteDeviceId, frame.proof, "receive")) throw new Error("Unauthorized Automerge sync")
       const before = await adapter.current()
       this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(before))
       const responseProof = await this.options.proof?.(adapter.scopeId, adapter.documentId, remoteDeviceId)
-      const result = this.engine.receive(remoteDeviceId, frame, true, responseProof) as {
+      const result = this.engine.prepareReceive(remoteDeviceId, frame, true, responseProof) as {
         acceptedChanges: number
         heads: string[]
         document: Uint8Array | number[]
         response?: AutomergeSyncFrame | null
       }
-      const candidate = this.automerge.load<T>(new Uint8Array(result.document))
-      const changes = this.automerge.getChanges(before, candidate)
-      if (changes.length > 0) {
+      let rustCommitted = false
+      try {
+        const candidate = this.automerge.load<T>(new Uint8Array(result.document))
+        const changes = this.automerge.getChanges(before, candidate)
         const admission = { before, candidate, changes, remoteDeviceId, proof: frame.proof }
-        await adapter.validateCandidate(admission)
-        await adapter.commit(admission)
-      }
-      const current = changes.length > 0 ? candidate : before
-      const heads = result.heads
-      if (changes.length > 0) {
-        await adapter.snapshot?.(current, heads)
-        await adapter.publish?.(adapter.documentId, heads, "remote-commit")
-      }
-      return {
-        acceptedChanges: result.acceptedChanges,
-        heads,
-        response: result.response ? normalizeRustFrame(result.response) : null,
+        if (changes.length > 0) await adapter.validateCandidate(admission)
+        this.engine.commitPreparedReceive(adapter.documentId, remoteDeviceId)
+        rustCommitted = true
+        if (changes.length > 0) {
+          await adapter.commit(admission)
+          await adapter.snapshot?.(candidate, result.heads)
+          await adapter.publish?.(adapter.documentId, result.heads, "remote-commit")
+        }
+        return {
+          acceptedChanges: result.acceptedChanges,
+          heads: result.heads,
+          response: result.response ? normalizeRustFrame(result.response) : null,
+        }
+      } catch (error) {
+        if (rustCommitted) {
+          this.engine.reset(adapter.documentId, remoteDeviceId)
+          this.engine.loadDocument(adapter.scopeId, adapter.documentId, this.automerge.save(await adapter.current()))
+        } else {
+          this.engine.abortPreparedReceive(adapter.documentId, remoteDeviceId)
+        }
+        throw error
       }
     })
   }
@@ -292,32 +281,6 @@ export class AutomergeAntiEntropy {
 
 function normalizeRustFrame(frame: AutomergeSyncFrame): AutomergeSyncFrame {
   return { ...frame, message: new Uint8Array(frame.message) }
-}
-
-export class AutomergeSyncScheduler {
-  private readonly queued = new Map<string, Set<SyncTrigger>>()
-  private scheduled = false
-
-  constructor(private readonly flush: (requests: ReadonlyMap<string, ReadonlySet<SyncTrigger>>) => void | Promise<void>) {}
-
-  trigger(documentId: string, trigger: SyncTrigger): void {
-    let triggers = this.queued.get(documentId)
-    if (!triggers) {
-      triggers = new Set()
-      this.queued.set(documentId, triggers)
-    }
-    triggers.add(trigger)
-    if (this.scheduled) return
-    this.scheduled = true
-    queueMicrotask(() => { void this.drain() })
-  }
-
-  private async drain(): Promise<void> {
-    const requests = new Map([...this.queued].map(([documentId, triggers]) => [documentId, new Set(triggers)]))
-    this.queued.clear()
-    this.scheduled = false
-    await this.flush(requests)
-  }
 }
 
 export function reconcileAutomergePeers<T extends Record<string, unknown>>(

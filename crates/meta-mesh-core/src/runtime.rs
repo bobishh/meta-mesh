@@ -6,24 +6,84 @@ use serde::{Deserialize, Serialize};
 pub const MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024;
 pub const CONTROL_CHUNK_BYTES: usize = 128 * 1024;
 pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
-pub const MESH_CAPABILITIES: [&str; 6] = [
-    "heartbeat-v1", "automerge-sync-v1", "ownership-receipt-v1", "owner-workspace-v2", "iroh-gossip-v1",
+pub const MESH_CAPABILITIES: [&str; 7] = [
+    "heartbeat-v1",
+    "automerge-sync-v1",
+    "ownership-receipt-v1",
+    "owner-workspace-v2",
+    "iroh-gossip-v1",
     "blob-transfer-v1",
+    "device-revocation-v1",
 ];
 
 pub fn validate_mesh_capabilities(capabilities: &[String]) -> Result<(), String> {
-    if capabilities.iter().any(|capability| capability == "iroh-gossip-v1") { Ok(()) }
-    else { Err("Peer does not support required iroh gossip".to_string()) }
+    if !capabilities
+        .iter()
+        .any(|capability| capability == "iroh-gossip-v1")
+    {
+        return Err("Peer does not support required iroh gossip".to_string());
+    }
+    if !capabilities
+        .iter()
+        .any(|capability| capability == "automerge-sync-v1")
+    {
+        return Err("Peer does not support required Automerge sync".to_string());
+    }
+    if !capabilities
+        .iter()
+        .any(|capability| capability == "device-revocation-v1")
+    {
+        return Err("Peer does not support device revocations; update the app".to_string());
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeshHandshakeFeatures {
+    pub heartbeat_supported: bool,
+    pub ownership_receipt_supported: bool,
+    pub owner_workspace_supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_workspace_offer_frame: Option<&'static str>,
+    pub blob_transfer_supported: bool,
+}
+
+pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures {
+    let has = |feature: &str| capabilities.iter().any(|item| item == feature);
+    MeshHandshakeFeatures {
+        heartbeat_supported: has("heartbeat-v1"),
+        ownership_receipt_supported: has("ownership-receipt-v1"),
+        owner_workspace_supported: has("owner-workspace-v2"),
+        owner_workspace_offer_frame: has("owner-workspace-v2")
+            .then_some("mesh-owner-workspace-offer"),
+        blob_transfer_supported: has("blob-transfer-v1"),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "lowercase")]
 pub enum SessionDirection {
     Incoming,
     Outgoing,
 }
 
+pub fn preferred_session_direction(
+    local_device_id: &str,
+    local_instance_id: &str,
+    remote_device_id: &str,
+    remote_instance_id: &str,
+) -> SessionDirection {
+    if (local_device_id, local_instance_id) < (remote_device_id, remote_instance_id) {
+        SessionDirection::Outgoing
+    } else {
+        SessionDirection::Incoming
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionKey {
     pub workspace_id: String,
@@ -42,6 +102,7 @@ pub struct SessionCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSession {
     pub key: SessionKey,
@@ -69,6 +130,7 @@ pub enum SessionAdmission {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct RouteAttempt {
     pub route_key: String,
@@ -77,6 +139,7 @@ pub struct RouteAttempt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct ReconnectState {
     pub failures: u32,
@@ -109,42 +172,61 @@ pub struct RelayDialPolicy {
 }
 
 impl Default for RelayDialPolicy {
-    fn default() -> Self { Self::new(60_000, 1_500) }
+    fn default() -> Self {
+        Self::new(60_000, 1_500)
+    }
 }
 
 impl RelayDialPolicy {
     pub fn new(relay_cooldown_ms: u64, fallback_delay_ms: u64) -> Self {
-        Self { relay_until: BTreeMap::new(), relay_cooldown_ms, fallback_delay_ms }
+        Self {
+            relay_until: BTreeMap::new(),
+            relay_cooldown_ms,
+            fallback_delay_ms,
+        }
     }
 
     pub fn plan(&mut self, peer_key: &str, relay_available: bool, now_ms: u64) -> DialPlan {
         let until = self.relay_until.get(peer_key).copied().unwrap_or_default();
-        if until <= now_ms { self.relay_until.remove(peer_key); }
+        if until <= now_ms {
+            self.relay_until.remove(peer_key);
+        }
         if relay_available && until > now_ms {
-            DialPlan { mode: DialMode::Relay, relay_fallback_at_ms: None }
+            DialPlan {
+                mode: DialMode::Relay,
+                relay_fallback_at_ms: None,
+            }
         } else {
             DialPlan {
                 mode: DialMode::Direct,
-                relay_fallback_at_ms: relay_available.then(|| now_ms.saturating_add(self.fallback_delay_ms)),
+                relay_fallback_at_ms: relay_available
+                    .then(|| now_ms.saturating_add(self.fallback_delay_ms)),
             }
         }
     }
 
     pub fn record_network_failure(&mut self, peer_key: String, now_ms: u64) {
-        self.relay_until.insert(peer_key, now_ms.saturating_add(self.relay_cooldown_ms));
+        self.relay_until
+            .insert(peer_key, now_ms.saturating_add(self.relay_cooldown_ms));
     }
 
     pub fn record_success(&mut self, peer_key: &str, mode: DialMode, now_ms: u64) {
         match mode {
-            DialMode::Direct => { self.relay_until.remove(peer_key); }
+            DialMode::Direct => {
+                self.relay_until.remove(peer_key);
+            }
             DialMode::Relay => {
-                self.relay_until.insert(peer_key.to_string(), now_ms.saturating_add(self.relay_cooldown_ms));
+                self.relay_until.insert(
+                    peer_key.to_string(),
+                    now_ms.saturating_add(self.relay_cooldown_ms),
+                );
             }
         }
     }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct MeshRuntimeState {
     running: bool,
@@ -153,14 +235,92 @@ pub struct MeshRuntimeState {
     sessions: BTreeMap<SessionKey, RuntimeSession>,
     attempts: BTreeMap<String, RouteAttempt>,
     reconnects: BTreeMap<String, ReconnectState>,
-    gossip_peers: BTreeMap<String, Vec<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GossipTopology {
-    pub changed: bool,
-    pub endpoints: Vec<String>,
+/// Lifecycle decisions shared by browser and native hosts. Hosts perform I/O;
+/// this state prevents an in-flight start from reviving a stopped process.
+#[derive(Debug, Default, Clone)]
+pub struct MeshLifecycleState {
+    starting: bool,
+    stopping: bool,
+    running: bool,
+    externally_paused: bool,
+    disposed: bool,
+}
+
+impl MeshLifecycleState {
+    pub fn stopped(&self) -> bool {
+        !self.running
+    }
+    pub fn externally_paused(&self) -> bool {
+        self.externally_paused
+    }
+    pub fn disposed(&self) -> bool {
+        self.disposed
+    }
+
+    pub fn begin_start(&mut self) -> bool {
+        if self.starting || self.stopping || self.running || self.externally_paused || self.disposed
+        {
+            return false;
+        }
+        self.starting = true;
+        true
+    }
+
+    pub fn can_continue_start(&self) -> bool {
+        self.starting
+            && !self.stopping
+            && !self.running
+            && !self.externally_paused
+            && !self.disposed
+    }
+
+    pub fn complete_start(&mut self) -> bool {
+        if !self.can_continue_start() {
+            return false;
+        }
+        self.starting = false;
+        self.running = true;
+        true
+    }
+
+    pub fn cancel_start(&mut self) {
+        self.starting = false;
+    }
+
+    /// Returns whether a running host needs shutdown. Cancels pending starts.
+    pub fn stop(&mut self) -> bool {
+        let was_running = self.running;
+        self.starting = false;
+        self.running = false;
+        if was_running {
+            self.stopping = true;
+        }
+        was_running
+    }
+
+    pub fn finish_stop(&mut self) {
+        self.stopping = false;
+    }
+
+    pub fn pause(&mut self) {
+        self.externally_paused = true;
+        self.starting = false;
+    }
+
+    pub fn resume(&mut self) -> bool {
+        if self.disposed {
+            return false;
+        }
+        self.externally_paused = false;
+        true
+    }
+
+    pub fn dispose(&mut self) {
+        self.disposed = true;
+        self.starting = false;
+    }
 }
 
 impl MeshRuntimeState {
@@ -240,7 +400,9 @@ impl MeshRuntimeState {
             3 => 5,
             _ => 10,
         };
-        let delay = base_delay_ms.saturating_mul(multiplier).min(maximum_delay_ms);
+        let delay = base_delay_ms
+            .saturating_mul(multiplier)
+            .min(maximum_delay_ms);
         let state = ReconnectState {
             failures,
             retry_at_ms: now_ms.saturating_add(delay),
@@ -321,18 +483,6 @@ impl MeshRuntimeState {
             .map(|key| key.device_id.clone())
             .collect()
     }
-
-    pub fn set_gossip_endpoints(&mut self, workspace_id: String, endpoints: Vec<String>) -> GossipTopology {
-        let mut endpoints = endpoints;
-        endpoints.sort();
-        endpoints.dedup();
-        let changed = self.gossip_peers.get(&workspace_id) != Some(&endpoints);
-        if endpoints.is_empty() { self.gossip_peers.remove(&workspace_id); }
-        else { self.gossip_peers.insert(workspace_id, endpoints.clone()); }
-        GossipTopology { changed, endpoints }
-    }
-
-    pub fn clear_gossip(&mut self, workspace_id: &str) { self.gossip_peers.remove(workspace_id); }
 }
 
 fn should_replace_session(
@@ -340,6 +490,9 @@ fn should_replace_session(
     candidate: &SessionCandidate,
     preferred: SessionDirection,
 ) -> bool {
+    if candidate.direction != previous.direction {
+        return candidate.direction == preferred;
+    }
     if candidate.remote_route_sequence != previous.remote_route_sequence {
         return match (
             candidate.remote_route_sequence,
@@ -351,7 +504,7 @@ fn should_replace_session(
             (None, None) => false,
         };
     }
-    candidate.direction != previous.direction && candidate.direction == preferred
+    false
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -499,6 +652,28 @@ fn validate_chunk(chunk: &ControlChunk, workspace_id: &str) -> Result<(), String
 mod tests {
     use super::*;
 
+    #[test]
+    fn lifecycle_cancels_pending_start_on_stop_pause_and_dispose() {
+        let mut lifecycle = MeshLifecycleState::default();
+        assert!(lifecycle.begin_start());
+        assert!(!lifecycle.begin_start());
+        assert!(!lifecycle.stop());
+        assert!(!lifecycle.complete_start());
+        assert!(lifecycle.begin_start());
+        lifecycle.pause();
+        assert!(!lifecycle.complete_start());
+        assert!(!lifecycle.begin_start());
+        assert!(lifecycle.resume());
+        assert!(lifecycle.begin_start());
+        assert!(lifecycle.complete_start());
+        assert!(lifecycle.stop());
+        assert!(!lifecycle.begin_start());
+        lifecycle.finish_stop();
+        lifecycle.dispose();
+        assert!(!lifecycle.resume());
+        assert!(!lifecycle.begin_start());
+    }
+
     fn candidate(
         instance: &str,
         connection: &str,
@@ -531,7 +706,7 @@ mod tests {
         );
         let replacement = runtime.admit_session(
             candidate("one", "replacement", 2, SessionDirection::Outgoing),
-            SessionDirection::Incoming,
+            SessionDirection::Outgoing,
         );
         let SessionAdmission::Accepted {
             generation: old_generation,
@@ -555,18 +730,40 @@ mod tests {
     }
 
     #[test]
-    fn gossip_topology_is_canonicalized_and_change_aware() {
+    fn endpoint_direction_breaks_ties_between_instances_of_one_device() {
+        assert_eq!(
+            preferred_session_direction("device", "tab-a", "device", "tab-b"),
+            SessionDirection::Outgoing,
+        );
+        assert_eq!(
+            preferred_session_direction("device", "tab-b", "device", "tab-a"),
+            SessionDirection::Incoming,
+        );
+    }
+
+    #[test]
+    fn canonical_direction_wins_over_conflicting_route_sequences() {
         let mut runtime = MeshRuntimeState::default();
-
-        let first = runtime.set_gossip_endpoints("workspace".into(), vec!["b".into(), "a".into(), "a".into()]);
-        assert_eq!(first, GossipTopology { changed: true, endpoints: vec!["a".into(), "b".into()] });
-
-        let unchanged = runtime.set_gossip_endpoints("workspace".into(), vec!["b".into(), "a".into()]);
-        assert_eq!(unchanged, GossipTopology { changed: false, endpoints: vec!["a".into(), "b".into()] });
-
-        runtime.clear_gossip("workspace");
-        let restored = runtime.set_gossip_endpoints("workspace".into(), vec!["a".into(), "b".into()]);
-        assert!(restored.changed);
+        let first = runtime.admit_session(
+            candidate("one", "nonpreferred", 99, SessionDirection::Incoming),
+            SessionDirection::Outgoing,
+        );
+        assert!(matches!(first, SessionAdmission::Accepted { .. }));
+        let preferred = runtime.admit_session(
+            candidate("one", "preferred", 1, SessionDirection::Outgoing),
+            SessionDirection::Outgoing,
+        );
+        assert!(
+            matches!(preferred, SessionAdmission::Accepted { replaced_connection_id: Some(value), .. }
+            if value == "nonpreferred")
+        );
+        let stale = runtime.admit_session(
+            candidate("one", "stale", 100, SessionDirection::Incoming),
+            SessionDirection::Outgoing,
+        );
+        assert!(
+            matches!(stale, SessionAdmission::Rejected { retained_connection_id } if retained_connection_id == "preferred")
+        );
     }
 
     #[test]
@@ -600,15 +797,30 @@ mod tests {
     fn reconnect_uses_the_offline_retry_cadence_and_caps() {
         let mut runtime = MeshRuntimeState::default();
         let retries = [
-            runtime.schedule_reconnect("route".into(), 0, 1_000, 10_000).retry_at_ms,
-            runtime.schedule_reconnect("route".into(), 10_000, 1_000, 10_000).retry_at_ms,
-            runtime.schedule_reconnect("route".into(), 20_000, 1_000, 10_000).retry_at_ms,
-            runtime.schedule_reconnect("route".into(), 30_000, 1_000, 10_000).retry_at_ms,
-            runtime.schedule_reconnect("route".into(), 40_000, 1_000, 10_000).retry_at_ms,
+            runtime
+                .schedule_reconnect("route".into(), 0, 1_000, 10_000)
+                .retry_at_ms,
+            runtime
+                .schedule_reconnect("route".into(), 10_000, 1_000, 10_000)
+                .retry_at_ms,
+            runtime
+                .schedule_reconnect("route".into(), 20_000, 1_000, 10_000)
+                .retry_at_ms,
+            runtime
+                .schedule_reconnect("route".into(), 30_000, 1_000, 10_000)
+                .retry_at_ms,
+            runtime
+                .schedule_reconnect("route".into(), 40_000, 1_000, 10_000)
+                .retry_at_ms,
         ];
         assert_eq!(retries, [1_000, 12_000, 25_000, 40_000, 50_000]);
         runtime.clear_reconnect("route");
-        assert_eq!(runtime.schedule_reconnect("route".into(), 60_000, 1_000, 10_000).retry_at_ms, 61_000);
+        assert_eq!(
+            runtime
+                .schedule_reconnect("route".into(), 60_000, 1_000, 10_000)
+                .retry_at_ms,
+            61_000
+        );
     }
 
     #[test]
@@ -616,17 +828,26 @@ mod tests {
         let mut policy = RelayDialPolicy::new(60_000, 1_500);
         assert_eq!(
             policy.plan("phone", true, 100),
-            DialPlan { mode: DialMode::Direct, relay_fallback_at_ms: Some(1_600) }
+            DialPlan {
+                mode: DialMode::Direct,
+                relay_fallback_at_ms: Some(1_600)
+            }
         );
         policy.record_network_failure("phone".into(), 200);
         assert_eq!(
             policy.plan("phone", true, 10_000),
-            DialPlan { mode: DialMode::Relay, relay_fallback_at_ms: None }
+            DialPlan {
+                mode: DialMode::Relay,
+                relay_fallback_at_ms: None
+            }
         );
         policy.record_success("phone", DialMode::Direct, 10_001);
         assert_eq!(
             policy.plan("phone", true, 10_002),
-            DialPlan { mode: DialMode::Direct, relay_fallback_at_ms: Some(11_502) }
+            DialPlan {
+                mode: DialMode::Direct,
+                relay_fallback_at_ms: Some(11_502)
+            }
         );
     }
 
