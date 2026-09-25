@@ -13,6 +13,8 @@ use serde_json::Value;
 pub struct FileScopeStore {
     path: PathBuf,
     write_lock: Mutex<()>,
+    #[cfg(test)]
+    fail_after_file_sync: Mutex<bool>,
 }
 
 impl FileScopeStore {
@@ -20,7 +22,14 @@ impl FileScopeStore {
         Self {
             path: path.into(),
             write_lock: Mutex::new(()),
+            #[cfg(test)]
+            fail_after_file_sync: Mutex::new(false),
         }
+    }
+
+    #[cfg(test)]
+    fn fail_after_file_sync_once(&self) {
+        *self.fail_after_file_sync.lock().unwrap() = true;
     }
 
     pub fn read(&self) -> Result<Option<Vec<u8>>, String> {
@@ -70,6 +79,10 @@ impl FileScopeStore {
                 .map_err(|error| format!("Write scope document: {error}"))?;
             file.sync_all()
                 .map_err(|error| format!("Sync scope document: {error}"))?;
+            #[cfg(test)]
+            if std::mem::take(&mut *self.fail_after_file_sync.lock().unwrap()) {
+                return Err("Injected failure after scope document sync".into());
+            }
             fs::rename(&temp, &self.path)
                 .map_err(|error| format!("Commit scope document: {error}"))?;
             fs::File::open(parent)
@@ -109,6 +122,49 @@ mod tests {
             FileScopeStore::new(&path).read().unwrap().as_deref(),
             Some(b"accepted".as_slice())
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn synced_but_uncommitted_write_and_crash_residue_keep_last_document_after_reopen() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "meta-mesh-scope-failure-{}-{nonce}",
+            std::process::id()
+        ));
+        let path = directory.join("board.automerge");
+        let store = FileScopeStore::new(&path);
+        store
+            .write_validated(b"previous", None, |_, _| Ok(()))
+            .unwrap();
+
+        store.fail_after_file_sync_once();
+        assert_eq!(
+            store.write_validated(b"uncommitted", None, |_, _| Ok(())),
+            Err("Injected failure after scope document sync".into())
+        );
+        drop(store);
+
+        // A process crash before rename can leave an unrelated temporary file.
+        // Reopening reads only the committed path and a later retry replaces it.
+        fs::write(path.with_extension("tmp-crash-residue"), b"orphan").unwrap();
+        let reopened = FileScopeStore::new(&path);
+        assert_eq!(
+            reopened.read().unwrap().as_deref(),
+            Some(b"previous".as_slice())
+        );
+        reopened
+            .write_validated(b"retried", None, |_, _| Ok(()))
+            .unwrap();
+        drop(reopened);
+        assert_eq!(
+            FileScopeStore::new(&path).read().unwrap().as_deref(),
+            Some(b"retried".as_slice())
+        );
+
         fs::remove_dir_all(directory).unwrap();
     }
 }

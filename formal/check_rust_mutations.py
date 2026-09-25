@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # Exact substitutions fail closed when production code changes. These mutate
 # the actual implementation, never the reference model or test expectations.
 MUTATIONS = [
+    ('stale-route-completes-new-round', 'delivery_flow.rs',
+     '            || round != self.round\n',
+     '', 'delivery_implementation'),
     ('partial-or-empty-ack', 'replication.rs',
      'accepted.len() == ack.payload.accepted_hashes.len() && accepted == expected',
      'accepted.len() == ack.payload.accepted_hashes.len() && accepted.is_subset(&expected)',
@@ -33,6 +36,7 @@ MUTATIONS = [
 ]
 
 EXPECTED_FAILURES = {
+    'stale-route-completes-new-round': 'effect mismatch',
     'partial-or-empty-ack': 'Rust delivery mismatch',
     'stale-runtime-cleanup': 'runtime mismatch',
     'stale-lifecycle-cleanup': 'runtime mismatch',
@@ -47,6 +51,7 @@ def main():
         'MESH_TLC_SESSION_GRAPH',
         'MESH_TLC_SESSION_IMPLEMENTATION_GRAPH',
         'MESH_TLC_DELIVERY_GRAPH',
+        'MESH_TLC_DELIVERY_IMPLEMENTATION_GRAPH',
     ):
         if not os.environ.get(variable) or not Path(os.environ[variable]).is_file():
             raise RuntimeError(f'{variable}: fresh TLC graph is required')
@@ -67,6 +72,8 @@ def main():
                 test_args = [
                     '--lib', 'bounded_actual_session_states_conform_to_tla_transitions',
                 ]
+            elif test == 'delivery_implementation':
+                test_args = ['--lib', 'bounded_actual_delivery_states_conform_to_tla_transitions']
             else:
                 test_args = ['--test', test]
             try:

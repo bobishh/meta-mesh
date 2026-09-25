@@ -19,6 +19,11 @@ export class BrowserMeshLifecycle {
   private task: Promise<void> | undefined
   private abortController: AbortController | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
+  private startGeneration = 0
+  private acquisitionTask: Promise<void> | undefined
+  private stopTask: Promise<void> | undefined
+  private releaseAfterStop: (() => Promise<void>) | undefined
+  private releaseRequested = false
   private readonly state: RustMeshLifecycleState
 
   constructor(private readonly host: BrowserMeshLifecycleHost) {
@@ -30,40 +35,70 @@ export class BrowserMeshLifecycle {
   get disposed(): boolean { return this.state.disposed }
 
   async start(): Promise<void> {
+    if (this.stopTask) await this.stopTask
     if (!this.state.beginStart()) return
+    const generation = ++this.startGeneration
     try {
-      if (!await this.host.canStart()) { this.state.cancelStart(); return }
+      const allowed = await this.host.canStart()
+      if (generation !== this.startGeneration) return
+      if (!allowed) { this.state.cancelStart(); return }
       if (!this.state.canContinueStart()) return
-      await this.host.acquireInstance()
-      if (!this.state.completeStart()) return
+      const acquisition = this.host.acquireInstance()
+      this.acquisitionTask = acquisition
+      try { await acquisition }
+      finally { if (this.acquisitionTask === acquisition) this.acquisitionTask = undefined }
+      if (generation !== this.startGeneration || !this.state.completeStart()) return
     } catch (error) {
+      if (generation !== this.startGeneration) return
       this.state.cancelStart()
       throw error
     }
     this.host.trace("mesh.start")
-    await this.host.notify()
     if (this.state.stopped) return
     this.abortController = new AbortController()
     this.task = this.run(this.abortController.signal)
   }
 
-  async stop(releaseInstance = true, release?: () => Promise<void>): Promise<void> {
-    if (!this.state.stop()) {
-      if (releaseInstance) await release?.()
-      return
+  stop(releaseInstance = true, release?: () => Promise<void>): Promise<void> {
+    ++this.startGeneration
+    if (releaseInstance) {
+      this.releaseRequested = true
+      this.releaseAfterStop ??= release
     }
-    this.host.trace("mesh.stop")
-    this.clearWait()
-    this.abortController?.abort()
-    this.abortController = undefined
-    this.host.retryChanged()
+    if (this.stopTask) return this.stopTask
+    const operation = this.performStop()
+    let tracked!: Promise<void>
+    tracked = operation.finally(() => {
+      if (this.stopTask !== tracked) return
+      this.stopTask = undefined
+      this.releaseAfterStop = undefined
+      this.releaseRequested = false
+    })
+    this.stopTask = tracked
+    return tracked
+  }
+
+  private async performStop(): Promise<void> {
+    const shouldShutdown = this.state.stop()
     try {
-      await this.host.shutdown()
-      await this.task?.catch(() => {})
-      this.task = undefined
-      await this.host.shutdown()
-      if (releaseInstance) await release?.()
-    } finally { this.state.finishStop() }
+      if (shouldShutdown) {
+        this.host.trace("mesh.stop")
+        this.clearWait()
+        this.abortController?.abort()
+        this.abortController = undefined
+        this.host.retryChanged()
+        await this.shutdownAfterRun()
+        await this.task?.catch(() => {})
+        this.task = undefined
+        await this.shutdownAfterRun()
+      } else {
+        await this.acquisitionTask?.catch(() => {})
+      }
+      if (this.releaseRequested) {
+        this.releaseRequested = false
+        await this.releaseAfterStop?.()
+      }
+    } finally { if (shouldShutdown) this.state.finishStop() }
   }
 
   async pause(release?: () => Promise<void>): Promise<void> {
@@ -98,13 +133,25 @@ export class BrowserMeshLifecycle {
   private async run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
-        await this.host.runOnce(signal)
+        await this.host.notify()
+        if (!signal.aborted) await this.host.runOnce(signal)
       } catch (error) {
         if (!signal.aborted) this.host.reportRestart(error)
       } finally {
-        await this.host.shutdown()
+        await this.shutdownAfterRun(signal)
       }
       if (!signal.aborted) await this.wait(1_000, signal)
+    }
+  }
+
+  private async shutdownAfterRun(signal?: AbortSignal): Promise<void> {
+    // A failed cleanup must neither kill the supervisor nor start a second
+    // node over resources which the host has not finished releasing.
+    while (true) {
+      try { await this.host.shutdown(); return }
+      catch (error) { this.host.reportRestart(error) }
+      if (!signal || signal.aborted) return
+      await this.wait(1_000, signal)
     }
   }
 

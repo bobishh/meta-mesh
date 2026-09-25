@@ -19,11 +19,11 @@ TLC metadata and counterexample traces are created under temporary directories.
 
 `check.sh` exports TLC DOT graphs with action labels, converts their values to
 JSON without implementing protocol decisions, and runs Rust conformance tests.
-The authority, delivery, and compact session-generation checks replay every
-model edge after a shortest initial-to-source trace. Session callbacks also have
-a bounded worklist explorer that starts from an empty real Rust state, executes
-every enabled event from every distinct reachable concrete state, and matches
-each effect to a labeled `SessionImplementationStates` transition. Implementation
+The compact delivery and session-generation checks replay every model edge
+after a shortest initial-to-source trace. Authority, delivery-flow, and session
+callbacks also have bounded worklist explorers that start from real Rust initial
+state, execute every enabled event from every distinct reachable concrete state,
+and match each effect to a labeled model transition. Implementation
 state is built by API calls, never by injecting the model's expected state.
 Failures include the action trace and model edge.
 
@@ -54,7 +54,9 @@ Failures include the action trace and model edge.
   `decide_workspace_access` with signed grant/revocation/transfer fixtures. It
   compares access, epochs, retained history, selected owner, and conflicts.
   Three possible owners, one separate member, and two transfer/access epochs
-  bound the graph. Model epoch 0 is Rust genesis epoch 1; nonzero model epochs
+  bound the graph. A worklist retains distinct concrete credential, grant,
+  revocation, ownership-history, and host-applied plan states even when their
+  authority projection is equal. Model epoch 0 is Rust genesis epoch 1; nonzero model epochs
   are translated by +1. Returned ownership steps drive harness state; intended
   successor inputs do not stand in for Rust's returned decisions.
 
@@ -65,8 +67,9 @@ inputs fail rather than silently skip. The CI job runs that exact command.
 `check_rust_mutations.py` copies the actual crates into a temporary workspace and
 mutates production Rust (not the model). Each mutated implementation must fail a
 conformance assertion; a compilation error or successful test is a failed check.
-The probes cover incomplete ACK acceptance, stale cleanup in runtime and
-lifecycle, tab-key aliasing, revoked-epoch access, and ignored ownership conflict.
+The probes cover incomplete ACK acceptance, stale route results completing a
+new delivery round, stale cleanup in runtime and lifecycle, tab-key aliasing,
+revoked-epoch access, and ignored ownership conflict.
 Each mutated build uses its own Cargo target directory so neither the production
 build cache nor another mutant can satisfy it. The working tree is never mutated.
 The substitutions are exact and fail if their source targets change, so obsolete
@@ -75,21 +78,26 @@ mutation probes cannot quietly disappear.
 This is bounded model-based conformance testing, **not** an unbounded refinement
 proof. The callback explorer retains concrete states even when their session
 projection is equal, but only within its explicit keys, generations, events, and
-clock samples. The other edge-replay checks still use one representative shortest
-prefix. Adapters, cryptography, persistence, and host scheduling remain explicit
-review and testing boundaries.
+clock samples. The compact edge-replay checks still use one representative
+shortest prefix; the concrete worklists supplement them. Cryptography and host
+scheduling remain review boundaries; adapter and persistence tests below cover
+specific failure scenarios rather than all external behavior.
 
 ## Bounds and checked results
 
 The checked configurations are exhaustive only within these finite bounds.
-Results below are from TLC 1.8.0 on 2026-09-25.
+Results below use the pinned v1.8.0 release asset (TLC build
+2026.09.25.020137) on 2026-09-25. The checksum matches the official
+GitHub release asset digest; a changed upstream asset fails closed.
 
 | Model | Bound | Result |
 | --- | --- | --- |
 | `AuthorityEpochs` | two replicas, two people, epochs 0 through 2 | 663,553 generated / 36,864 distinct states, depth 17; passed |
-| `AuthorityConformance` | three owners, one member, epochs 0 through 2 | 300 states / 1,608 labeled edges replayed against signed Rust APIs |
+| `AuthorityConformance` | three owners, one member, epochs 0 through 2 | 300 model states; 3,774 concrete Rust states / 21,250 enabled edges through signed Rust APIs |
 | `SessionGenerations` | two browser instances on one device, generations 1 through 3 | 71 generated / 45 distinct states, depth 6; passed |
 | `SessionImplementationStates` | two instances on one device, three global generations, callback clocks before and at stability | 525,891 generated / 28,849 distinct model states, depth 14; 14,425 concrete Rust states / 262,946 enabled edges explored |
+| `DeliveryImplementationStates` | two routes, one retry, old/current/future callbacks and invalid route index | 234 model states; 62 concrete Rust states / 1,551 enabled edges |
+| `DeliveryImplementationStates` recovery configuration | start after failed first round; one retry available; eventually handled successful routes | 23 states; eventual completion passed under weak fairness |
 | `DurableDelivery` | one two-hash batch, every persistence and ACK subset | 113 generated / 26 distinct states, depth 7; safety and liveness passed |
 
 Every negative control must fail `Safety`; an unexpected pass fails the script:
@@ -183,10 +191,54 @@ eventually processed. Safety does not depend on those assumptions. Offline
 forever, a permanently failed disk, or a permanently lost ACK is allowed to
 remain pending.
 
+## Delivery flow and reconnect recovery
+
+The concrete delivery explorer exercises `MeshBatchDeliveryFlow` with late,
+duplicate, and out-of-range callbacks, route rejection, retry/fallback timers,
+and abort. Its structural key includes all private flow fields, failure and
+attempt ordering, and exact floating-point configuration bits. It compares both
+returned host actions and state against `DeliveryImplementationStates`.
+
+The recovery configuration starts in a reachable waiting-for-retry state.
+Failures stop, a retry remains available, and timer/success handling is weakly
+fair. TLC checks eventual completion under those conditions. This is not a
+promise to recover after the flow has exhausted its finite retry budget; an
+outer supervisor must start new work then.
+
+`packages/mesh-runtime/src/browserLifecycle.test.ts` exercises the production
+browser supervisor and WASM lifecycle state with controlled host failures and
+actual timer scheduling under a fake clock. Cases include rejected startup
+notification, failed node runs, failed cleanup, stale async starts crossing
+stop/start, pending instance acquisition, concurrent stops, and explicit stop. The failure matrix uses 1/2/4 failed runs,
+0/2 failed cleanups, and 0/1 failed notifications before recovery. It checks
+that cleanup finishes before another run, eventual progress after those finite
+failures, and no resurrection after stop. These are executable bounded tests,
+not a proof of every JavaScript schedule.
+
+Match's `e2e/durable-mesh.spec.ts` additionally pairs real Chromium contexts,
+goes offline, verifies that the Iroh session closes, persists edits in IndexedDB,
+returns online, and verifies a new session and bidirectional convergence without
+reload or re-pairing. Identity and roles must remain unchanged. This scenario
+keeps the transport node alive; unexpected whole-node restart is covered by the
+adapter tests, not that browser test. Match regenerates sync frames from its
+persisted Automerge state; this is not evidence of a separate browser outbox.
+
+Native persistence tests inject failure after temporary-file `sync_all` and
+before rename, reopen the store, verify the previous committed bytes remain,
+and retry successfully. A peer receive test verifies no saved receipt is emitted
+on failed host persistence and replay succeeds after recovery. These tests do
+not simulate power loss, dishonesty, or a filesystem violating `fsync` semantics.
+
+Connection liveness requires that the peer and network eventually become
+reachable, authorization remains valid, the host schedules timers, and transport
+operations eventually complete or fail. An indefinitely suspended tab, a hung
+transport operation, or permanent network loss does not satisfy those premises.
+
 ## Limits
 
 Model checking checks the TLA+ transition systems within the listed bounds.
 The executable conformance tests couple the selected Rust APIs to freshly
 generated model transitions. They are not an unbounded refinement proof, and
-do not cover TypeScript, IndexedDB, filesystem crash behavior, or WASM bindings.
-No runtime source or WASM artifact is changed by the conformance harness.
+do not establish unbounded correctness of TypeScript, IndexedDB, transport,
+filesystem crash behavior, or WASM bindings. Separate executable tests exercise
+the particular adapter and persistence cases described above.

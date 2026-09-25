@@ -195,6 +195,7 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
 #[cfg(test)]
 mod tests {
     use automerge::{AutoCommit, ROOT, transaction::Transactable};
+    use meta_mesh_core::LiveWorkspaceSession;
 
     use super::*;
 
@@ -202,6 +203,8 @@ mod tests {
         document: Vec<u8>,
         fail_persist: bool,
         persisted: usize,
+        fail_saved: bool,
+        saved: usize,
     }
 
     impl NativeScopeHost for Host {
@@ -238,6 +241,10 @@ mod tests {
             Ok(())
         }
         fn merge_durable_batch(&mut self, _: &[u8]) -> Result<(), String> {
+            if self.fail_saved {
+                return Err("durable store unavailable".into());
+            }
+            self.saved += 1;
             Ok(())
         }
         fn merge_owner_offer(&mut self, _: &[u8]) -> Result<(), String> {
@@ -273,6 +280,8 @@ mod tests {
                 document: baseline.clone(),
                 fail_persist: true,
                 persisted: 0,
+                fail_saved: false,
+                saved: 0,
             },
         )
         .unwrap();
@@ -285,5 +294,42 @@ mod tests {
         assert!(response.is_some());
         assert_eq!(receiver.host().persisted, 1);
         AutoCommit::load(&receiver.host().document).unwrap();
+    }
+
+    #[test]
+    fn durable_batch_ack_is_emitted_only_after_storage_succeeds() {
+        let payload = b"durable batch";
+        let sender = LiveWorkspaceSession::new("board", "secret").unwrap();
+        let frame = sender.encode("mesh-durable-batch", payload).unwrap();
+        let mut receiver = NativeScopePeer::new(
+            "board",
+            "secret",
+            "receiver",
+            "source",
+            Host {
+                document: AutoCommit::new().save(),
+                fail_persist: false,
+                persisted: 0,
+                fail_saved: true,
+                saved: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            receiver.receive(&frame),
+            Err("durable store unavailable".into())
+        );
+        assert_eq!(receiver.host().saved, 0);
+
+        receiver.host_mut().fail_saved = false;
+        let acknowledgement = receiver
+            .receive(&frame)
+            .unwrap()
+            .expect("ACK after durable storage");
+        assert_eq!(receiver.host().saved, 1);
+        sender
+            .verify_saved_receipt(&acknowledgement, payload)
+            .unwrap();
     }
 }

@@ -1,7 +1,9 @@
+#[allow(dead_code)]
 #[path = "support/tlc_graph.rs"]
 mod tlc_graph;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use automerge::{AutoCommit, transaction::Transactable};
@@ -66,6 +68,7 @@ impl IdentityFixture {
     }
 }
 
+#[derive(Clone)]
 struct AuthorityHarness {
     identities: BTreeMap<&'static str, IdentityFixture>,
     member: IdentityFixture,
@@ -78,7 +81,82 @@ struct AuthorityHarness {
     owner_epoch: u64,
     owner_history: Vec<&'static str>,
     ownership_records: Vec<WorkspaceOwnershipTransfer>,
-    replayed_history: bool,
+    host_plans: HostApplicablePlanData,
+}
+
+/// Plan data that a host has actually applied or acted upon. These fields are
+/// part of the concrete key: two protocol states are not merged merely because
+/// their TLA+ authority projection is equal.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+struct HostApplicablePlanData {
+    changed_peers: BTreeMap<String, Value>,
+    evicted_device_ids: BTreeSet<String>,
+    evicted_person_ids: BTreeSet<String>,
+    local_access_revoked: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct ConcreteAuthorityKey {
+    credential: Value,
+    grant: Option<WorkspaceGrant>,
+    revocations: Vec<WorkspaceRevocation>,
+    owner_name: &'static str,
+    owner_epoch: u64,
+    owner_history: Vec<&'static str>,
+    ownership_records: Vec<WorkspaceOwnershipTransfer>,
+    host_plans: HostApplicablePlanData,
+}
+
+#[derive(Clone, Debug)]
+enum ExplorerAction {
+    Grant(u64),
+    Revoke(u64),
+    Transfer(&'static str),
+    Fork(&'static str),
+    ReplayOwnershipHistory,
+}
+
+impl ExplorerAction {
+    fn label(&self) -> String {
+        match self {
+            Self::Grant(epoch) => format!("Grant({epoch})"),
+            Self::Revoke(epoch) => format!("Revoke({epoch})"),
+            Self::Transfer(owner) => format!("Transfer({owner})"),
+            Self::Fork(owner) => format!("Fork({owner})"),
+            Self::ReplayOwnershipHistory => "ReplayOwnershipHistory".into(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ExplorerNode {
+    harness: AuthorityHarness,
+    model_state: String,
+    trace: Vec<String>,
+}
+
+#[derive(Default)]
+struct ExplorationEvidence {
+    persisted_grants: usize,
+    ignored_grants: usize,
+    revocation_mutations: usize,
+    blocked_grants: usize,
+    reinvites: usize,
+    ownership_adoptions: usize,
+    delayed_history_replays: usize,
+    conflicts: usize,
+}
+
+#[derive(Default)]
+struct ActionEvidence {
+    grant_persisted: bool,
+    grant_ignored: bool,
+    revocations_changed: bool,
+    access_before: Option<WorkspaceRole>,
+    access_after: Option<WorkspaceRole>,
+    ownership_adoptions: usize,
+    delayed_history_replay: bool,
+    conflict: bool,
 }
 
 impl AuthorityHarness {
@@ -124,23 +202,62 @@ impl AuthorityHarness {
             owner_epoch: 1,
             owner_history: vec![],
             ownership_records: vec![],
-            replayed_history: false,
+            host_plans: HostApplicablePlanData::default(),
         }
     }
 
-    fn apply(&mut self, label: &str) {
-        let (name, args) = action(label);
-        match (name, args.as_slice()) {
-            ("Grant", [epoch]) => self.grant(epoch.parse().unwrap()),
-            ("Revoke", [epoch]) => self.revoke(epoch.parse().unwrap()),
-            ("Transfer", [next]) => self.transfer(person_name(next)),
-            ("Fork", [alternate]) => self.fork(person_name(alternate)),
-            ("ReplayOwnershipHistory", []) => self.replay_ownership_history(),
-            _ => panic!("unsupported authority action {label}"),
-        }
+    fn apply(&mut self, action: &ExplorerAction) -> ActionEvidence {
+        let access_before = self.access_role();
+        let mut evidence = match action {
+            ExplorerAction::Grant(epoch) => self.grant(*epoch),
+            ExplorerAction::Revoke(epoch) => self.revoke(*epoch),
+            ExplorerAction::Transfer(next) => self.transfer(next),
+            ExplorerAction::Fork(alternate) => self.fork(alternate),
+            ExplorerAction::ReplayOwnershipHistory => self.replay_ownership_history(),
+        };
+        evidence.access_before = access_before;
+        evidence.access_after = self.access_role();
+        evidence
     }
 
-    fn grant(&mut self, model_epoch: u64) {
+    fn enabled_actions(&self) -> Vec<ExplorerAction> {
+        let mut actions = vec![
+            ExplorerAction::Grant(1),
+            ExplorerAction::Grant(2),
+            ExplorerAction::Revoke(1),
+            ExplorerAction::Revoke(2),
+        ];
+        if !self.actual_conflicted() && model_epoch(self.owner_epoch) < 2 {
+            for owner in ["alice", "bob", "carol"] {
+                if owner != self.owner_name {
+                    actions.push(ExplorerAction::Transfer(owner));
+                }
+            }
+        }
+        if !self.actual_conflicted() && self.owner_epoch > 1 {
+            let accepted = self
+                .ownership_records
+                .iter()
+                .find(|record| {
+                    record.payload.epoch == self.owner_epoch
+                        && record.payload.to_owner_person_id
+                            == self.identities[self.owner_name].authority.person_id
+                })
+                .expect("current owner must have its accepted transfer");
+            let previous = self.name_for_person(&accepted.payload.from_owner_person_id);
+            for owner in ["alice", "bob", "carol"] {
+                if owner != previous && owner != self.owner_name {
+                    actions.push(ExplorerAction::Fork(owner));
+                }
+            }
+        }
+        if !self.ownership_records.is_empty() {
+            actions.push(ExplorerAction::ReplayOwnershipHistory);
+        }
+        actions
+    }
+
+    fn grant(&mut self, model_epoch: u64) -> ActionEvidence {
         let owner = &self.identities[self.owner_name];
         let payload = WorkspaceGrantPayload {
             kind: "workspace-grant".into(),
@@ -160,6 +277,7 @@ impl AuthorityHarness {
             updated_at: "1970-01-01T00:00:00.000Z".into(),
         })
         .unwrap();
+        let persisted = plan.credential.is_some();
         if let Some(credential) = plan.credential {
             self.credential = credential;
         }
@@ -170,9 +288,17 @@ impl AuthorityHarness {
             .map(serde_json::from_value)
             .transpose()
             .unwrap();
+        if self.access_role() == Some(WorkspaceRole::Editor) {
+            self.host_plans.local_access_revoked = false;
+        }
+        ActionEvidence {
+            grant_persisted: persisted,
+            grant_ignored: !persisted,
+            ..ActionEvidence::default()
+        }
     }
 
-    fn revoke(&mut self, model_epoch: u64) {
+    fn revoke(&mut self, model_epoch: u64) -> ActionEvidence {
         let owner = &self.identities[self.owner_name];
         let payload = WorkspaceRevocationPayload {
             kind: "workspace-revocation".into(),
@@ -185,6 +311,7 @@ impl AuthorityHarness {
             revoked_at: "1970-01-01T00:00:00.000Z".into(),
         };
         let revocation = signed(&owner.root_seed, &owner.authority.person_id, payload);
+        let previous_revocations = self.revocations.clone();
         let plan = plan_authority_merge(AuthorityMergeInput {
             credential: self.credential.clone(),
             peers: vec![],
@@ -196,6 +323,18 @@ impl AuthorityHarness {
             },
         })
         .unwrap();
+        for peer in &plan.peers {
+            self.host_plans
+                .changed_peers
+                .insert(peer.device_id.clone(), serde_json::to_value(peer).unwrap());
+        }
+        self.host_plans
+            .evicted_device_ids
+            .extend(plan.evict_device_ids.iter().cloned());
+        self.host_plans
+            .evicted_person_ids
+            .extend(plan.evict_person_ids.iter().cloned());
+        self.host_plans.local_access_revoked = plan.local_access_revoked;
         self.credential = plan.credential;
         self.revocations = serde_json::from_value(
             self.credential
@@ -204,18 +343,26 @@ impl AuthorityHarness {
                 .unwrap(),
         )
         .unwrap();
+        ActionEvidence {
+            revocations_changed: self.revocations != previous_revocations,
+            ..ActionEvidence::default()
+        }
     }
 
-    fn transfer(&mut self, next_name: &'static str) {
+    fn transfer(&mut self, next_name: &'static str) -> ActionEvidence {
         let record = self.signed_transfer(self.owner_name, next_name, self.owner_epoch + 1);
         let plan = self.merge_ownership(record);
         assert!(!plan.conflicted, "normal transfer unexpectedly conflicted");
         assert_eq!(plan.steps.len(), 1, "normal transfer was not selected");
+        let ownership_adoptions = plan.steps.len();
         self.apply_ownership_plan(plan);
-        self.replayed_history = false;
+        ActionEvidence {
+            ownership_adoptions,
+            ..ActionEvidence::default()
+        }
     }
 
-    fn fork(&mut self, alternate_name: &'static str) {
+    fn fork(&mut self, alternate_name: &'static str) -> ActionEvidence {
         let accepted = self
             .ownership_records
             .iter()
@@ -237,10 +384,13 @@ impl AuthorityHarness {
             "conflict must stall authority adoption"
         );
         self.apply_ownership_plan(plan);
-        self.replayed_history = false;
+        ActionEvidence {
+            conflict: true,
+            ..ActionEvidence::default()
+        }
     }
 
-    fn replay_ownership_history(&mut self) {
+    fn replay_ownership_history(&mut self) -> ActionEvidence {
         let record = self
             .ownership_records
             .first()
@@ -249,8 +399,15 @@ impl AuthorityHarness {
         let previous_conflict = self.actual_conflicted();
         let plan = self.merge_ownership(record);
         assert_eq!(plan.conflicted, previous_conflict);
+        assert!(
+            plan.steps.is_empty(),
+            "old ownership history was adopted twice"
+        );
         self.apply_ownership_plan(plan);
-        self.replayed_history = true;
+        ActionEvidence {
+            delayed_history_replay: true,
+            ..ActionEvidence::default()
+        }
     }
 
     fn apply_ownership_plan(&mut self, plan: meta_mesh_core::OwnershipMergePlan) {
@@ -262,6 +419,22 @@ impl AuthorityHarness {
         }
         self.ownership_records = plan.accepted;
         self.sync_credential_authority();
+    }
+
+    fn concrete_key(&self) -> ConcreteAuthorityKey {
+        // Identities, document bytes, and workspace heads are immutable signed
+        // fixtures shared by every node; every mutable protocol and host field
+        // is retained structurally below.
+        ConcreteAuthorityKey {
+            credential: canonical_json(self.credential.clone()),
+            grant: self.grant.clone(),
+            revocations: self.revocations.clone(),
+            owner_name: self.owner_name,
+            owner_epoch: self.owner_epoch,
+            owner_history: self.owner_history.clone(),
+            ownership_records: self.ownership_records.clone(),
+            host_plans: self.host_plans.clone(),
+        }
     }
 
     fn merge_ownership(
@@ -406,13 +579,26 @@ impl AuthorityHarness {
             owner_history(state),
             "owner history after {action}"
         );
-        assert_eq!(
-            self.replayed_history,
-            boolean(state, "replayedHistory"),
-            "history replay after {action}"
-        );
+        let decision = self.access_decision();
+        if boolean(state, "conflicted") {
+            assert!(
+                decision
+                    .unwrap_err()
+                    .contains("Conflicting workspace ownership transitions"),
+                "conflicted authority was usable after {action}"
+            );
+        } else {
+            let expected = if boolean(state, "access") {
+                WorkspaceRole::Editor
+            } else {
+                WorkspaceRole::Visitor
+            };
+            assert_eq!(decision.unwrap(), expected, "access after {action}");
+        }
+    }
 
-        let decision = decide_workspace_access(
+    fn access_decision(&self) -> Result<WorkspaceRole, String> {
+        decide_workspace_access(
             &WorkspaceAccessDecisionInput {
                 snapshot: WorkspaceWriteAuthorizationSnapshot {
                     workspace_id: WORKSPACE_ID.into(),
@@ -433,22 +619,11 @@ impl AuthorityHarness {
                 legacy_authority_evidence: vec![],
             },
             i128::from(NOW_MS),
-        );
-        if boolean(state, "conflicted") {
-            assert!(
-                decision
-                    .unwrap_err()
-                    .contains("Conflicting workspace ownership transitions"),
-                "conflicted authority was usable after {action}"
-            );
-        } else {
-            let expected = if boolean(state, "access") {
-                WorkspaceRole::Editor
-            } else {
-                WorkspaceRole::Visitor
-            };
-            assert_eq!(decision.unwrap(), expected, "access after {action}");
-        }
+        )
+    }
+
+    fn access_role(&self) -> Option<WorkspaceRole> {
+        self.access_decision().ok()
     }
 
     fn actual_conflicted(&self) -> bool {
@@ -504,31 +679,125 @@ impl AuthorityHarness {
 #[ignore = "requires freshly generated TLC graph; executed by formal/check.sh"]
 fn tlc_authority_graph_refines_signed_rust_transitions() {
     let graph = Graph::load("MESH_TLC_AUTHORITY_GRAPH");
-    let mut exercised = BTreeSet::new();
-    for trace in graph.traces() {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let mut harness = AuthorityHarness::new();
-            for edge in &trace {
-                harness.apply(&edge.action);
-                harness.assert_matches(&graph.states[&edge.to], &edge.action);
-                exercised.insert(action(&edge.action).0.to_string());
-            }
-        }));
-        if let Err(error) = result {
-            let message = error
-                .downcast_ref::<String>()
-                .map(String::as_str)
-                .or_else(|| error.downcast_ref::<&str>().copied())
-                .unwrap_or("non-string panic");
-            let actions = trace
-                .iter()
-                .map(|edge| edge.action.as_str())
-                .collect::<Vec<_>>();
-            let final_edge = trace.last().unwrap();
-            panic!(
-                "authority conformance failed: {message}\ntrace: {actions:?}\nedge: {final_edge:?}\ntarget: {}",
-                graph.states[&final_edge.to]
+    let mut transitions = BTreeMap::new();
+    for edge in &graph.edges {
+        let key = (edge.from.clone(), normalized_action(&edge.action));
+        if let Some(previous) = transitions.insert(key, edge.to.clone()) {
+            assert_eq!(
+                previous, edge.to,
+                "nondeterministic AuthorityConformance edge for one labeled action"
             );
+        }
+    }
+
+    let initial = AuthorityHarness::new();
+    initial.assert_matches(&graph.states[&graph.initial], "Init");
+    let initial_key = initial.concrete_key();
+    let initial_fingerprint = concrete_fingerprint(&initial_key);
+    let mut keys = vec![initial_key];
+    let mut model_states = vec![graph.initial.clone()];
+    let mut states_by_fingerprint = HashMap::from([(initial_fingerprint, vec![0usize])]);
+    let mut queue = VecDeque::from([ExplorerNode {
+        harness: initial,
+        model_state: graph.initial.clone(),
+        trace: Vec::new(),
+    }]);
+    let mut exercised = BTreeSet::new();
+    let mut explored_edges = 0usize;
+    let mut explored_states = 0usize;
+    let mut evidence = ExplorationEvidence::default();
+
+    while let Some(node) = queue.pop_front() {
+        explored_states += 1;
+        if explored_states % 500 == 0 {
+            println!(
+                "Rust authority progress: {explored_states} states processed, {} unique, {} queued, {explored_edges} edges",
+                keys.len(),
+                queue.len()
+            );
+        }
+        for explorer_action in node.harness.enabled_actions() {
+            let label = explorer_action.label();
+            let mut trace = node.trace.clone();
+            trace.push(label.clone());
+            let target_id = transitions
+                .get(&(node.model_state.clone(), normalized_action(&label)))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unmapped concrete authority action {label}; trace={trace:?}; source={}",
+                        graph.states[&node.model_state]
+                    )
+                })
+                .clone();
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let mut harness = node.harness.clone();
+                let action_evidence = harness.apply(&explorer_action);
+                harness.assert_matches(&graph.states[&target_id], &label);
+                (harness, action_evidence)
+            }));
+            let (target, action_evidence) = result.unwrap_or_else(|error| {
+                let message = error
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| error.downcast_ref::<&str>().copied())
+                    .unwrap_or("non-string panic");
+                panic!(
+                    "authority conformance failed: {message}\ntrace: {trace:?}\ntarget: {}",
+                    graph.states[&target_id]
+                );
+            });
+
+            exercised.insert(action(&label).0.to_string());
+            explored_edges += 1;
+            evidence.persisted_grants += usize::from(action_evidence.grant_persisted);
+            evidence.ignored_grants += usize::from(action_evidence.grant_ignored);
+            evidence.revocation_mutations += usize::from(action_evidence.revocations_changed);
+            evidence.ownership_adoptions += action_evidence.ownership_adoptions;
+            evidence.delayed_history_replays += usize::from(action_evidence.delayed_history_replay);
+            evidence.conflicts += usize::from(action_evidence.conflict);
+            if matches!(explorer_action, ExplorerAction::Grant(_)) {
+                if action_evidence.access_before == Some(WorkspaceRole::Visitor)
+                    && action_evidence.access_after == Some(WorkspaceRole::Visitor)
+                    && action_evidence.grant_persisted
+                {
+                    evidence.blocked_grants += 1;
+                }
+                if action_evidence.access_before == Some(WorkspaceRole::Visitor)
+                    && action_evidence.access_after == Some(WorkspaceRole::Editor)
+                {
+                    evidence.reinvites += 1;
+                }
+            }
+
+            let key = target.concrete_key();
+            let fingerprint = concrete_fingerprint(&key);
+            let known_index = states_by_fingerprint
+                .get(&fingerprint)
+                .and_then(|indices| indices.iter().copied().find(|index| keys[*index] == key));
+            if let Some(index) = known_index {
+                // replayedHistory only bounds repetition of the model's delayed
+                // input. It is TLC instrumentation, not Rust authority state,
+                // and is the sole field ignored when a concrete state recurs.
+                let previous = authority_projection(&graph.states[&model_states[index]]);
+                let candidate = authority_projection(&graph.states[&target_id]);
+                assert_eq!(
+                    previous, candidate,
+                    "one concrete authority state has incompatible abstractions; trace={trace:?}"
+                );
+            } else {
+                let index = keys.len();
+                keys.push(key);
+                model_states.push(target_id.clone());
+                states_by_fingerprint
+                    .entry(fingerprint)
+                    .or_default()
+                    .push(index);
+                queue.push_back(ExplorerNode {
+                    harness: target,
+                    model_state: target_id,
+                    trace,
+                });
+            }
         }
     }
     assert_eq!(
@@ -541,11 +810,86 @@ fn tlc_authority_graph_refines_signed_rust_transitions() {
             "Transfer".into(),
         ])
     );
+    assert!(evidence.persisted_grants > 0, "no grant plan was applied");
+    assert!(evidence.ignored_grants > 0, "no delayed grant was ignored");
+    assert!(
+        evidence.revocation_mutations > 0,
+        "no signed revocation mutated authority state"
+    );
+    assert!(
+        evidence.blocked_grants > 0,
+        "no old grant remained blocked by a revocation"
+    );
+    assert!(
+        evidence.reinvites > 0,
+        "no strictly newer reinvite restored access"
+    );
+    assert!(
+        evidence.ownership_adoptions > 0,
+        "no ownership plan step mutated authority state"
+    );
+    assert!(
+        evidence.delayed_history_replays > 0,
+        "no delayed ownership history was exercised"
+    );
+    assert!(
+        evidence.conflicts > 0,
+        "no conflicting ownership plan was returned"
+    );
     println!(
-        "Rust authority: {} TLC states, {} edges replayed",
+        "Rust authority exploration: {} unique concrete states, {} enabled edges; {} persisted grants, {} revocation mutations, {} blocked old grants, {} reinvites, {} ownership adoptions, {} delayed history replays, {} conflicts ({} TLC states, {} TLC edges)",
+        keys.len(),
+        explored_edges,
+        evidence.persisted_grants,
+        evidence.revocation_mutations,
+        evidence.blocked_grants,
+        evidence.reinvites,
+        evidence.ownership_adoptions,
+        evidence.delayed_history_replays,
+        evidence.conflicts,
         graph.states.len(),
         graph.edges.len()
     );
+}
+
+fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| (key, canonical_json(value)))
+                .collect::<BTreeMap<_, _>>()
+                .into_iter()
+                .collect(),
+        ),
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(canonical_json).collect::<Vec<_>>())
+        }
+        scalar => scalar,
+    }
+}
+
+fn concrete_fingerprint(key: &ConcreteAuthorityKey) -> u64 {
+    // JSON object member order has no protocol meaning. Canonicalizing only
+    // object keys makes the fingerprint stable while preserving array order;
+    // structural equality below still resolves any hash collision.
+    let canonical = canonical_json(serde_json::to_value(key).unwrap());
+    let mut hasher = DefaultHasher::new();
+    serde_json::to_string(&canonical).unwrap().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn normalized_action(label: &str) -> String {
+    label.split_whitespace().collect()
+}
+
+fn authority_projection(state: &Value) -> Value {
+    let mut state = state.clone();
+    state
+        .as_object_mut()
+        .expect("TLC authority state")
+        .remove("replayedHistory");
+    state
 }
 
 fn signed<T>(seed: &[u8; 32], signer_key_id: &str, payload: T) -> SignedEnvelope<T>
@@ -573,15 +917,6 @@ fn runtime_epoch(model_epoch: u64) -> u64 {
 
 fn model_epoch(runtime_epoch: u64) -> u64 {
     runtime_epoch - 1
-}
-
-fn person_name(value: &str) -> &'static str {
-    match value {
-        "alice" => "alice",
-        "bob" => "bob",
-        "carol" => "carol",
-        _ => panic!("unknown TLA+ person {value}"),
-    }
 }
 
 fn field<'a>(state: &'a Value, name: &str) -> &'a Value {
