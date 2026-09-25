@@ -2083,6 +2083,7 @@ dependencies = [
  "iroh-blobs",
  "iroh-gossip",
  "meta-mesh-core",
+ "serde_json",
  "tokio",
 ]
 

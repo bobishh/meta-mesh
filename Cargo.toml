@@ -7,5 +7,6 @@ exclude = [
   "crates/meta-mesh-native",
   "crates/meta-mesh-mobile",
   "tools/uniffi-bindgen",
+  "vendor/iroh-webrtc-transport",
 ]
 resolver = "3"

@@ -822,19 +822,6 @@ impl MobileMeshRuntime {
         self.with_state(|state| Ok(state.connected_devices(&workspace_id).into_iter().collect()))
     }
 
-    pub fn set_gossip_endpoints_json(
-        &self,
-        workspace_id: String,
-        endpoints: Vec<String>,
-    ) -> Result<String, MobileMeshError> {
-        let topology = self.with_state(|state| Ok(state.set_gossip_endpoints(workspace_id, endpoints)))?;
-        to_json(&topology)
-    }
-
-    pub fn clear_gossip(&self, workspace_id: String) -> Result<(), MobileMeshError> {
-        self.with_state(|state| { state.clear_gossip(&workspace_id); Ok(()) })
-    }
-
     pub fn plan_dial_json(
         &self,
         peer_key: String,
@@ -1629,7 +1616,7 @@ mod tests {
     }
 
     #[test]
-    fn mobile_runtime_matches_browser_route_reconnect_gossip_and_relay_decisions() {
+    fn mobile_runtime_matches_browser_route_reconnect_and_relay_decisions() {
         let runtime = MobileMeshRuntime::new();
         let first: meta_mesh_core::RouteAttempt = from_json(&runtime.begin_route_attempt_json("peer".into(), 10).unwrap()).unwrap();
         let second: meta_mesh_core::RouteAttempt = from_json(&runtime.begin_route_attempt_json("peer".into(), 11).unwrap()).unwrap();
@@ -1646,16 +1633,6 @@ mod tests {
         assert!(runtime.reconnect_state_json("peer".into()).unwrap().is_some());
         runtime.clear_reconnects_with_prefix("pe".into()).unwrap();
         assert!(runtime.reconnect_state_json("peer".into()).unwrap().is_none());
-
-        let topology: meta_mesh_core::GossipTopology = from_json(&runtime.set_gossip_endpoints_json(
-            "workspace".into(), vec!["b".into(), "a".into(), "a".into()],
-        ).unwrap()).unwrap();
-        assert_eq!(topology.endpoints, vec!["a", "b"]);
-        assert!(topology.changed);
-        let unchanged: meta_mesh_core::GossipTopology = from_json(&runtime.set_gossip_endpoints_json(
-            "workspace".into(), vec!["a".into(), "b".into()],
-        ).unwrap()).unwrap();
-        assert!(!unchanged.changed);
 
         let direct: meta_mesh_core::DialPlan = from_json(&runtime.plan_dial_json("peer".into(), true, 100).unwrap()).unwrap();
         assert_eq!(direct.mode, DialMode::Direct);

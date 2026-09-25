@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 uniffi = { version = "0.32.1", features = ["cli"] }
+
+[workspace]

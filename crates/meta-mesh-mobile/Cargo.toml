@@ -20,3 +20,5 @@ uniffi = { version = "0.32.1", default-features = false }
 
 [dev-dependencies]
 automerge = "0.12"
+
+[workspace]

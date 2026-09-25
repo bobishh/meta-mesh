@@ -1832,8 +1832,6 @@ dependencies = [
 [[package]]
 name = "iroh-webrtc-transport"
 version = "0.1.0-alpha.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acdc23ee2c0c67cdff4d5a1544eb472c96460c0948ca436dcb41b9cadc973aac"
 dependencies = [
  "anyhow",
  "blake3",

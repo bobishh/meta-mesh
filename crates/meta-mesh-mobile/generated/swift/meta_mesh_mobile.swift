@@ -1854,8 +1854,6 @@ public protocol MobileMeshRuntimeProtocol: AnyObject, Sendable {
 
     func beginRouteAttemptJson(routeKey: String, nowMs: UInt64) throws  -> String
 
-    func clearGossip(workspaceId: String) throws
-
     func clearReconnect(routeKey: String) throws
 
     func clearReconnectsWithPrefix(prefix: String) throws
@@ -1889,8 +1887,6 @@ public protocol MobileMeshRuntimeProtocol: AnyObject, Sendable {
     func scheduleReconnectJson(routeKey: String, nowMs: UInt64, baseDelayMs: UInt64, maximumDelayMs: UInt64) throws  -> String
 
     func sessionsJson() throws  -> String
-
-    func setGossipEndpointsJson(workspaceId: String, endpoints: [String]) throws  -> String
 
     func start() throws
 
@@ -1978,15 +1974,6 @@ open func beginRouteAttemptJson(routeKey: String, nowMs: UInt64)throws  -> Strin
         FfiConverterUInt64.lower(nowMs),uniffiCallStatus
     )
 })
-}
-
-open func clearGossip(workspaceId: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
-        uniffiCallStatus in
-    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_gossip(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(workspaceId),uniffiCallStatus
-    )
-}
 }
 
 open func clearReconnect(routeKey: String)throws   {try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
@@ -2161,17 +2148,6 @@ open func sessionsJson()throws  -> String  {
         uniffiCallStatus in
     uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_sessions_json(
             self.uniffiCloneHandle(),uniffiCallStatus
-    )
-})
-}
-
-open func setGossipEndpointsJson(workspaceId: String, endpoints: [String])throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMobileMeshError_lift) {
-        uniffiCallStatus in
-    uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_set_gossip_endpoints_json(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(workspaceId),
-        FfiConverterSequenceString.lower(endpoints),uniffiCallStatus
     )
 })
 }
@@ -3453,9 +3429,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_begin_route_attempt_json() != 60622) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_gossip() != 23748) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnect() != 21008) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3505,9 +3478,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_sessions_json() != 14167) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_set_gossip_endpoints_json() != 26153) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start() != 32108) {

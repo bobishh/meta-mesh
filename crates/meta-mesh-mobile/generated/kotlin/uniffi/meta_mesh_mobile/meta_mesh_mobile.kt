@@ -839,8 +839,6 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_begin_route_attempt_json(
     ): Int
-    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_gossip(
-    ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnect(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnects_with_prefix(
@@ -874,8 +872,6 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_schedule_reconnect_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_sessions_json(
-    ): Int
-    external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_set_gossip_endpoints_json(
     ): Int
     external fun uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start(
     ): Int
@@ -1053,8 +1049,6 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_begin_route_attempt_json(`ptr`: Long,`routeKey`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_gossip(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-    ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnect(`ptr`: Long,`routeKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_reconnects_with_prefix(`ptr`: Long,`prefix`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1088,8 +1082,6 @@ internal object UniffiLib {
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_schedule_reconnect_json(`ptr`: Long,`routeKey`: RustBuffer.ByValue,`nowMs`: Long,`baseDelayMs`: Long,`maximumDelayMs`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_sessions_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
-    ): RustBuffer.ByValue
-    external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_set_gossip_endpoints_json(`ptr`: Long,`workspaceId`: RustBuffer.ByValue,`endpoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     external fun uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_start(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
@@ -1547,9 +1539,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_begin_route_attempt_json() and 0xFFFF) != 60622) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_gossip() and 0xFFFF) != 23748) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_clear_reconnect() and 0xFFFF) != 21008) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1599,9 +1588,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_sessions_json() and 0xFFFF) != 14167) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_set_gossip_endpoints_json() and 0xFFFF) != 26153) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_meta_mesh_mobile_checksum_method_mobilemeshruntime_start() and 0xFFFF) != 32108) {
@@ -4356,8 +4342,6 @@ public interface MobileMeshRuntimeInterface {
 
     fun `beginRouteAttemptJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong): kotlin.String
 
-    fun `clearGossip`(`workspaceId`: kotlin.String)
-
     fun `clearReconnect`(`routeKey`: kotlin.String)
 
     fun `clearReconnectsWithPrefix`(`prefix`: kotlin.String)
@@ -4391,8 +4375,6 @@ public interface MobileMeshRuntimeInterface {
     fun `scheduleReconnectJson`(`routeKey`: kotlin.String, `nowMs`: kotlin.ULong, `baseDelayMs`: kotlin.ULong, `maximumDelayMs`: kotlin.ULong): kotlin.String
 
     fun `sessionsJson`(): kotlin.String
-
-    fun `setGossipEndpointsJson`(`workspaceId`: kotlin.String, `endpoints`: List<kotlin.String>): kotlin.String
 
     fun `start`()
 
@@ -4540,20 +4522,6 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
     }
     )
     }
-
-
-
-    @Throws(MobileMeshException::class)override fun `clearGossip`(`workspaceId`: kotlin.String)
-        =
-    callWithHandle {
-    uniffiRustCallWithError(MobileMeshException) { _status ->
-    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_clear_gossip(
-        it,
-
-        FfiConverterString.lower(`workspaceId`),_status)
-}
-    }
-
 
 
 
@@ -4811,22 +4779,6 @@ open class MobileMeshRuntime: Disposable, AutoCloseable, MobileMeshRuntimeInterf
     UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_sessions_json(
         it,
         _status)
-}
-    }
-    )
-    }
-
-
-
-    @Throws(MobileMeshException::class)override fun `setGossipEndpointsJson`(`workspaceId`: kotlin.String, `endpoints`: List<kotlin.String>): kotlin.String {
-            return FfiConverterString.lift(
-    callWithHandle {
-    uniffiRustCallWithError(MobileMeshException) { _status ->
-    UniffiLib.uniffi_meta_mesh_mobile_fn_method_mobilemeshruntime_set_gossip_endpoints_json(
-        it,
-
-        FfiConverterString.lower(`workspaceId`),
-        FfiConverterSequenceString.lower(`endpoints`),_status)
 }
     }
     )
