@@ -87,7 +87,7 @@ specific failure scenarios rather than all external behavior.
 
 The checked configurations are exhaustive only within these finite bounds.
 Results below use the pinned v1.8.0 release asset (TLC build
-2026.09.25.020137) on 2026-09-25. The checksum matches the official
+2026.09.25.163503) on 2026-09-25. The checksum matches the official
 GitHub release asset digest; a changed upstream asset fails closed.
 
 | Model | Bound | Result |

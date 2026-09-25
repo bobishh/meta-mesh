@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TOOLS_VERSION=1.8.0
-TOOLS_SHA256=7c6a30fcfca96c6d7476e705a545837afbf66446c3fcb34bf39b838cd50ee0c0
+TOOLS_SHA256=ab4694601923fd5ac06452abbf847c366a5054a3d739552085edd6ed986c29ec
 CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/meta-mesh-tla
 TOOLS_JAR="$CACHE_DIR/tla2tools-$TOOLS_VERSION.jar"
 
