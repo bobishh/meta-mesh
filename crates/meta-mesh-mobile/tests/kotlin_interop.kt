@@ -23,7 +23,8 @@ fun main() {
         expect(handshake.advance("sendRequest", null) == "readResponse", "Kotlin handshake lost response stage")
         expect(handshake.advance("readResponse", null) == "mergeAuthority", "Kotlin handshake lost authority stage")
         expect(handshake.advance("mergeAuthority", null) == "verifyPeer", "Kotlin handshake lost peer verification")
-        expect(handshake.advance("verifyPeer", null) == "checkExpectedPeer", "Kotlin handshake lost peer identity check")
+        expect(handshake.advance("verifyPeer", null) == "checkRevocation", "Kotlin handshake lost revocation check")
+        expect(handshake.advance("checkRevocation", false) == "checkExpectedPeer", "Kotlin handshake lost peer identity check")
         expect(handshake.advance("checkExpectedPeer", false) == "peerMismatch", "Kotlin handshake accepted wrong peer")
         expect(runCatching { meshAdmitPeerJson("{}", "{}", "peer", 0L) }.isFailure,
             "Kotlin admitted a peer without signed workspace authority")
