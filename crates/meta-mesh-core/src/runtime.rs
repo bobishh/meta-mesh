@@ -62,6 +62,7 @@ pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "lowercase")]
 pub enum SessionDirection {
     Incoming,
@@ -82,6 +83,7 @@ pub fn preferred_session_direction(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionKey {
     pub workspace_id: String,
@@ -100,6 +102,7 @@ pub struct SessionCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSession {
     pub key: SessionKey,
@@ -127,6 +130,7 @@ pub enum SessionAdmission {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct RouteAttempt {
     pub route_key: String,
@@ -135,6 +139,7 @@ pub struct RouteAttempt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct ReconnectState {
     pub failures: u32,
@@ -221,6 +226,7 @@ impl RelayDialPolicy {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Clone, PartialEq, Eq, Hash))]
 #[serde(rename_all = "camelCase")]
 pub struct MeshRuntimeState {
     running: bool,

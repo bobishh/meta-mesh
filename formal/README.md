@@ -18,16 +18,31 @@ TLC metadata and counterexample traces are created under temporary directories.
 ## Executable implementation conformance
 
 `check.sh` exports TLC DOT graphs with action labels, converts their values to
-JSON without implementing protocol decisions, and runs Rust integration tests.
-For every edge, a shortest initial-to-source trace is replayed through public
-Rust APIs followed by that edge. Implementation state is built by API calls,
-never by injecting the model's expected state. Results are compared after every
-step; failures include the action trace and model edge.
+JSON without implementing protocol decisions, and runs Rust conformance tests.
+The authority, delivery, and compact session-generation checks replay every
+model edge after a shortest initial-to-source trace. Session callbacks also have
+a bounded worklist explorer that starts from an empty real Rust state, executes
+every enabled event from every distinct reachable concrete state, and matches
+each effect to a labeled `SessionImplementationStates` transition. Implementation
+state is built by API calls, never by injecting the model's expected state.
+Failures include the action trace and model edge.
 
 - `tlc_sessions.rs` calls `MeshRuntimeState::admit_session/remove_session` and
   `MeshSessionLifecycleState::register/evict/publish_plan`, and checks transport
   close effects as well as current sessions. Model generation numbers are mapped
   to Rust's allocated generation numbers without changing expected connections.
+- The session unit-test explorer calls those APIs plus `callback_plan` for
+  recovery, early and due stability timers, heartbeat failure, receive success,
+  and receive failure. It covers two instance IDs on one device and three global
+  generations, including replacement and delayed or repeated callbacks for old
+  generations. Its structural state key includes all runtime fields, lifecycle
+  generation/current maps, and every entry's `stable_at_ms`, `stable`,
+  `failure_reported`, `recovery_published`, and `evicted` fields. Test-only
+  equality and hashing derive from the Rust structures; debug output and model
+  projections are not state keys. Hash collisions are resolved by structural
+  equality. When a concrete state is reached again, its complete abstract state
+  must agree with the previous mapping, except for TLC's instrumentation parity
+  bit; otherwise the explorer fails before merging the paths.
 - `tlc_delivery.rs` signs and verifies ACK fixtures, calls `durable_ack_matches`
   and `MeshBatchDeliveryFlow::route_result/retry_elapsed`, and compares batch
   completion. Retry scheduling is an internal stuttering step. `Persist` is an
@@ -52,15 +67,17 @@ mutates production Rust (not the model). Each mutated implementation must fail a
 conformance assertion; a compilation error or successful test is a failed check.
 The probes cover incomplete ACK acceptance, stale cleanup in runtime and
 lifecycle, tab-key aliasing, revoked-epoch access, and ignored ownership conflict.
-Mutated builds use a separate Cargo target directory so they cannot contaminate
-the production build cache. The working tree is never mutated. The substitutions are exact and fail if their
-source targets change, so obsolete mutation probes cannot quietly disappear.
+Each mutated build uses its own Cargo target directory so neither the production
+build cache nor another mutant can satisfy it. The working tree is never mutated.
+The substitutions are exact and fail if their source targets change, so obsolete
+mutation probes cannot quietly disappear.
 
-This is bounded model-based conformance testing, **not** a proof of all Rust
-execution paths or all traces. Each edge is replayed after one representative
-shortest prefix; hidden implementation state reached by a different prefix may
-still reveal another bug. Bounds, adapters, cryptography, persistence, and host
-scheduling remain explicit review and testing boundaries.
+This is bounded model-based conformance testing, **not** an unbounded refinement
+proof. The callback explorer retains concrete states even when their session
+projection is equal, but only within its explicit keys, generations, events, and
+clock samples. The other edge-replay checks still use one representative shortest
+prefix. Adapters, cryptography, persistence, and host scheduling remain explicit
+review and testing boundaries.
 
 ## Bounds and checked results
 
@@ -72,6 +89,7 @@ Results below are from TLC 1.8.0 on 2026-09-25.
 | `AuthorityEpochs` | two replicas, two people, epochs 0 through 2 | 663,553 generated / 36,864 distinct states, depth 17; passed |
 | `AuthorityConformance` | three owners, one member, epochs 0 through 2 | 300 states / 1,608 labeled edges replayed against signed Rust APIs |
 | `SessionGenerations` | two browser instances on one device, generations 1 through 3 | 71 generated / 45 distinct states, depth 6; passed |
+| `SessionImplementationStates` | two instances on one device, three global generations, callback clocks before and at stability | 525,891 generated / 28,849 distinct model states, depth 14; 14,425 concrete Rust states / 262,946 enabled edges explored |
 | `DurableDelivery` | one two-hash batch, every persistence and ACK subset | 113 generated / 26 distinct states, depth 7; safety and liveness passed |
 
 Every negative control must fail `Safety`; an unexpected pass fails the script:
@@ -132,6 +150,14 @@ implementation that accidentally keys two tabs only by durable device. The
 model does not cover transport internals, heartbeat timing, or JavaScript task
 scheduling beyond arbitrary action interleavings. These are safety properties;
 no fairness is assumed and a session is not promised eventual establishment.
+
+`SessionImplementationStates.tla` adds callback bookkeeping and a model-only
+parity bit so TLC exports labeled edges even for repeated callbacks whose protocol
+effect is a stutter. The Rust explorer samples stability immediately before and
+at each generation's deadline. It reports how many concrete states and enabled
+edges were checked, and asserts that equal session projections retain multiple
+private Rust states; the current bound reaches 512 concrete states for one
+projection. Every callback effect must map to an outgoing labeled model edge.
 
 ## Durable delivery mapping and fairness
 

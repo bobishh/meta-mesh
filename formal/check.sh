@@ -115,6 +115,7 @@ run_expected_failure AuthorityEpochs AuthorityEpochs_snapshot_reset "stale autho
 run_pass SessionGenerations
 run_expected_failure SessionGenerations SessionGenerations_stale_cleanup "stale cleanup closes current session"
 run_expected_failure SessionGenerations SessionGenerations_collapsed_tabs "same-device tabs collapse to one session key"
+run_pass SessionImplementationStates
 
 run_pass DurableDelivery
 run_expected_failure DurableDelivery DurableDelivery_partial_ack "partial ACK completes delivery"
@@ -124,7 +125,9 @@ run_expected_failure DurableDelivery DurableDelivery_empty_ack "empty ACK comple
 run_pass AuthorityConformance
 export MESH_TLC_AUTHORITY_GRAPH="$GRAPH_DIR/AuthorityConformance.json"
 export MESH_TLC_SESSION_GRAPH="$GRAPH_DIR/SessionGenerations.json"
+export MESH_TLC_SESSION_IMPLEMENTATION_GRAPH="$GRAPH_DIR/SessionImplementationStates.json"
 export MESH_TLC_DELIVERY_GRAPH="$GRAPH_DIR/DurableDelivery.json"
 cd "$ROOT/.."
 cargo test --locked -p meta-mesh-core --test tlc_authority --test tlc_sessions --test tlc_delivery -- --ignored --nocapture
+cargo test --locked -p meta-mesh-core --lib bounded_actual_session_states_conform_to_tla_transitions -- --ignored --nocapture
 python3 "$ROOT/check_rust_mutations.py"

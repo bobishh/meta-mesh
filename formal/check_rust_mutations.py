@@ -35,14 +35,19 @@ MUTATIONS = [
 EXPECTED_FAILURES = {
     'partial-or-empty-ack': 'Rust delivery mismatch',
     'stale-runtime-cleanup': 'runtime mismatch',
-    'stale-lifecycle-cleanup': 'lifecycle mismatch',
-    'same-device-tab-alias': 'runtime mismatch',
+    'stale-lifecycle-cleanup': 'runtime mismatch',
+    'same-device-tab-alias': 'replacement effect mismatch',
     'revoked-epoch-regains-access': 'access after',
     'ownership-conflict-is-ignored': 'alternative signed successor was not a conflict',
 }
 
 def main():
-    for variable in ('MESH_TLC_AUTHORITY_GRAPH', 'MESH_TLC_SESSION_GRAPH', 'MESH_TLC_DELIVERY_GRAPH'):
+    for variable in (
+        'MESH_TLC_AUTHORITY_GRAPH',
+        'MESH_TLC_SESSION_GRAPH',
+        'MESH_TLC_SESSION_IMPLEMENTATION_GRAPH',
+        'MESH_TLC_DELIVERY_GRAPH',
+    ):
         if not os.environ.get(variable) or not Path(os.environ[variable]).is_file():
             raise RuntimeError(f'{variable}: fresh TLC graph is required')
     with tempfile.TemporaryDirectory(prefix='meta-mesh-rust-mutants-') as directory:
@@ -58,11 +63,17 @@ def main():
             if original.count(before) != 1:
                 raise RuntimeError(f'{name}: mutation target changed; review it, do not skip')
             source.write_text(original.replace(before, after))
+            if test == 'tlc_sessions':
+                test_args = [
+                    '--lib', 'bounded_actual_session_states_conform_to_tla_transitions',
+                ]
+            else:
+                test_args = ['--test', test]
             try:
                 result = subprocess.run([
                     'cargo', 'test', '--locked', '--manifest-path', str(root / 'Cargo.toml'),
-                    '--target-dir', str(ROOT / 'target/formal-mutants'), '-p', 'meta-mesh-core', '--test', test,
-                    '--', '--ignored', '--nocapture',
+                    '--target-dir', str(root / f'target-{name}'), '-p', 'meta-mesh-core',
+                    *test_args, '--', '--ignored', '--nocapture',
                 ], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=os.environ)
             finally:
                 source.write_text(original)
