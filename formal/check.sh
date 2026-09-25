@@ -52,14 +52,25 @@ if [ ! -f "$TOOLS_JAR" ] || [ "$(sha256 "$TOOLS_JAR")" != "$TOOLS_SHA256" ]; the
   trap - EXIT HUP INT TERM
 fi
 
+python3 "$ROOT/test_export_graph.py"
 JAVA=$(find_java)
+GRAPH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/meta-mesh-tlc-graphs.XXXXXX")
+trap 'rm -rf "$GRAPH_DIR"' EXIT HUP INT TERM
 
 run_pass() {
   module=$1
   metadata=$(mktemp -d "${TMPDIR:-/tmp}/meta-mesh-tlc-state.XXXXXX")
+  set --
+  if [ "$module" != AuthorityEpochs ]; then
+    set -- -dump dot,actionlabels "$GRAPH_DIR/$module.dot"
+  fi
   if "$JAVA" -XX:+UseParallelGC -cp "$TOOLS_JAR" tlc2.TLC \
       -cleanup -deadlock -noGenerateSpecTE -metadir "$metadata" -workers auto \
+      "$@" \
       -config "$ROOT/$module.cfg" "$ROOT/$module.tla"; then
+    if [ "$module" != AuthorityEpochs ]; then
+      python3 "$ROOT/export_graph.py" "$GRAPH_DIR/$module.dot" "$GRAPH_DIR/$module.json"
+    fi
     rm -rf "$metadata"
   else
     status=$?
@@ -108,3 +119,12 @@ run_expected_failure SessionGenerations SessionGenerations_collapsed_tabs "same-
 run_pass DurableDelivery
 run_expected_failure DurableDelivery DurableDelivery_partial_ack "partial ACK completes delivery"
 run_expected_failure DurableDelivery DurableDelivery_empty_ack "empty ACK completes delivery"
+
+# Rebuild graphs on every run; expectations are never checked-in snapshots.
+run_pass AuthorityConformance
+export MESH_TLC_AUTHORITY_GRAPH="$GRAPH_DIR/AuthorityConformance.json"
+export MESH_TLC_SESSION_GRAPH="$GRAPH_DIR/SessionGenerations.json"
+export MESH_TLC_DELIVERY_GRAPH="$GRAPH_DIR/DurableDelivery.json"
+cd "$ROOT/.."
+cargo test --locked -p meta-mesh-core --test tlc_authority --test tlc_sessions --test tlc_delivery -- --ignored --nocapture
+python3 "$ROOT/check_rust_mutations.py"

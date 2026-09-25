@@ -1,7 +1,9 @@
 # MetaMesh protocol models
 
 These finite TLA+ models cover three protocol seams where asynchronous history
-must not be mistaken for current authority or durable success. Run all positive
+must not be mistaken for current authority or durable success. The runner also
+exports fresh TLC state graphs and replays every exported edge against the real
+Rust implementation; model checks alone are not the acceptance gate. Run all positive
 models and their required negative controls with:
 
 ```sh
@@ -13,6 +15,53 @@ before execution, and fails if Java/TLC is unavailable. It uses `JAVA_HOME` or
 `java` on `PATH`; on Homebrew macOS it also discovers `openjdk@21` and `openjdk`.
 TLC metadata and counterexample traces are created under temporary directories.
 
+## Executable implementation conformance
+
+`check.sh` exports TLC DOT graphs with action labels, converts their values to
+JSON without implementing protocol decisions, and runs Rust integration tests.
+For every edge, a shortest initial-to-source trace is replayed through public
+Rust APIs followed by that edge. Implementation state is built by API calls,
+never by injecting the model's expected state. Results are compared after every
+step; failures include the action trace and model edge.
+
+- `tlc_sessions.rs` calls `MeshRuntimeState::admit_session/remove_session` and
+  `MeshSessionLifecycleState::register/evict/publish_plan`, and checks transport
+  close effects as well as current sessions. Model generation numbers are mapped
+  to Rust's allocated generation numbers without changing expected connections.
+- `tlc_delivery.rs` signs and verifies ACK fixtures, calls `durable_ack_matches`
+  and `MeshBatchDeliveryFlow::route_result/retry_elapsed`, and compares batch
+  completion. Retry scheduling is an internal stuttering step. `Persist` is an
+  external input assumption here: this test does **not** exercise filesystem
+  writes, crash durability, or the TS adapter that wires ACK checks to the flow.
+- `tlc_authority.rs` uses `AuthorityConformance`, a concrete signed-history model
+  rather than the broader `AuthorityEpochs` abstraction. It calls
+  `plan_member_grant`, `plan_authority_merge`, `plan_ownership_merge`, and
+  `decide_workspace_access` with signed grant/revocation/transfer fixtures. It
+  compares access, epochs, retained history, selected owner, and conflicts.
+  Three possible owners, one separate member, and two transfer/access epochs
+  bound the graph. Model epoch 0 is Rust genesis epoch 1; nonzero model epochs
+  are translated by +1. Returned ownership steps drive harness state; intended
+  successor inputs do not stand in for Rust's returned decisions.
+
+The Rust tests are explicitly ignored in ordinary `cargo test` because they
+require fresh TLC graphs. `check.sh` supplies them and runs `--ignored`; missing
+inputs fail rather than silently skip. The CI job runs that exact command.
+
+`check_rust_mutations.py` copies the actual crates into a temporary workspace and
+mutates production Rust (not the model). Each mutated implementation must fail a
+conformance assertion; a compilation error or successful test is a failed check.
+The probes cover incomplete ACK acceptance, stale cleanup in runtime and
+lifecycle, tab-key aliasing, revoked-epoch access, and ignored ownership conflict.
+Mutated builds use a separate Cargo target directory so they cannot contaminate
+the production build cache. The working tree is never mutated. The substitutions are exact and fail if their
+source targets change, so obsolete mutation probes cannot quietly disappear.
+
+This is bounded model-based conformance testing, **not** a proof of all Rust
+execution paths or all traces. Each edge is replayed after one representative
+shortest prefix; hidden implementation state reached by a different prefix may
+still reveal another bug. Bounds, adapters, cryptography, persistence, and host
+scheduling remain explicit review and testing boundaries.
+
 ## Bounds and checked results
 
 The checked configurations are exhaustive only within these finite bounds.
@@ -21,6 +70,7 @@ Results below are from TLC 1.8.0 on 2026-09-25.
 | Model | Bound | Result |
 | --- | --- | --- |
 | `AuthorityEpochs` | two replicas, two people, epochs 0 through 2 | 663,553 generated / 36,864 distinct states, depth 17; passed |
+| `AuthorityConformance` | three owners, one member, epochs 0 through 2 | 300 states / 1,608 labeled edges replayed against signed Rust APIs |
 | `SessionGenerations` | two browser instances on one device, generations 1 through 3 | 71 generated / 45 distinct states, depth 6; passed |
 | `DurableDelivery` | one two-hash batch, every persistence and ACK subset | 113 generated / 26 distinct states, depth 7; safety and liveness passed |
 
@@ -109,9 +159,8 @@ remain pending.
 
 ## Limits
 
-Model checking proves the TLA+ transition systems within the listed bounds. It
-is not a proof that Rust, TypeScript, IndexedDB, the filesystem, WASM bindings,
-or callers refine those systems. The action-to-function mapping above is the
-review surface for keeping implementation and model coupled. No runtime
-discrepancy was found in this inspection, so no runtime source or WASM artifact
-was changed.
+Model checking checks the TLA+ transition systems within the listed bounds.
+The executable conformance tests couple the selected Rust APIs to freshly
+generated model transitions. They are not an unbounded refinement proof, and
+do not cover TypeScript, IndexedDB, filesystem crash behavior, or WASM bindings.
+No runtime source or WASM artifact is changed by the conformance harness.
