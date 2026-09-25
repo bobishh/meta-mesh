@@ -422,6 +422,48 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect((await store.getWorkspaceAuthority(base.workspaceId))?.localGrant).toEqual(grant)
     })
 
+    it("persists a collapsed multi-step ownership chain that returns to its original owner", async () => {
+      const store = new PeerStore("match-test-owner-return", mockIdb as any)
+      const initial: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_return", ownerPersonId: "owner-a",
+        ownerPublicKey: "key-a", ownerCertificates: [], transportSecret: "secret", epoch: 1,
+        updatedAt: "2026-09-11T00:00:00.000Z" }
+      await store.putWorkspaceCredential(initial)
+      await store.transferWorkspaceCredential("owner-a", { ...initial, epoch: 3,
+        updatedAt: "2026-09-11T00:03:00.000Z" })
+      await expect(store.getWorkspaceCredential(initial.workspaceId)).resolves.toMatchObject({
+        ownerPersonId: "owner-a", epoch: 3,
+      })
+    })
+
+    it("keeps an unacknowledged ownership proposal across reload and clears it only with the committed transfer", async () => {
+      const dbName = "match-test-pending-ownership"
+      const store = new PeerStore(dbName, mockIdb as any)
+      const credential: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_pending", ownerPersonId: "owner-a",
+        ownerPublicKey: "key-a", ownerCertificates: [], transportSecret: "secret", epoch: 1,
+        updatedAt: "2026-09-11T00:00:00.000Z" }
+      const proposal = { version: 1 as const, workspaceId: credential.workspaceId,
+        transfer: { signature: "exact-signed-transfer", payload: { toOwnerPersonId: "owner-b", epoch: 2 } } }
+      await store.putWorkspaceCredential(credential)
+      await store.putPendingOwnershipTransfer(proposal)
+
+      const reloaded = new PeerStore(dbName, mockIdb as any)
+      expect(await reloaded.getPendingOwnershipTransfer(credential.workspaceId)).toEqual(proposal)
+      await reloaded.transferWorkspaceCredential("owner-a", { ...credential, ownerPersonId: "owner-b", ownerPublicKey: "key-b",
+        epoch: 2, updatedAt: "2026-09-11T00:02:00.000Z" })
+      expect(await reloaded.getPendingOwnershipTransfer(credential.workspaceId)).toBeNull()
+    })
+
+    it("refuses a second tab's different ownership proposal while the original receipt is unresolved", async () => {
+      const store = new PeerStore("match-test-pending-ownership-cas", mockIdb as any)
+      const original = { version: 1 as const, workspaceId: "ws_pending_cas",
+        transfer: { signature: "signed-to-a", payload: { toOwnerPersonId: "owner-a", epoch: 2 } } }
+      await store.putPendingOwnershipTransfer(original)
+      await expect(store.putPendingOwnershipTransfer({ ...original,
+        transfer: { signature: "signed-to-b", payload: { toOwnerPersonId: "owner-b", epoch: 2 } } }))
+        .rejects.toThrow("different ownership transfer")
+      expect(await store.getPendingOwnershipTransfer(original.workspaceId)).toEqual(original)
+    })
+
     it("Given multiple workspace credentials, when one workspace leaves the mesh, then routes and active credentials are removed but signed authority survives", async () => {
       const store = new PeerStore("match-test-leave-workspace", mockIdb as any)
       const credential = (workspaceId: string): WorkspaceMeshCredential => ({

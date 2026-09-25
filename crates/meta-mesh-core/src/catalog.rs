@@ -5,7 +5,8 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
-    MESH_CAPABILITIES, MeshHandshake, WorkspaceWriteAuthorizationSnapshot, admit_mesh_peer,
+    MESH_CAPABILITIES, MeshHandshake, ScopeAuthoritySnapshot, WorkspaceWriteAuthorizationSnapshot,
+    admit_mesh_peer, validate_scope_authority,
 };
 
 const MAX_CATALOG_BYTES: usize = 8 * 1024 * 1024;
@@ -32,6 +33,10 @@ pub struct MeshCatalog {
     pub succession_votes: Option<Vec<Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub succession_claims: Option<Vec<Value>>,
+    /// The signed scope ledger proves that the catalog's accepted workspace
+    /// owner is also the current document controller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_authority_snapshot: Option<ScopeAuthoritySnapshot>,
 }
 
 pub fn validate_mesh_catalog(mut raw: Value) -> Result<MeshCatalog, String> {
@@ -68,6 +73,9 @@ pub fn validate_mesh_catalog(mut raw: Value) -> Result<MeshCatalog, String> {
             .is_some_and(|records| records.len() > MAX_AUTHORITY_RECORDS)
     {
         return Err("Invalid mesh catalog".to_string());
+    }
+    if let Some(snapshot) = &catalog.scope_authority_snapshot {
+        validate_scope_authority(snapshot)?;
     }
     Ok(catalog)
 }
@@ -170,6 +178,23 @@ mod tests {
             validate_mesh_catalog(json!({ "version": 1, "peers": [], "revocations": [] })).unwrap();
         let encoded = serde_json::to_value(catalog).unwrap();
         assert!(encoded.get("ownershipTransfers").is_none());
+        assert!(encoded.get("scopeAuthoritySnapshot").is_none());
+    }
+
+    #[test]
+    fn rejects_an_invalid_scope_authority_snapshot() {
+        assert!(
+            validate_mesh_catalog(json!({
+                "version": 1,
+                "peers": [],
+                "revocations": [],
+                "scopeAuthoritySnapshot": {
+                    "genesis": {}, "grants": [], "grantIssuers": [],
+                    "revocations": [], "controlTransfers": []
+                }
+            }))
+            .is_err()
+        );
     }
 
     #[test]

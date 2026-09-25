@@ -173,8 +173,9 @@ pub use scope_authority::{
     ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload, ScopeGenesisPayloadInput,
     ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, SignedScopeGenesis, ValidatedScopeAuthority,
     create_scope_control_transfer_payload, create_scope_genesis, create_scope_genesis_payload,
-    plan_scope_genesis, sign_scope_record, validate_scope_authority, verify_scope_capability_grant,
-    verify_scope_capability_revocation, verify_scope_control_transfer, verify_scope_genesis,
+    merge_scope_authority_snapshots, plan_scope_genesis, sign_scope_record,
+    validate_scope_authority, verify_scope_capability_grant, verify_scope_capability_revocation,
+    verify_scope_control_transfer, verify_scope_genesis,
 };
 pub use scope_runtime::{MeshScopeDocumentCompletion, MeshScopeFrameEffect, MeshScopeRuntime};
 pub use session_admission::{MeshAuthenticatedSessions, MeshPeerAdmission, admit_mesh_peer};

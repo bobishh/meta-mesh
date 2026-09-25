@@ -81,6 +81,15 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::validate_scope_authority(&snapshot).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = mergeScopeAuthoritySnapshots)]
+    pub fn merge_scope_authority_snapshots(current: JsValue, incoming: JsValue) -> Result<JsValue, JsValue> {
+        let current: Option<meta_mesh_core::ScopeAuthoritySnapshot> = from_value(current)?;
+        let incoming: meta_mesh_core::ScopeAuthoritySnapshot = from_value(incoming)?;
+        let merged = meta_mesh_core::merge_scope_authority_snapshots(current.as_ref(), &incoming)
+            .map_err(js_error)?;
+        to_value(&merged)
+    }
+
     #[wasm_bindgen(js_name = requireChangeAuthorizationCoverage)]
     pub fn require_change_authorization_coverage(
         change_hashes: JsValue,

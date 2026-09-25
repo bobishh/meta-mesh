@@ -1,5 +1,6 @@
 export type RustStateCore = {
   validateScopeAuthority(snapshot: unknown): unknown
+  mergeScopeAuthoritySnapshots(current: unknown, incoming: unknown): unknown
   requireChangeAuthorizationCoverage(changeHashes: string[], records: unknown[]): void
   createScopeGenesis(input: unknown): { scopeId: string; creatorPersonId: string;
     creatorPublicKey: string; creatorCertificates: unknown[] }

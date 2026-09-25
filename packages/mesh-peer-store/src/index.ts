@@ -89,6 +89,15 @@ export interface WorkspaceAuthorityRecord {
   }
 }
 
+/** Locally durable proposal awaiting a delivery receipt. It is deliberately
+ * outside the authenticated workspace catalog. */
+export interface PendingWorkspaceOwnershipTransfer {
+  version: 1
+  workspaceId: string
+  transfer: unknown
+  scopeAuthoritySnapshot?: WorkspaceAuthorityRecord["scopeAuthoritySnapshot"]
+}
+
 export const DEFAULT_PEER_DB_NAME = "match-peer-catalog-v1"
 export const STORE_PEERS = "peers"
 export const STORE_NODE = "node"
@@ -101,6 +110,7 @@ export const INDEX_PEERS_LAST_SEEN = "by_last_seen"
 const NODE_SECRET_KEY = "localNodeSecret"
 const INSTANCE_SEQUENCE_PREFIX = "instance-sequence:"
 const WORKSPACE_CREDENTIAL_PREFIX = "workspace:"
+const PENDING_OWNERSHIP_TRANSFER_PREFIX = "pending-ownership-transfer:"
 
 export const MAX_STRING_LENGTH = 256
 export const MAX_ENDPOINT_LENGTH = 2048
@@ -153,6 +163,17 @@ export function authorityFromCredential(credential: WorkspaceMeshCredential): Wo
   const { transportSecret: _transportSecret, ...authority } = credential
   validateWorkspaceAuthority(authority)
   return structuredClone(authority)
+}
+
+function validatePendingOwnershipTransfer(value: unknown, expectedWorkspaceId?: string): asserts value is PendingWorkspaceOwnershipTransfer {
+  const proposal = value as PendingWorkspaceOwnershipTransfer
+  if (!proposal || proposal.version !== 1 || typeof proposal.workspaceId !== "string" || !proposal.workspaceId ||
+    proposal.workspaceId.length > MAX_STRING_LENGTH || (expectedWorkspaceId !== undefined && proposal.workspaceId !== expectedWorkspaceId) ||
+    !proposal.transfer || typeof proposal.transfer !== "object" ||
+    new TextEncoder().encode(JSON.stringify(proposal)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
+    throw new Error("Invalid pending ownership transfer")
+  }
+  if (proposal.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(proposal.scopeAuthoritySnapshot)
 }
 
 /**
@@ -614,7 +635,37 @@ export class PeerStore {
     })
   }
 
-  async transferWorkspaceCredential(expectedOwnerPersonId: string, credential: WorkspaceMeshCredential): Promise<void> {
+  async getPendingOwnershipTransfer(workspaceId: string): Promise<PendingWorkspaceOwnershipTransfer | null> {
+    if (!workspaceId) throw new Error("Invalid workspaceId")
+    return this.runTx([STORE_NODE], "readonly", async tx => {
+      const record = await promisifyRequest<{ key: string; proposal: PendingWorkspaceOwnershipTransfer } | undefined>(
+        tx.objectStore(STORE_NODE).get(`${PENDING_OWNERSHIP_TRANSFER_PREFIX}${workspaceId}`))
+      if (!record) return null
+      validatePendingOwnershipTransfer(record.proposal, workspaceId)
+      return structuredClone(record.proposal)
+    })
+  }
+
+  async putPendingOwnershipTransfer(proposal: PendingWorkspaceOwnershipTransfer): Promise<void> {
+    validatePendingOwnershipTransfer(proposal)
+    await this.runTx([STORE_NODE], "readwrite", async tx => {
+      const store = tx.objectStore(STORE_NODE)
+      const key = `${PENDING_OWNERSHIP_TRANSFER_PREFIX}${proposal.workspaceId}`
+      const existing = await promisifyRequest<{ key: string; proposal: PendingWorkspaceOwnershipTransfer } | undefined>(store.get(key))
+      if (existing) {
+        validatePendingOwnershipTransfer(existing.proposal, proposal.workspaceId)
+        if (JSON.stringify(existing.proposal) !== JSON.stringify(proposal))
+          throw new Error("A different ownership transfer is already pending")
+        return
+      }
+      await promisifyRequest(store.put({
+        key, proposal: structuredClone(proposal),
+      }))
+    })
+  }
+
+  async transferWorkspaceCredential(expectedOwnerPersonId: string, credential: WorkspaceMeshCredential,
+    scopeAuthoritySnapshot?: WorkspaceAuthorityRecord["scopeAuthoritySnapshot"]): Promise<void> {
     validateWorkspaceCredential(credential)
     await this.runTx([STORE_NODE, STORE_AUTHORITY], "readwrite", async tx => {
       const store = tx.objectStore(STORE_NODE)
@@ -623,11 +674,14 @@ export class PeerStore {
       if (!current) throw new Error("Missing workspace mesh credential")
       validateWorkspaceCredential(current.credential)
       if (current.credential.ownerPersonId !== expectedOwnerPersonId) throw new Error("Workspace owner changed before transfer")
-      if (credential.ownerPersonId === expectedOwnerPersonId || credential.epoch < current.credential.epoch) {
+      if (credential.epoch <= current.credential.epoch) {
         throw new Error("Invalid workspace ownership transfer")
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))
-      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(credential))
+      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), {
+        ...authorityFromCredential(credential), scopeAuthoritySnapshot,
+      })
+      await promisifyRequest(store.delete(`${PENDING_OWNERSHIP_TRANSFER_PREFIX}${credential.workspaceId}`))
     })
   }
 
@@ -877,6 +931,7 @@ export class PeerStore {
         await putAuthorityIfNewer(authorityStore, authority)
       }
       await promisifyRequest(node.delete(key))
+      await promisifyRequest(node.delete(`${PENDING_OWNERSHIP_TRANSFER_PREFIX}${workspaceId}`))
     })
   }
 

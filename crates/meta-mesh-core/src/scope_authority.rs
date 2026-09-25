@@ -234,6 +234,38 @@ pub struct ScopeAuthoritySnapshot {
     #[serde(default)]
     pub control_transfers: Vec<ScopeControlTransfer>,
 }
+
+/// Merge authenticated gossip without letting a stale peer erase signed
+/// authority evidence already held locally. A changed genesis or a fork in the
+/// combined ledger is rejected by validation.
+pub fn merge_scope_authority_snapshots(
+    current: Option<&ScopeAuthoritySnapshot>,
+    incoming: &ScopeAuthoritySnapshot,
+) -> Result<ScopeAuthoritySnapshot, String> {
+    validate_scope_authority(incoming)?;
+    let Some(current) = current else {
+        return Ok(incoming.clone());
+    };
+    validate_scope_authority(current)?;
+    if current.genesis != incoming.genesis {
+        return Err("Scope authority genesis cannot change".into());
+    }
+    let mut merged = current.clone();
+    append_unique(&mut merged.grants, &incoming.grants);
+    append_unique(&mut merged.grant_issuers, &incoming.grant_issuers);
+    append_unique(&mut merged.revocations, &incoming.revocations);
+    append_unique(&mut merged.control_transfers, &incoming.control_transfers);
+    validate_scope_authority(&merged)?;
+    Ok(merged)
+}
+
+fn append_unique<T: Clone + PartialEq>(current: &mut Vec<T>, incoming: &[T]) {
+    for record in incoming {
+        if !current.contains(record) {
+            current.push(record.clone());
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidatedScopeAuthority {
@@ -653,6 +685,112 @@ mod tests {
         assert!(r.allows(&r.controller.person_id, ScopeCapability::Write));
         assert!(r.allows(&r.controller.person_id, ScopeCapability::Invite));
         assert!(r.allows("member-a", ScopeCapability::Write));
+    }
+
+    #[test]
+    fn merging_a_stale_ledger_preserves_verified_authority_records() {
+        let (creator, seed, device) = authority([8; 32], [9; 32]);
+        let (next, _, _) = authority([10; 32], [11; 32]);
+        let grant = sign_scope_record(
+            &seed,
+            ScopeCapabilityGrantPayload {
+                kind: "scope-capability-grant".into(),
+                version: 1,
+                scope_id: "scope-a".into(),
+                grant_id: "member".into(),
+                issuer_person_id: creator.person_id.clone(),
+                subject_person_id: "member-a".into(),
+                capabilities: vec![ScopeCapability::Read],
+                control_epoch: 1,
+            },
+            &device,
+        )
+        .unwrap();
+        let revocation = sign_scope_record(
+            &seed,
+            ScopeCapabilityRevocationPayload {
+                kind: "scope-capability-revocation".into(),
+                version: 1,
+                scope_id: "scope-a".into(),
+                grant_id: "member".into(),
+                revoked_by_person_id: creator.person_id.clone(),
+                control_epoch: 1,
+            },
+            &device,
+        )
+        .unwrap();
+        let control_transfer = sign_scope_record(
+            &seed,
+            ScopeControlTransferPayload {
+                kind: "scope-control-transfer".into(),
+                version: 1,
+                scope_id: "scope-a".into(),
+                from_controller_person_id: creator.person_id.clone(),
+                to_controller: next,
+                from_control_epoch: 1,
+                to_control_epoch: 2,
+            },
+            &device,
+        )
+        .unwrap();
+        let signed_genesis = genesis(&creator, &seed, &device);
+        let current = ScopeAuthoritySnapshot {
+            genesis: signed_genesis.clone(),
+            grants: vec![grant],
+            grant_issuers: vec![],
+            revocations: vec![revocation],
+            control_transfers: vec![control_transfer],
+        };
+        let stale = ScopeAuthoritySnapshot {
+            genesis: signed_genesis,
+            grants: vec![],
+            grant_issuers: vec![],
+            revocations: vec![],
+            control_transfers: vec![],
+        };
+        let merged = merge_scope_authority_snapshots(Some(&current), &stale).unwrap();
+        assert_eq!(merged.grants, current.grants);
+        assert_eq!(merged.revocations, current.revocations);
+        assert_eq!(merged.control_transfers, current.control_transfers);
+        assert!(
+            !validate_scope_authority(&merged)
+                .unwrap()
+                .allows("member-a", ScopeCapability::Read)
+        );
+
+        let (other_creator, other_seed, other_device) = authority([12; 32], [13; 32]);
+        let other_genesis = ScopeAuthoritySnapshot {
+            genesis: genesis(&other_creator, &other_seed, &other_device),
+            grants: vec![],
+            grant_issuers: vec![],
+            revocations: vec![],
+            control_transfers: vec![],
+        };
+        assert!(merge_scope_authority_snapshots(Some(&current), &other_genesis).is_err());
+
+        let (fork_controller, _, _) = authority([14; 32], [15; 32]);
+        let fork = sign_scope_record(
+            &seed,
+            ScopeControlTransferPayload {
+                kind: "scope-control-transfer".into(),
+                version: 1,
+                scope_id: "scope-a".into(),
+                from_controller_person_id: creator.person_id.clone(),
+                to_controller: fork_controller,
+                from_control_epoch: 1,
+                to_control_epoch: 2,
+            },
+            &device,
+        )
+        .unwrap();
+        let forked = ScopeAuthoritySnapshot {
+            genesis: current.genesis.clone(),
+            grants: vec![],
+            grant_issuers: vec![],
+            revocations: vec![],
+            control_transfers: vec![fork],
+        };
+        assert!(merge_scope_authority_snapshots(Some(&current), &forked).is_err());
     }
     #[test]
     fn forged_genesis_revocation_and_fork_reject() {
