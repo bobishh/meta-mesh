@@ -234,6 +234,41 @@ pub struct WasmMeshScopeRuntime {
 
 #[wasm_bindgen]
 impl WasmMeshScopeRuntime {
+    #[wasm_bindgen(js_name = beginAuthorizationTransfer)]
+    pub fn begin_authorization_transfer(
+        &mut self,
+        candidate: &[u8],
+        local: &[u8],
+        manifest: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        to_value(
+            &self
+                .inner
+                .begin_authorization_transfer(candidate, local, from_value(manifest)?)
+                .map_err(js_error)?,
+        )
+    }
+    #[wasm_bindgen(js_name = provideProofPage)]
+    pub fn provide_proof_page(
+        &self,
+        payload: &[u8],
+        document: &[u8],
+        authorization: JsValue,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.inner
+            .provide_proof_page(payload, document, from_value(authorization)?)
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = acceptProofPage)]
+    pub fn accept_proof_page(&mut self, payload: &[u8]) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.accept_proof_page(payload).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = continueProofReceive)]
+    pub fn continue_proof_receive(&mut self) -> Result<JsValue, JsValue> {
+        to_value(&self.inner.continue_proof_receive().map_err(js_error)?)
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(workspace_id: &str, secret: &str) -> Result<Self, JsValue> {
         Ok(Self {

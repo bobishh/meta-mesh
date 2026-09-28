@@ -12,8 +12,11 @@ struct PendingDocumentReceive {
 }
 
 struct PreparedDocumentReceive {
+    engine_prepared: bool,
     should_persist: bool,
     response: Option<Vec<u8>>,
+    effect: MeshScopeFrameEffect,
+    proofs: Option<crate::AuthorizationPageReceiver>,
 }
 
 struct PendingSavedReceive {
@@ -37,6 +40,17 @@ pub struct MeshScopeRuntime {
 )]
 pub enum MeshScopeFrameEffect {
     NeedDocument,
+    ProofRequest {
+        frame: Vec<u8>,
+        cache_key: String,
+    },
+    ProofSource {
+        payload: Vec<u8>,
+    },
+    ProofPageReceived {
+        cache_key: String,
+        payload: Vec<u8>,
+    },
     DocumentReceive {
         document: Vec<u8>,
         proof: Option<Value>,
@@ -109,6 +123,10 @@ impl MeshScopeRuntime {
             return Ok(None);
         };
         match action {
+            LiveSessionAction::ProofRequest(payload) => {
+                Ok(Some(MeshScopeFrameEffect::ProofSource { payload }))
+            }
+            LiveSessionAction::ProofPage(payload) => self.accept_proof_page(&payload).map(Some),
             LiveSessionAction::AutomergeSync(payload) => {
                 if self.pending_document_receive.is_some() {
                     return Err("Mesh document receive is pending persistence".into());
@@ -195,6 +213,28 @@ impl MeshScopeRuntime {
                 return Err(error);
             }
         };
+        let proofs = if prepared
+            .proof
+            .as_ref()
+            .and_then(|p| p.get("kind"))
+            .and_then(Value::as_str)
+            == Some("workspace-authorization-manifest")
+        {
+            let result = serde_json::from_value(prepared.proof.clone().unwrap())
+                .map_err(|_| "Invalid authorization manifest".to_string())
+                .and_then(|manifest| {
+                    crate::AuthorizationPageReceiver::new(manifest, &prepared.document, document)
+                });
+            match result {
+                Ok(receiver) => Some(receiver),
+                Err(error) => {
+                    self.pending_document_receive = Some(pending);
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
         let effect = MeshScopeFrameEffect::DocumentReceive {
             document: prepared.document,
             proof: prepared.proof,
@@ -204,11 +244,115 @@ impl MeshScopeRuntime {
             heads: prepared.heads,
         };
         pending.prepared = Some(PreparedDocumentReceive {
+            engine_prepared: true,
             should_persist: prepared.should_persist,
             response: prepared.response,
+            proofs,
+            effect: effect.clone(),
         });
         self.pending_document_receive = Some(pending);
-        Ok(effect)
+        self.continue_proof_receive()
+    }
+
+    /// Initial snapshots use the same proof exchange before invitation
+    /// admission. No Automerge sync state or durable receipt is advanced.
+    pub fn begin_authorization_transfer(
+        &mut self,
+        candidate: &[u8],
+        local: &[u8],
+        manifest: Value,
+    ) -> Result<MeshScopeFrameEffect, String> {
+        if self.pending_document_receive.is_some() {
+            return Err("Document receive already pending".into());
+        }
+        let receiver = crate::AuthorizationPageReceiver::new(
+            serde_json::from_value(manifest).map_err(|_| "Invalid authorization manifest")?,
+            candidate,
+            local,
+        )?;
+        let effect = MeshScopeFrameEffect::DocumentReceive {
+            document: candidate.to_vec(),
+            proof: None,
+            should_persist: true,
+            accepted_changes: 0,
+            accepted_hashes: vec![],
+            heads: vec![],
+        };
+        self.pending_document_receive = Some(PendingDocumentReceive {
+            payload: vec![],
+            prepared: Some(PreparedDocumentReceive {
+                engine_prepared: false,
+                should_persist: true,
+                response: None,
+                effect,
+                proofs: Some(receiver),
+            }),
+        });
+        self.continue_proof_receive()
+    }
+
+    pub fn provide_proof_page(
+        &self,
+        payload: &[u8],
+        document: &[u8],
+        authorization: Value,
+    ) -> Result<Vec<u8>, String> {
+        let request =
+            serde_json::from_slice(payload).map_err(|_| "Invalid authorization page request")?;
+        let page = crate::authorization_page(document, &authorization, request)?;
+        self.live.encode(
+            "mesh-proof-page-v1",
+            &serde_json::to_vec(&page).map_err(|e| e.to_string())?,
+        )
+    }
+
+    pub fn accept_proof_page(&mut self, payload: &[u8]) -> Result<MeshScopeFrameEffect, String> {
+        if payload.len() > crate::proof_transfer::MAX_PROOF_PAGE_BYTES {
+            return Err("Authorization page exceeds payload limit".into());
+        }
+        let prepared = self
+            .pending_document_receive
+            .as_mut()
+            .and_then(|p| p.prepared.as_mut())
+            .ok_or("No document awaiting authorization pages")?;
+        let receiver = prepared
+            .proofs
+            .as_mut()
+            .ok_or("No authorization transfer pending")?;
+        let request = receiver.request()?.ok_or("Unexpected authorization page")?;
+        let cache_key = format!("{}:{}", request.request_id, request.after);
+        let page = serde_json::from_slice(payload).map_err(|_| "Invalid authorization page")?;
+        if receiver.is_replay(&page)? {
+            return self.continue_proof_receive();
+        }
+        receiver.accept(page)?;
+        Ok(MeshScopeFrameEffect::ProofPageReceived {
+            cache_key,
+            payload: payload.to_vec(),
+        })
+    }
+
+    pub fn continue_proof_receive(&mut self) -> Result<MeshScopeFrameEffect, String> {
+        let prepared = self
+            .pending_document_receive
+            .as_mut()
+            .and_then(|p| p.prepared.as_mut())
+            .ok_or("No document awaiting authorization pages")?;
+        if let Some(receiver) = &prepared.proofs {
+            if let Some(request) = receiver.request()? {
+                let cache_key = format!("{}:{}", request.request_id, request.after);
+                let frame = self.live.encode(
+                    "mesh-proof-request-v1",
+                    &serde_json::to_vec(&request).map_err(|e| e.to_string())?,
+                )?;
+                return Ok(MeshScopeFrameEffect::ProofRequest { frame, cache_key });
+            }
+            if let MeshScopeFrameEffect::DocumentReceive { proof, .. } = &mut prepared.effect {
+                *proof = Some(receiver.bundle()?);
+            }
+            prepared.proofs = None;
+        }
+        Ok(prepared.effect.clone())
     }
 
     /// Complete the durable side of a prepared Automerge receive. A failed
@@ -217,6 +361,14 @@ impl MeshScopeRuntime {
         &mut self,
         persisted: bool,
     ) -> Result<MeshScopeDocumentCompletion, String> {
+        if self
+            .pending_document_receive
+            .as_ref()
+            .and_then(|p| p.prepared.as_ref())
+            .is_some_and(|p| p.proofs.is_some())
+        {
+            return Err("Document authorization transfer is incomplete".into());
+        }
         if self
             .pending_document_receive
             .as_ref()
@@ -236,7 +388,9 @@ impl MeshScopeRuntime {
             self.live.reset_document();
             return Err("Mesh document persistence failed".into());
         }
-        self.live.commit_document()?;
+        if prepared.engine_prepared {
+            self.live.commit_document()?;
+        }
         Ok(MeshScopeDocumentCompletion {
             response: prepared.response,
             close_send: true,
@@ -284,6 +438,9 @@ impl MeshScopeRuntime {
         document: &[u8],
         proof: Option<Value>,
     ) -> Result<Option<Vec<u8>>, String> {
+        if self.pending_document_receive.is_some() {
+            return Ok(None);
+        }
         self.live.generate_document(document, proof)
     }
 
@@ -298,6 +455,9 @@ impl MeshScopeRuntime {
         chat: Option<Value>,
         mesh: Option<Value>,
     ) -> Result<LiveSessionPublishPlan, String> {
+        if self.pending_document_receive.is_some() {
+            return self.live.prepare_control_publish(None, chat, mesh);
+        }
         self.live
             .prepare_publish(document, proof, authorization, chat, mesh)
     }

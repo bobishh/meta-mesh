@@ -24,6 +24,8 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-handoff-ready",
     "mesh-handoff-confirmed",
     "mesh-automerge-sync",
+    "mesh-proof-request-v1",
+    "mesh-proof-page-v1",
     "mesh-control-sync",
     "mesh-owner-workspace-offer",
     "mesh-iroh-gossip",

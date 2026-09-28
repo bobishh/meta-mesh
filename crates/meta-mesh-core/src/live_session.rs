@@ -9,6 +9,15 @@ use serde_json::Value;
 
 const MAX_OWNER_OFFER_BYTES: usize = 24 * 1024 * 1024;
 const MAX_GOSSIP_PACKET_BYTES: usize = 256 * 1024;
+fn wire_proof(document: &[u8], value: Value) -> Result<Value, String> {
+    if value.get("authority").is_some()
+        && (value.get("records").is_some() || value.get("pages").is_some())
+    {
+        crate::authorization_export(document, &value)
+    } else {
+        Ok(value)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "camelCase")]
@@ -22,6 +31,8 @@ pub enum LiveSessionAction {
     HandoffRequest(Vec<u8>),
     AutomergeSync(Vec<u8>),
     Snapshot(Vec<u8>),
+    ProofRequest(Vec<u8>),
+    ProofPage(Vec<u8>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,6 +147,13 @@ impl LiveWorkspaceSession {
 
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<LiveSessionAction>, String> {
         let header = PairingCodec::inspect(frame)?;
+        if matches!(
+            header.frame_type.as_str(),
+            "mesh-proof-request-v1" | "mesh-proof-page-v1"
+        ) && frame.len() > crate::proof_transfer::MAX_PROOF_FRAME_BYTES
+        {
+            return Err("Authorization frame exceeds wire limit".into());
+        }
         let payload = PairingCodec::decode(frame, &header.frame_type, &self.secret)?;
         let action = match header.frame_type.as_str() {
             "mesh-durable-batch" => LiveSessionAction::DurableBatch(payload),
@@ -164,6 +182,8 @@ impl LiveWorkspaceSession {
             "mesh-blob-request-v1" => LiveSessionAction::BlobRequest(payload),
             "mesh-handoff-request" => LiveSessionAction::HandoffRequest(payload),
             "mesh-automerge-sync" => LiveSessionAction::AutomergeSync(payload),
+            "mesh-proof-request-v1" => LiveSessionAction::ProofRequest(payload),
+            "mesh-proof-page-v1" => LiveSessionAction::ProofPage(payload),
             "sync-update" => LiveSessionAction::Snapshot(payload),
             _ => {
                 return Err(format!(
@@ -184,6 +204,9 @@ impl LiveWorkspaceSession {
         use LiveSessionAction as A;
         use LiveSessionEffect as E;
         let effects = match action {
+            A::ProofRequest(_) | A::ProofPage(_) => {
+                return Err("Proof exchange requires scope runtime".into());
+            }
             A::DurableBatch(_) => vec![
                 E::MergeDurableBatch,
                 E::SendSavedAcknowledgement,
@@ -243,6 +266,13 @@ impl LiveWorkspaceSession {
 
     pub fn encode(&self, frame_type: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
         match frame_type {
+            "mesh-proof-request-v1" | "mesh-proof-page-v1" => {
+                let frame = PairingCodec::encode(frame_type, &self.secret, payload)?;
+                if frame.len() > crate::proof_transfer::MAX_PROOF_FRAME_BYTES {
+                    return Err("Authorization frame exceeds wire limit".into());
+                }
+                Ok(frame)
+            }
             "mesh-owner-workspace-offer" if payload.len() > MAX_OWNER_OFFER_BYTES => {
                 Err("Owner workspace offer exceeds size limit".to_string())
             }
@@ -316,6 +346,7 @@ impl LiveWorkspaceSession {
         document: &[u8],
         proof: Option<Value>,
     ) -> Result<Option<Vec<u8>>, String> {
+        let proof = proof.map(|value| wire_proof(document, value)).transpose()?;
         let workspace_id = self.workspace_id.clone();
         let sync = self
             .document_sync
@@ -337,6 +368,9 @@ impl LiveWorkspaceSession {
         document: &[u8],
         response_proof: Option<Value>,
     ) -> Result<PreparedLiveDocument, String> {
+        let response_proof = response_proof
+            .map(|value| wire_proof(document, value))
+            .transpose()?;
         let frame = self.decode_automerge_payload(payload)?;
         if frame.document_id != self.workspace_id || frame.scope_id != self.workspace_id {
             return Err("Invalid Automerge sync frame".to_string());
@@ -445,6 +479,14 @@ impl LiveWorkspaceSession {
         mesh: Option<Value>,
     ) -> Result<LiveSessionPublishPlan, String> {
         let document_frame = self.generate_document(document, proof)?;
+        // Large proof history travels through requested pages, never through a
+        // duplicate monolithic control snapshot.
+        let authorization = authorization
+            .map(|value| wire_proof(document, value))
+            .transpose()?;
+        let authorization = authorization.filter(|value| {
+            value.get("kind").and_then(Value::as_str) != Some("workspace-authorization-manifest")
+        });
         let control = self.prepare_control_publish(authorization, chat, mesh)?;
         let control_snapshot = control.control_snapshot;
         let control_frames = control.control_frames;

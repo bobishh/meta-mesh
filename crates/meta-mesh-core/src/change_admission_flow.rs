@@ -22,7 +22,10 @@ pub struct ChangeAdmissionChange {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeAdmissionFlowInput {
+    #[serde(default)]
     pub records: Vec<Value>,
+    #[serde(default)]
+    pub record_pages: Option<Vec<Vec<Value>>>,
     pub known_hashes: Vec<String>,
     pub changes: Vec<ChangeAdmissionChange>,
     pub snapshot: WorkspaceWriteAuthorizationSnapshot,
@@ -69,11 +72,21 @@ pub fn plan_change_admission_flow(
         .map(String::as_str)
         .collect::<HashSet<_>>();
 
+    let paged = input.record_pages.is_some();
+    let pages = if let Some(pages) = input.record_pages {
+        if !input.records.is_empty() {
+            return Err("Mixed workspace proof formats".into());
+        }
+        crate::authorization_record_pages(&serde_json::json!({"version": 2,
+            "authority": {}, "pages": pages}))?
+    } else {
+        vec![input.records]
+    };
     // Match historically ignored unrelated records, then required every
     // relevant one to pass Rust signature and authority verification.
-    let verified_authorizations = input
-        .records
+    let verified_authorizations = pages
         .into_iter()
+        .flatten()
         .filter(|record| record_covers_any(record, &needed))
         .collect::<Vec<_>>();
     let typed_authorizations = verified_authorizations
@@ -82,12 +95,30 @@ pub fn plan_change_admission_flow(
         .map(serde_json::from_value::<IncomingWorkspaceChangeAuthorization>)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| "Invalid workspace change authorization".to_string())?;
-    let admitted_changes = admit_workspace_change_authorizations(
-        &typed_authorizations,
-        &input.snapshot,
-        &needed_hashes,
-        now_ms,
-    )?;
+    let admitted_changes = if paged {
+        let context =
+            crate::authorization::ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(
+                &input.snapshot,
+                now_ms,
+            )?;
+        let needed_refs = needed_hashes.iter().collect::<HashSet<_>>();
+        let mut admitted = Vec::new();
+        for record in &typed_authorizations {
+            admitted.extend(crate::authorization::admit_with_needed(
+                record,
+                &context,
+                &needed_refs,
+            )?);
+        }
+        admitted
+    } else {
+        admit_workspace_change_authorizations(
+            &typed_authorizations,
+            &input.snapshot,
+            &needed_hashes,
+            now_ms,
+        )?
+    };
     let (incoming_changes, editor_changes, unsigned_changes, unsigned_error) =
         classify_changes(&input.changes, &known, &admitted_changes)?;
 

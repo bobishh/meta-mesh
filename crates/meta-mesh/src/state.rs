@@ -75,6 +75,17 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = authorizationRecordPages)]
+    pub fn authorization_record_pages(raw: JsValue) -> Result<JsValue, JsValue> {
+        let bundle: serde_json::Value = from_value(raw)?;
+        to_value(&meta_mesh_core::authorization_record_pages(&bundle).map_err(js_error)?)
+    }
+
+    #[wasm_bindgen(js_name = authorizationExport)]
+    pub fn authorization_export(document: &[u8], raw: JsValue) -> Result<JsValue, JsValue> {
+        let bundle: serde_json::Value = from_value(raw)?;
+        to_value(&meta_mesh_core::authorization_export(document, &bundle).map_err(js_error)?)
+    }
     #[wasm_bindgen(js_name = validateScopeAuthority)]
     pub fn validate_scope_authority(raw: JsValue) -> Result<JsValue, JsValue> {
         let snapshot: meta_mesh_core::ScopeAuthoritySnapshot = from_value(raw)?;
@@ -82,7 +93,10 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = mergeScopeAuthoritySnapshots)]
-    pub fn merge_scope_authority_snapshots(current: JsValue, incoming: JsValue) -> Result<JsValue, JsValue> {
+    pub fn merge_scope_authority_snapshots(
+        current: JsValue,
+        incoming: JsValue,
+    ) -> Result<JsValue, JsValue> {
         let current: Option<meta_mesh_core::ScopeAuthoritySnapshot> = from_value(current)?;
         let incoming: meta_mesh_core::ScopeAuthoritySnapshot = from_value(incoming)?;
         let merged = meta_mesh_core::merge_scope_authority_snapshots(current.as_ref(), &incoming)

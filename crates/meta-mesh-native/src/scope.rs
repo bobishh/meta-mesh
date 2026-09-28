@@ -35,6 +35,17 @@ pub trait NativeScopeHost {
     fn merge_workspace_snapshot(&mut self, _: &[u8]) -> Result<(), String> {
         Err("Unsupported workspace snapshot".into())
     }
+    /// Untrusted staging cache; callers must revalidate pages and signatures
+    /// after restart. These writes never publish or acknowledge a document.
+    fn read_proof_page(&mut self, _: &str) -> Result<Option<Vec<u8>>, String> {
+        Ok(None)
+    }
+    fn write_proof_page(&mut self, _: &str, _: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+    fn clear_proof_pages(&mut self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Native I/O adapter for the same Rust scope runtime used by Match's browser.
@@ -66,101 +77,130 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
 
     /// Return the reply frame only after product storage has accepted the change.
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<Vec<u8>>, String> {
-        let Some(effect) = self.runtime.receive_frame(frame)? else {
+        let Some(mut effect) = self.runtime.receive_frame(frame)? else {
             return Ok(None);
         };
-        match effect {
-            MeshScopeFrameEffect::NeedDocument => {
-                let snapshot = match self.host.snapshot() {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        let _ = self.runtime.reject_document_receive();
-                        return Err(error);
-                    }
-                };
-                let prepared = match self
-                    .runtime
-                    .provide_document(&snapshot.document, snapshot.authorization)
-                {
-                    Ok(MeshScopeFrameEffect::DocumentReceive {
-                        document,
-                        proof,
-                        should_persist,
-                        accepted_hashes,
-                        ..
-                    }) => (document, proof, should_persist, accepted_hashes),
-                    Ok(_) => {
-                        self.runtime.reject_document_receive()?;
-                        return Err("Invalid document receive plan".into());
-                    }
-                    Err(error) => {
-                        self.runtime.reject_document_receive()?;
-                        return Err(error);
-                    }
-                };
-                if prepared.2 {
-                    if let Err(error) =
-                        self.host
-                            .persist_document(&prepared.0, prepared.1.as_ref(), &prepared.3)
-                    {
-                        self.runtime.reject_document_receive()?;
-                        return Err(error);
-                    }
+        loop {
+            let result = match effect {
+                MeshScopeFrameEffect::ProofSource { payload } => {
+                    let snapshot = self.host.snapshot()?;
+                    return Ok(Some(
+                        self.runtime.provide_proof_page(
+                            &payload,
+                            &snapshot.document,
+                            snapshot
+                                .authorization
+                                .ok_or("Missing authorization proof history")?,
+                        )?,
+                    ));
                 }
-                Ok(self.runtime.complete_document_receive(true)?.response)
-            }
-            MeshScopeFrameEffect::Control {
-                control, effects, ..
-            } => {
-                for effect in effects {
-                    match effect {
-                        LiveSessionEffect::MergeAuthorization => {
-                            self.host.merge_authorization(
-                                control
-                                    .authorization
-                                    .as_ref()
-                                    .ok_or("Missing authorization control")?,
-                            )?;
-                            self.runtime.reset_document();
+                MeshScopeFrameEffect::ProofRequest { frame, cache_key } => {
+                    if let Some(cached) = self.host.read_proof_page(&cache_key)? {
+                        match self.runtime.accept_proof_page(&cached) {
+                            Ok(next) => {
+                                effect = next;
+                                continue;
+                            }
+                            Err(_) => return Ok(Some(frame)),
                         }
-                        LiveSessionEffect::MergeChat => self
-                            .host
-                            .merge_chat(control.chat.as_ref().ok_or("Missing chat control")?)?,
-                        LiveSessionEffect::MergeMesh => self
-                            .host
-                            .merge_mesh(control.mesh.as_ref().ok_or("Missing mesh control")?)?,
-                        LiveSessionEffect::CloseSend => (),
-                        _ => return Err("Unsupported native control effect".into()),
                     }
+                    return Ok(Some(frame));
                 }
-                Ok(None)
-            }
-            MeshScopeFrameEffect::Gossip { payload, .. } => {
-                self.host.receive_gossip(&payload)?;
-                Ok(None)
-            }
-            MeshScopeFrameEffect::Heartbeat {
-                acknowledgement, ..
-            } => Ok(Some(acknowledgement)),
-            MeshScopeFrameEffect::DurableBatch { payload } => {
-                self.saved(payload, |host, bytes| host.merge_durable_batch(bytes))
-            }
-            MeshScopeFrameEffect::OwnerWorkspaceOffer { payload } => {
-                self.saved(payload, |host, bytes| host.merge_owner_offer(bytes))
-            }
-            MeshScopeFrameEffect::BlobRequest { payload } => {
-                self.host.receive_blob_request(&payload)
-            }
-            MeshScopeFrameEffect::HandoffRequest { payload } => {
-                self.host.receive_handoff_request(&payload)
-            }
-            MeshScopeFrameEffect::WorkspaceSnapshot { payload, .. } => {
-                self.host.merge_workspace_snapshot(&payload)?;
-                Ok(None)
-            }
-            MeshScopeFrameEffect::DocumentReceive { .. } => {
-                Err("Invalid native document receive state".into())
-            }
+                MeshScopeFrameEffect::ProofPageReceived { cache_key, payload } => {
+                    self.host.write_proof_page(&cache_key, &payload)?;
+                    effect = self.runtime.continue_proof_receive()?;
+                    continue;
+                }
+                MeshScopeFrameEffect::NeedDocument => {
+                    let snapshot = match self.host.snapshot() {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            let _ = self.runtime.reject_document_receive();
+                            return Err(error);
+                        }
+                    };
+                    effect = match self
+                        .runtime
+                        .provide_document(&snapshot.document, snapshot.authorization)
+                    {
+                        Ok(effect) => effect,
+                        Err(error) => {
+                            self.runtime.reject_document_receive()?;
+                            return Err(error);
+                        }
+                    };
+                    continue;
+                }
+                MeshScopeFrameEffect::DocumentReceive {
+                    document,
+                    proof,
+                    should_persist,
+                    accepted_hashes,
+                    ..
+                } => {
+                    if should_persist {
+                        if let Err(error) =
+                            self.host
+                                .persist_document(&document, proof.as_ref(), &accepted_hashes)
+                        {
+                            self.runtime.reject_document_receive()?;
+                            let _ = self.host.clear_proof_pages();
+                            return Err(error);
+                        }
+                    }
+                    return Ok(self.runtime.complete_document_receive(true)?.response);
+                }
+                MeshScopeFrameEffect::Control {
+                    control, effects, ..
+                } => {
+                    for effect in effects {
+                        match effect {
+                            LiveSessionEffect::MergeAuthorization => {
+                                self.host.merge_authorization(
+                                    control
+                                        .authorization
+                                        .as_ref()
+                                        .ok_or("Missing authorization control")?,
+                                )?;
+                                self.runtime.reset_document();
+                            }
+                            LiveSessionEffect::MergeChat => self
+                                .host
+                                .merge_chat(control.chat.as_ref().ok_or("Missing chat control")?)?,
+                            LiveSessionEffect::MergeMesh => self
+                                .host
+                                .merge_mesh(control.mesh.as_ref().ok_or("Missing mesh control")?)?,
+                            LiveSessionEffect::CloseSend => (),
+                            _ => return Err("Unsupported native control effect".into()),
+                        }
+                    }
+                    Ok(None)
+                }
+                MeshScopeFrameEffect::Gossip { payload, .. } => {
+                    self.host.receive_gossip(&payload)?;
+                    Ok(None)
+                }
+                MeshScopeFrameEffect::Heartbeat {
+                    acknowledgement, ..
+                } => Ok(Some(acknowledgement)),
+                MeshScopeFrameEffect::DurableBatch { payload } => {
+                    self.saved(payload, |host, bytes| host.merge_durable_batch(bytes))
+                }
+                MeshScopeFrameEffect::OwnerWorkspaceOffer { payload } => {
+                    self.saved(payload, |host, bytes| host.merge_owner_offer(bytes))
+                }
+                MeshScopeFrameEffect::BlobRequest { payload } => {
+                    self.host.receive_blob_request(&payload)
+                }
+                MeshScopeFrameEffect::HandoffRequest { payload } => {
+                    self.host.receive_handoff_request(&payload)
+                }
+                MeshScopeFrameEffect::WorkspaceSnapshot { payload, .. } => {
+                    self.host.merge_workspace_snapshot(&payload)?;
+                    Ok(None)
+                }
+            };
+            return result;
         }
     }
 

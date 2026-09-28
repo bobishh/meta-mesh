@@ -31,6 +31,8 @@ export type MeshScopeHost = {
   onHandoffRequest?(stream: MeshScopeStream, frame: Uint8Array): Promise<void>
   onWorkspaceSnapshot?(payload: Uint8Array): Promise<void>
   onTiming?(timing: MeshScopeTiming): void
+  readProofPage?(cacheKey: string): Promise<Uint8Array | undefined>
+  writeProofPage?(cacheKey: string, payload: Uint8Array): Promise<void>
 }
 
 /** Executes Rust scope effects against browser storage and transport callbacks. */
@@ -136,13 +138,39 @@ export class BrowserMeshScopeSync {
 
   private async apply(stream: MeshScopeStream, frame: Uint8Array, effect: RustMeshScopeFrameEffect): Promise<void> {
     switch (effect.kind) {
+      case "proofSource": {
+        const document = await this.host.readDocument()
+        const authorization = await this.host.readAuthorization?.(document)
+        if (!authorization) throw new Error("Missing authorization proof history")
+        await stream.send(toBytes(this.runtime.provideProofPage(toBytes(effect.payload), document, authorization)))
+        await stream.closeSend()
+        return
+      }
+      case "proofRequest": {
+        const cached = await this.host.readProofPage?.(effect.cacheKey)
+        if (cached) {
+          let accepted: RustMeshScopeFrameEffect | undefined
+          try { accepted = this.runtime.acceptProofPage(cached) } catch { /* discard corrupt untrusted cache */ }
+          if (accepted) return this.apply(stream, frame, accepted)
+        }
+        await stream.send(toBytes(effect.frame))
+        await stream.closeSend()
+        return
+      }
+      case "proofPageReceived": {
+        await this.host.writeProofPage?.(effect.cacheKey, toBytes(effect.payload))
+        return this.apply(stream, frame, this.runtime.continueProofReceive())
+      }
       case "needDocument": {
         let pending = true
         try {
           const document = await this.host.readDocument()
           const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
           const prepared = this.runtime.provideDocument(document, proof)
-          if (prepared.kind !== "documentReceive") throw new Error("Rust scope returned invalid document effect")
+          if (prepared.kind !== "documentReceive") {
+            pending = false
+            return await this.apply(stream, frame, prepared)
+          }
           let persisted = false
           persisted = !prepared.shouldPersist || (await this.host.persistDocument(toBytes(prepared.document), prepared.proof)) !== false
           // complete(false) consumes pending state while aborting Rust sync.
@@ -205,8 +233,19 @@ export class BrowserMeshScopeSync {
         await this.host.onWorkspaceSnapshot(toBytes(effect.payload))
         if (effect.closeSend) await stream.closeSend()
         return
-      case "documentReceive":
-        throw new Error("Document receive requires Rust scope document plan")
+      case "documentReceive": {
+        try {
+          const persisted = !effect.shouldPersist || (await this.host.persistDocument(toBytes(effect.document), effect.proof)) !== false
+          const completion = this.runtime.completeDocumentReceive(persisted)
+          if (completion.response) await stream.send(toBytes(completion.response))
+          if (completion.closeSend) await stream.closeSend()
+          this.host.onDocumentAccepted?.(effect.acceptedChanges)
+        } catch (error) {
+          try { this.runtime.rejectDocumentReceive() } catch { /* preserve original failure */ }
+          throw error
+        }
+        return
+      }
     }
   }
 

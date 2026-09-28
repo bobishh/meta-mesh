@@ -113,6 +113,8 @@ export type RustStateCore = {
   verifyWorkspaceSuccessionClaim(claim: unknown, workspaceId: string, authority: unknown, minimumEpoch: number, revoked: string[], nowMs: number): unknown
   planChangeAdmission(documentId: string, changes: unknown, verifiedAt: string): unknown
   planChangeAdmissionFlow(input: unknown, nowMs: number): unknown
+  authorizationRecordPages(bundle: unknown): unknown[][]
+  authorizationExport(document: Uint8Array, bundle: unknown): unknown
   transitionOutboxClaim(current: unknown, input: unknown): unknown
   mergePeerRecords(existing: unknown, incoming: unknown): unknown
   reconcileReplicaSets(left: unknown, right: unknown): unknown
@@ -243,6 +245,9 @@ export type RustLiveWorkspaceSession = {
 
 export type RustMeshScopeFrameEffect =
   | { kind: "needDocument" }
+  | { kind: "proofSource"; payload: Uint8Array | number[] }
+  | { kind: "proofRequest"; frame: Uint8Array | number[]; cacheKey: string }
+  | { kind: "proofPageReceived"; payload: Uint8Array | number[]; cacheKey: string }
   | { kind: "documentReceive"; document: Uint8Array | number[]; proof?: unknown; shouldPersist: boolean; acceptedChanges: number; acceptedHashes: string[]; heads: string[] }
   | { kind: "control"; control: { authorization?: unknown; chat?: unknown; mesh?: unknown }; effects: string[]; closeSend: boolean }
   | { kind: "gossip"; payload: Uint8Array | number[]; closeSend: boolean }
@@ -256,6 +261,10 @@ export type RustMeshScopeFrameEffect =
 export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]; closeSend: boolean }
 
 export type RustMeshScopeRuntime = {
+  beginAuthorizationTransfer(candidate: Uint8Array, local: Uint8Array, manifest: unknown): RustMeshScopeFrameEffect
+  provideProofPage(payload: Uint8Array, document: Uint8Array, authorization: unknown): Uint8Array | number[]
+  acceptProofPage(payload: Uint8Array): RustMeshScopeFrameEffect
+  continueProofReceive(): RustMeshScopeFrameEffect
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void
   receiveFrame(frame: Uint8Array): RustMeshScopeFrameEffect | null
   provideDocument(document: Uint8Array, responseProof: unknown): RustMeshScopeFrameEffect

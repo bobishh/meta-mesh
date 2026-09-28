@@ -152,6 +152,17 @@ fn admit_with_context(
     context: &ValidatedWorkspaceWriteAuthorizationContext,
     needed_hashes: &[String],
 ) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
+    let needed = needed_hashes
+        .iter()
+        .collect::<std::collections::HashSet<_>>();
+    admit_with_needed(incoming, context, &needed)
+}
+
+pub(crate) fn admit_with_needed(
+    incoming: &IncomingWorkspaceChangeAuthorization,
+    context: &ValidatedWorkspaceWriteAuthorizationContext,
+    needed: &std::collections::HashSet<&String>,
+) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
     let payload = &incoming.signed.payload;
     if payload.kind != "workspace-changes"
         || payload.version != 1
@@ -162,9 +173,6 @@ fn admit_with_context(
     {
         return Err("Invalid workspace change authorization".to_string());
     }
-    let needed = needed_hashes
-        .iter()
-        .collect::<std::collections::HashSet<_>>();
     if !payload.hashes.iter().any(|hash| needed.contains(hash)) {
         return Err("Workspace change authorization does not cover an incoming change".to_string());
     }

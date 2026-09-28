@@ -25,6 +25,7 @@ pub mod ownership_adoption;
 pub mod ownership_merge;
 pub mod pairing;
 pub mod persistence;
+pub mod proof_transfer;
 pub mod recovery;
 pub mod replication;
 pub mod runtime;
@@ -82,6 +83,8 @@ pub use change_admission_flow::{
     ChangeAdmissionChange, ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
     plan_change_admission_flow, unsigned_change_error,
 };
+pub use proof_transfer::{authorization_admission_bundle, authorization_export, authorization_page, authorization_record_pages, authorization_records,
+    AuthorizationManifest, AuthorizationPage, AuthorizationPageReceiver, AuthorizationPageRequest};
 pub use credential_access::{
     CredentialPartition, CredentialPartitionInput, can_remove_workspace_device,
     credential_belongs_to_profile, has_left_workspace, is_device_revoked, is_grant_revoked,
