@@ -62,22 +62,41 @@ struct AccessHook {
     allowed_remotes: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
     accept_unlisted_browser_rpc: bool,
+    #[cfg(test)]
+    decisions: Arc<Mutex<Option<mpsc::UnboundedSender<AccessDecision>>>>,
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct AccessDecision {
+    remote: EndpointId,
+    alpn: Vec<u8>,
+    accepted: bool,
 }
 
 impl EndpointHooks for AccessHook {
     async fn after_handshake<'a>(&'a self, connection: &'a Connection) -> AfterHandshakeOutcome {
-        if connection.side().is_client()
+        let accepted = connection.side().is_client()
             || self.allow_any
             || (self.accept_unlisted_browser_rpc && connection.alpn() == BROWSER_RPC_ALPN)
-        {
-            return AfterHandshakeOutcome::Accept;
+            || self
+                .allowed_remotes
+                .read()
+                .expect("native peer allowlist poisoned")
+                .contains(&connection.remote_id());
+
+        #[cfg(test)]
+        if connection.side().is_server() {
+            if let Some(decisions) = self.decisions.lock().await.as_ref() {
+                let _ = decisions.send(AccessDecision {
+                    remote: connection.remote_id(),
+                    alpn: connection.alpn().to_vec(),
+                    accepted,
+                });
+            }
         }
-        if self
-            .allowed_remotes
-            .read()
-            .expect("native peer allowlist poisoned")
-            .contains(&connection.remote_id())
-        {
+
+        if accepted {
             AfterHandshakeOutcome::Accept
         } else {
             AfterHandshakeOutcome::Reject {
@@ -96,6 +115,8 @@ pub struct NativeNode {
     allowed_peers: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
     rpc_inbox: Arc<NativeRpcInbox>,
+    #[cfg(test)]
+    access_decisions: Arc<Mutex<Option<mpsc::UnboundedSender<AccessDecision>>>>,
 }
 
 /// One browser-compatible Iroh connection for multi-stream protocols such as
@@ -314,6 +335,8 @@ impl NativeNode {
             .map(|bytes| SecretKey::from_bytes(&bytes))
             .unwrap_or_else(SecretKey::generate);
         let allowed_peers = Arc::new(RwLock::new(options.allowed_peers.into_iter().collect()));
+        #[cfg(test)]
+        let access_decisions = Arc::new(Mutex::new(None));
         let endpoint = Endpoint::builder(presets::N0)
             .relay_mode(options.relay_mode)
             .bind_addr(options.bind_addr)?
@@ -322,6 +345,8 @@ impl NativeNode {
                 allowed_remotes: allowed_peers.clone(),
                 allow_any: options.allow_any,
                 accept_unlisted_browser_rpc: options.accept_unlisted_browser_rpc,
+                #[cfg(test)]
+                decisions: access_decisions.clone(),
             })
             .bind()
             .await?;
@@ -352,6 +377,8 @@ impl NativeNode {
             allowed_peers,
             allow_any: options.allow_any,
             rpc_inbox,
+            #[cfg(test)]
+            access_decisions,
         })
     }
 
@@ -631,26 +658,72 @@ mod tests {
         let guest = NativeNode::start(Some([31; 32]), vec![]).await.unwrap();
         let host = NativeNode::start_with_options(NativeNodeOptions {
             secret: Some([32; 32]),
+            bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+            relay_mode: RelayMode::Disabled,
             accept_unlisted_browser_rpc: true,
             ..NativeNodeOptions::default()
         })
         .await
         .unwrap();
         assert!(!host.is_peer_authorized(&guest.endpoint_id()));
+        let (decision_sender, mut decisions) = mpsc::unbounded_channel();
+        *host.access_decisions.lock().await = Some(decision_sender);
+
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let request = tokio::time::timeout(Duration::from_secs(5), inbox.receive())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(request.payload(), b"signed-admission");
+            request.respond(b"admitted".to_vec()).unwrap();
+        });
         let browser = guest
             .connect_browser(host.addr(), Duration::from_secs(5))
             .await
             .unwrap();
-        browser.close();
+        let browser_decision = tokio::time::timeout(Duration::from_secs(5), decisions.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            browser_decision,
+            AccessDecision {
+                remote: guest.endpoint_id(),
+                alpn: BROWSER_RPC_ALPN.to_vec(),
+                accepted: true,
+            }
+        );
+        assert_eq!(
+            browser
+                .exchange(b"signed-admission", Duration::from_secs(5))
+                .await
+                .unwrap(),
+            b"admitted"
+        );
+        responder.await.unwrap();
         let blobs = guest
             .endpoint
             .connect(host.addr(), BLOBS_ALPN)
             .await
             .unwrap();
-        let denied = tokio::time::timeout(Duration::from_secs(5), blobs.closed())
+        if let Ok((mut send, _receive)) = blobs.open_bi().await {
+            send.write_all(b"unauthorized blob request").await.unwrap();
+            send.finish().unwrap();
+        }
+        let blobs_decision = tokio::time::timeout(Duration::from_secs(5), decisions.recv())
             .await
             .unwrap();
-        assert!(denied.to_string().contains("unauthorized"), "{denied}");
+        assert_eq!(
+            blobs_decision.unwrap(),
+            AccessDecision {
+                remote: guest.endpoint_id(),
+                alpn: BLOBS_ALPN.to_vec(),
+                accepted: false,
+            }
+        );
+        drop(blobs);
+        browser.close();
         guest.close().await.unwrap();
         host.close().await.unwrap();
     }
