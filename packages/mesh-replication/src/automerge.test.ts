@@ -234,7 +234,7 @@ describe("Automerge anti-entropy", () => {
     expect(Automerge.getHeads(rightAdapter.document)).toEqual(Automerge.getHeads(leftAdapter.document))
   })
 
-  it("Given two live tabs share a device, when route speed changes, then one sync exchange stays on its selected tab", async () => {
+  it("Given two live tabs share a device, when first durable route wins, then later rounds stay on that tab", async () => {
     const leftProfile = (await createRecoverableIdentity("better", "Left")).profile
     const rightProfile = (await createRecoverableIdentity("better", "Right")).profile
     const base = Automerge.from<Chat>({ messages: [] })
@@ -250,6 +250,8 @@ describe("Automerge anti-entropy", () => {
       signerKeyId: rightProfile.device.deviceId, signature: "route-signature",
     })
     const calls = new Map<string, number>()
+    let releaseCompetingFirstReply!: () => void
+    const competingFirstReply = new Promise<void>(resolve => { releaseCompetingFirstReply = resolve })
     const result = await syncAutomergeDocumentToDevice({
       engine: new AutomergeAntiEntropy(leftProfile.device.deviceId, Automerge),
       adapter: leftAdapter,
@@ -260,8 +262,10 @@ describe("Automerge anti-entropy", () => {
       send: async (candidate, request) => {
         const count = (calls.get(candidate.instanceId) ?? 0) + 1
         calls.set(candidate.instanceId, count)
-        // First round selects A; later B would win if delivery raced again.
-        await new Promise(resolve => setTimeout(resolve, candidate.instanceId === "tab-a" ? (count === 1 ? 1 : 20) : (count === 1 ? 20 : 1)))
+        // Hold B's first response until A starts round two. A wins by durable
+        // completion order, independent of CPU load or signature timing.
+        if (candidate.instanceId === "tab-b" && count === 1) await competingFirstReply
+        if (candidate.instanceId === "tab-a" && count > 1) releaseCompetingFirstReply()
         const tab = tabs.get(candidate.instanceId)!
         return receiveAutomergeDeviceSync({ profile: rightProfile, engine: tab.engine, adapter: tab.adapter,
           remoteDeviceId: leftProfile.device.deviceId, request })
@@ -271,6 +275,7 @@ describe("Automerge anti-entropy", () => {
     })
     expect(result.routeInstanceIds.length).toBeGreaterThan(1)
     expect(new Set(result.routeInstanceIds)).toEqual(new Set(["tab-a"]))
+    expect(calls.get("tab-b") ?? 0).toBeLessThanOrEqual(1)
     expect(tabs.get("tab-a")!.adapter.document.messages).toEqual(["one"])
   })
 })
