@@ -170,13 +170,120 @@ pub fn authorization_admission_bundle(bundle: &Value) -> Result<Value, String> {
 /// Storage snapshots are aggregate data, not wire bundles. Validate aggregate
 /// resource bounds here without pretending they fit a legacy admission frame.
 fn stored_records(bundle: &Value) -> Result<Vec<Value>, String> {
-    if let Some(records) = bundle.get("records").and_then(Value::as_array) {
+    let records = if let Some(records) = bundle.get("records").and_then(Value::as_array) {
         if records.len() > MAX_PROOF_TRANSFER_RECORDS || bytes(bundle)? > MAX_PROOF_TRANSFER_BYTES {
             return Err("Workspace proof history exceeds transfer resource limit".into());
         }
-        return Ok(records.clone());
+        records.clone()
+    } else {
+        authorization_records(bundle)?
+    };
+    normalize_stored_records(records)
+}
+
+/// Multiple durable replicas can retain the same signed authorization with
+/// different unsigned certificate sidecars. Collapse those variants to one
+/// deterministic record before paging, while rejecting any change to the
+/// signed envelope or other identity fields.
+fn normalize_stored_records(records: Vec<Value>) -> Result<Vec<Value>, String> {
+    let mut normalized = BTreeMap::<String, Value>::new();
+    for record in records {
+        let record = normalize_stored_record(record)?;
+        let identity = signature(&record)?.to_owned();
+        let Some(previous) = normalized.get_mut(&identity) else {
+            normalized.insert(identity, record);
+            continue;
+        };
+        if previous.get("signed") != record.get("signed") {
+            return Err("Conflicting stored authorization identity".into());
+        }
+
+        let mut previous_identity = previous.clone();
+        let mut incoming_identity = record.clone();
+        for value in [&mut previous_identity, &mut incoming_identity] {
+            let Some(object) = value.as_object_mut() else {
+                return Err("Invalid stored authorization record".into());
+            };
+            object.remove("certificates");
+            object.remove("ownerCertificates");
+            object.remove("ownerPublicKey");
+        }
+        if previous_identity != incoming_identity {
+            return Err("Conflicting stored authorization identity".into());
+        }
+
+        let previous_object = previous
+            .as_object_mut()
+            .ok_or("Invalid stored authorization record")?;
+        let incoming_object = record
+            .as_object()
+            .ok_or("Invalid stored authorization record")?;
+        if let (Some(previous_key), Some(incoming_key)) = (
+            previous_object.get("ownerPublicKey"),
+            incoming_object.get("ownerPublicKey"),
+        ) {
+            if previous_key != incoming_key {
+                return Err("Conflicting stored authorization identity".into());
+            }
+        } else if let Some(owner_key) = incoming_object.get("ownerPublicKey") {
+            previous_object.insert("ownerPublicKey".into(), owner_key.clone());
+        }
+        for field in ["certificates", "ownerCertificates"] {
+            let Some(merged) =
+                merge_certificate_variants(previous_object.get(field), incoming_object.get(field))?
+            else {
+                continue;
+            };
+            previous_object.insert(field.into(), merged);
+        }
     }
-    authorization_records(bundle)
+    Ok(normalized.into_values().collect())
+}
+
+fn normalize_stored_record(mut record: Value) -> Result<Value, String> {
+    signature(&record)?;
+    let object = record
+        .as_object_mut()
+        .ok_or("Invalid stored authorization record")?;
+    for field in ["certificates", "ownerCertificates"] {
+        if let Some(certificates) = object.get(field) {
+            let normalized = merge_certificate_variants(Some(certificates), Some(certificates))?
+                .ok_or("Invalid stored authorization certificates")?;
+            object.insert(field.into(), normalized);
+        }
+    }
+    Ok(record)
+}
+
+fn merge_certificate_variants(
+    left: Option<&Value>,
+    right: Option<&Value>,
+) -> Result<Option<Value>, String> {
+    let (Some(left), Some(right)) = (left, right) else {
+        return Ok(left.or(right).cloned());
+    };
+    let left = left
+        .as_array()
+        .ok_or("Invalid stored authorization certificates")?;
+    let right = right
+        .as_array()
+        .ok_or("Invalid stored authorization certificates")?;
+    let mut merged = BTreeMap::<String, Value>::new();
+    for certificate in left.iter().chain(right) {
+        let signature = certificate
+            .get("signature")
+            .and_then(Value::as_str)
+            .filter(|signature| !signature.is_empty())
+            .ok_or("Invalid stored authorization certificate identity")?
+            .to_owned();
+        if merged
+            .insert(signature, certificate.clone())
+            .is_some_and(|previous| previous != *certificate)
+        {
+            return Err("Conflicting stored authorization certificate identity".into());
+        }
+    }
+    Ok(Some(Value::Array(merged.into_values().collect())))
 }
 
 pub fn authorization_export(document: &[u8], bundle: &Value) -> Result<Value, String> {
@@ -544,6 +651,203 @@ impl AuthorizationPageReceiver {
 mod tests {
     use super::*;
     use automerge::{ROOT, transaction::Transactable};
+
+    fn signed_sidecar_fixture() -> (
+        Vec<u8>,
+        Vec<u8>,
+        Value,
+        crate::WorkspaceWriteAuthorizationSnapshot,
+        Vec<crate::ChangeAdmissionChange>,
+    ) {
+        use crate::{
+            DEFAULT_SIGNATURE_DOMAIN, DeviceCertificatePayload, WorkspaceAuthority,
+            public_key_from_seed, public_key_id, sign_device_certificate, sign_json_envelope,
+        };
+
+        let root_seed = [51u8; 32];
+        let device_seed = [52u8; 32];
+        let other_device_seed = [53u8; 32];
+        let owner_public_key = public_key_from_seed(&root_seed).unwrap();
+        let owner_person_id = public_key_id(&owner_public_key).unwrap();
+        let device_public_key = public_key_from_seed(&device_seed).unwrap();
+        let device_id = public_key_id(&device_public_key).unwrap();
+        let other_device_public_key = public_key_from_seed(&other_device_seed).unwrap();
+        let other_device_id = public_key_id(&other_device_public_key).unwrap();
+        let make_certificate = |device_id: String, device_public_key: String| {
+            sign_device_certificate(
+                &root_seed,
+                DeviceCertificatePayload {
+                    kind: "device-certificate".into(),
+                    version: 1,
+                    person_id: owner_person_id.clone(),
+                    device_id,
+                    device_public_key,
+                    issuer_certificate_hash: None,
+                    can_enroll_devices: true,
+                },
+                &owner_person_id,
+                DEFAULT_SIGNATURE_DOMAIN,
+            )
+            .unwrap()
+        };
+        let certificate = make_certificate(device_id.clone(), device_public_key.clone());
+        let other_certificate = make_certificate(other_device_id, other_device_public_key);
+
+        let mut document = AutoCommit::new();
+        document.put(ROOT, "id", "board").unwrap();
+        document.put(ROOT, "counter", 1i64).unwrap();
+        let changes = document
+            .get_changes(&[])
+            .iter()
+            .map(|change| crate::ChangeAdmissionChange {
+                hash: change.hash().to_string(),
+                dependencies: change.deps().iter().map(ToString::to_string).collect(),
+                actor: change.actor_id().to_hex_string(),
+                message: change.message().unwrap_or_default().to_string(),
+            })
+            .collect::<Vec<_>>();
+        let hashes = changes
+            .iter()
+            .map(|change| change.hash.clone())
+            .collect::<Vec<_>>();
+        let signed = sign_json_envelope(
+            &device_seed,
+            json!({"kind":"workspace-changes", "version":1, "workspaceId":"board",
+                "hashes":hashes, "personId":owner_person_id, "deviceId":device_id}),
+            &device_id,
+            DEFAULT_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        let record = json!({"signed":signed, "publicKey":owner_public_key,
+            "certificates":[certificate], "ownerCertificates":[certificate], "grant":null,
+            "padding":"x".repeat(70 * 1024)});
+        let mut enriched = record.clone();
+        enriched["certificates"] = json!([other_certificate, certificate]);
+        enriched["ownerPublicKey"] = json!(owner_public_key);
+        enriched["ownerCertificates"] = json!([other_certificate, certificate]);
+        let authority = WorkspaceAuthority {
+            person_id: owner_person_id,
+            public_key: owner_public_key,
+            certificates: vec![certificate, other_certificate],
+        };
+        let document_bytes = document.save();
+        let proof = json!({"version":1, "authority":{"genesisOwner":authority},
+            "records":[record, enriched]});
+        let snapshot = crate::WorkspaceWriteAuthorizationSnapshot {
+            workspace_id: "board".into(),
+            genesis_owner: authority.clone(),
+            genesis_epoch: 1,
+            expected_current_owner: authority,
+            document: document_bytes.clone(),
+            ownership_transfers: vec![],
+            succession_claims: vec![],
+            revocations: vec![],
+            device_revocations: vec![],
+            departures: vec![],
+        };
+        (
+            document_bytes,
+            AutoCommit::new().save(),
+            proof,
+            snapshot,
+            changes,
+        )
+    }
+
+    #[test]
+    fn stored_duplicate_proofs_merge_certificate_sidecars_without_weakening_admission() {
+        let (document, empty, proof, snapshot, changes) = signed_sidecar_fixture();
+        let exported = authorization_export(&document, &proof).unwrap();
+        let mut reordered = proof.clone();
+        reordered["records"].as_array_mut().unwrap().reverse();
+        let reordered_export = authorization_export(&document, &reordered).unwrap();
+        assert_eq!(exported, reordered_export);
+        let single_enriched = json!({"version":1, "authority":proof["authority"],
+            "records":[proof["records"][1].clone()]});
+        assert_eq!(
+            exported,
+            authorization_export(&document, &single_enriched).unwrap()
+        );
+
+        let manifest: AuthorizationManifest = serde_json::from_value(exported).unwrap();
+        let source = PreparedAuthorizationSource::new(&document, &proof, &manifest).unwrap();
+        let mut receiver = AuthorizationPageReceiver::new(manifest, &document, &empty).unwrap();
+        while let Some(request) = receiver.request().unwrap() {
+            receiver.accept(source.page(request).unwrap()).unwrap();
+        }
+        let transferred = receiver.bundle().unwrap();
+        let pages = authorization_record_pages(&transferred).unwrap();
+        assert_eq!(pages.iter().map(Vec::len).sum::<usize>(), 1);
+        let record = &pages[0][0];
+        assert_eq!(record["ownerCertificates"].as_array().unwrap().len(), 2);
+        assert_eq!(record["certificates"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            record["ownerPublicKey"],
+            proof["records"][1]["ownerPublicKey"]
+        );
+
+        // The signed payload and signer credentials still pass normal crypto admission.
+        let plan = crate::plan_change_admission_flow(
+            crate::ChangeAdmissionFlowInput {
+                records: vec![],
+                record_pages: Some(pages),
+                known_hashes: vec![],
+                changes,
+                snapshot,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(plan.unsigned_error.is_none());
+        assert_eq!(plan.admitted_changes.len(), plan.incoming_changes.len());
+    }
+
+    #[test]
+    fn stored_duplicate_proofs_reject_signed_scalar_and_certificate_conflicts() {
+        let (document, _, proof, _, _) = signed_sidecar_fixture();
+        let mut conflicting_signed = proof.clone();
+        conflicting_signed["records"][1]["signed"]["payload"]["workspaceId"] =
+            json!("another-board");
+        assert!(
+            authorization_export(&document, &conflicting_signed)
+                .unwrap_err()
+                .contains("Conflicting stored authorization identity")
+        );
+
+        let mut conflicting_owner = proof.clone();
+        conflicting_owner["records"][0]["ownerPublicKey"] = json!("first-owner");
+        conflicting_owner["records"][1]["ownerPublicKey"] = json!("different-owner");
+        assert!(
+            authorization_export(&document, &conflicting_owner)
+                .unwrap_err()
+                .contains("Conflicting stored authorization identity")
+        );
+
+        let mut conflicting_certificate = proof.clone();
+        conflicting_certificate["records"][1]["certificates"][1]["payload"]["deviceId"] =
+            json!("different-device");
+        assert!(
+            authorization_export(&document, &conflicting_certificate)
+                .unwrap_err()
+                .contains("Conflicting stored authorization certificate identity")
+        );
+
+        let mut malformed_singleton = proof;
+        malformed_singleton["records"]
+            .as_array_mut()
+            .unwrap()
+            .truncate(1);
+        malformed_singleton["records"][0]["certificates"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("signature");
+        assert!(
+            authorization_export(&document, &malformed_singleton)
+                .unwrap_err()
+                .contains("Invalid stored authorization certificate identity")
+        );
+    }
+
     /// Deterministic full signed-history regression and separate source/crypto timings.
     /// Run explicitly in release mode; cryptography is deliberately not mocked.
     #[test]
