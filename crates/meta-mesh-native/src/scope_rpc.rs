@@ -175,6 +175,18 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
         Ok(())
     }
     .await;
+    let aborted_incomplete_receive = if sent
+        .as_ref()
+        .is_err_and(ScopePublishError::is_exchange_timeout)
+    {
+        service
+            .lock()
+            .await
+            .abort_incomplete_document_receive(workspace_id, remote_id)
+            .unwrap_or(false)
+    } else {
+        false
+    };
     service
         .lock()
         .await
@@ -189,7 +201,7 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
         })?;
     if trace {
         eprintln!(
-            "trace.sync event=publish.end id={publish_id} workspace={} route={} result={} elapsed_ms={}",
+            "trace.sync event=publish.end id={publish_id} workspace={} route={} result={} aborted_incomplete_receive={aborted_incomplete_receive} elapsed_ms={}",
             short(workspace_id),
             short(remote_id),
             if sent.is_ok() { "ok" } else { "failed" },

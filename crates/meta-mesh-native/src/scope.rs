@@ -75,6 +75,13 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
         &mut self.host
     }
 
+    /// Abort an incomplete document/proof receive after its RPC exchange is
+    /// lost. No product storage was committed while this receive was pending;
+    /// the next publish restarts Automerge sync and revalidates staged pages.
+    pub fn abort_incomplete_document_receive(&mut self) -> bool {
+        self.runtime.reject_document_receive().is_ok()
+    }
+
     /// Return the reply frame only after product storage has accepted the change.
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<Vec<u8>>, String> {
         let Some(mut effect) = self.runtime.receive_frame(frame)? else {
@@ -243,6 +250,8 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use automerge::{AutoCommit, ROOT, transaction::Transactable};
     use meta_mesh_core::{
         ChangeAdmissionChange, ChangeAdmissionFlowInput, DEFAULT_SIGNATURE_DOMAIN,
@@ -263,6 +272,7 @@ mod tests {
         saved: usize,
         fail_cache_read: bool,
         fail_cache_write: bool,
+        proof_pages: HashMap<String, Vec<u8>>,
         admission_snapshot: Option<WorkspaceWriteAuthorizationSnapshot>,
     }
 
@@ -313,7 +323,7 @@ mod tests {
                     },
                     0,
                 )?;
-                if plan.unsigned_error.is_some() || plan.admitted_changes.len() != changes.len() {
+                if plan.unsigned_error.is_some() || plan.incoming_changes.len() != changes.len() {
                     return Err("workspace change authorization rejected".into());
                 }
             }
@@ -323,18 +333,19 @@ mod tests {
             Ok(())
         }
 
-        fn read_proof_page(&mut self, _: &str) -> Result<Option<Vec<u8>>, String> {
+        fn read_proof_page(&mut self, key: &str) -> Result<Option<Vec<u8>>, String> {
             if self.fail_cache_read {
                 Err("staging read failed".into())
             } else {
-                Ok(None)
+                Ok(self.proof_pages.get(key).cloned())
             }
         }
 
-        fn write_proof_page(&mut self, _: &str, _: &[u8]) -> Result<(), String> {
+        fn write_proof_page(&mut self, key: &str, payload: &[u8]) -> Result<(), String> {
             if self.fail_cache_write {
                 Err("staging write failed".into())
             } else {
+                self.proof_pages.insert(key.into(), payload.into());
                 Ok(())
             }
         }
@@ -393,6 +404,7 @@ mod tests {
                 saved: 0,
                 fail_cache_read: false,
                 fail_cache_write: false,
+                proof_pages: HashMap::new(),
                 admission_snapshot: None,
             },
         )
@@ -427,6 +439,7 @@ mod tests {
                 saved: 0,
                 fail_cache_read: false,
                 fail_cache_write: false,
+                proof_pages: HashMap::new(),
                 admission_snapshot: None,
             },
         )
@@ -449,7 +462,9 @@ mod tests {
             .unwrap();
     }
 
-    fn signed_proof_fixture() -> (Vec<u8>, Vec<u8>, Value, WorkspaceWriteAuthorizationSnapshot) {
+    fn signed_proof_fixture_with_pages(
+        multi_page: bool,
+    ) -> (Vec<u8>, Vec<u8>, Value, WorkspaceWriteAuthorizationSnapshot) {
         let owner_seed = [41u8; 32];
         let device_seed = [42u8; 32];
         let owner_public_key = public_key_from_seed(&owner_seed).unwrap();
@@ -483,31 +498,46 @@ mod tests {
         candidate_doc.put(ROOT, "title", "signed update").unwrap();
         let candidate = candidate_doc.save();
         let hash = candidate_doc.get_heads()[0].to_string();
-        let signed = sign_json_envelope(
-            &device_seed,
+        let sign_record = |hashes: Vec<String>| {
+            let signed = sign_json_envelope(
+                &device_seed,
+                serde_json::json!({
+                    "kind": "workspace-changes",
+                    "version": 1,
+                    "workspaceId": "board",
+                    "hashes": hashes,
+                    "personId": person_id,
+                    "deviceId": device_id,
+                }),
+                &device_id,
+                DEFAULT_SIGNATURE_DOMAIN,
+            )
+            .unwrap();
             serde_json::json!({
-                "kind": "workspace-changes",
-                "version": 1,
-                "workspaceId": "board",
-                "hashes": [hash],
-                "personId": person_id,
-                "deviceId": device_id,
-            }),
-            &device_id,
-            DEFAULT_SIGNATURE_DOMAIN,
-        )
-        .unwrap();
-        let record = serde_json::json!({
-            "signed": signed,
-            "publicKey": owner_public_key,
-            "certificates": [certificate],
-        });
-        // Repeated identical evidence forces the manifest/page path while
-        // remaining valid under the same signer identity.
+                "signed": signed,
+                "publicKey": owner_public_key,
+                "certificates": [certificate],
+            })
+        };
+        let records = if multi_page {
+            (0..15)
+                .map(|record_index| {
+                    let mut hashes = vec![hash.clone()];
+                    hashes.extend(
+                        (0..255).map(|item| format!("{:064x}", 10_000 + record_index * 255 + item)),
+                    );
+                    sign_record(hashes)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            // Repeated identical evidence forces the manifest/page path while
+            // remaining valid under the same signer identity.
+            vec![sign_record(vec![hash]); 1_000]
+        };
         let proof = serde_json::json!({
             "version": 1,
             "authority": {"genesisOwner": owner},
-            "records": vec![record; 1_000],
+            "records": records,
         });
         let snapshot = WorkspaceWriteAuthorizationSnapshot {
             workspace_id: "board".into(),
@@ -539,6 +569,7 @@ mod tests {
             saved: 0,
             fail_cache_read,
             fail_cache_write,
+            proof_pages: HashMap::new(),
             admission_snapshot: Some(snapshot),
         }
     }
@@ -570,7 +601,22 @@ mod tests {
         Vec<u8>,
         Value,
     ) {
-        let (baseline, candidate, proof, snapshot) = signed_proof_fixture();
+        signed_transfer_with_pages(fail_cache_read, fail_cache_write, false)
+    }
+
+    fn signed_transfer_with_pages(
+        fail_cache_read: bool,
+        fail_cache_write: bool,
+        multi_page: bool,
+    ) -> (
+        NativeScopePeer<Host>,
+        MeshScopeRuntime,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Value,
+    ) {
+        let (baseline, candidate, proof, snapshot) = signed_proof_fixture_with_pages(multi_page);
         let mut source = MeshScopeRuntime::new("board", "secret").unwrap();
         source.start_document_sync("source", "receiver").unwrap();
         let document_frame = source
@@ -651,6 +697,63 @@ mod tests {
                 .unwrap()
                 .document
         );
+        assert_eq!(
+            PairingCodec::inspect(&acknowledgement).unwrap().frame_type,
+            "mesh-automerge-sync"
+        );
+    }
+
+    #[test]
+    fn lost_page_response_aborts_only_incomplete_receive_and_replays_cached_page() {
+        let (mut receiver, mut source, document_frame, baseline, candidate, proof) =
+            signed_transfer_with_pages(false, false, true);
+        let first_request = request_for_proof(
+            &mut receiver,
+            &mut source,
+            document_frame,
+            &candidate,
+            &proof,
+        );
+        let first_page = proof_page(&mut source, &first_request, &candidate, &proof);
+        let second_request = receiver
+            .receive(&first_page)
+            .unwrap()
+            .expect("first proof page asks for the rest");
+        assert_eq!(
+            PairingCodec::inspect(&second_request).unwrap().frame_type,
+            "mesh-proof-request-v1"
+        );
+        assert_eq!(receiver.host().accepted_changes, 0);
+        assert_eq!(receiver.host().document, baseline);
+        assert_eq!(receiver.host().proof_pages.len(), 1);
+
+        // The request's response is lost at the RPC deadline. Abort only the
+        // in-memory, uncommitted receive; retain the durable document and page cache.
+        assert!(receiver.abort_incomplete_document_receive());
+        assert!(!receiver.abort_incomplete_document_receive());
+        assert_eq!(receiver.host().accepted_changes, 0);
+        assert_eq!(receiver.host().document, baseline);
+        assert_eq!(receiver.host().proof_pages.len(), 1);
+
+        source.reset_document();
+        let replay = source
+            .publish_frame(&candidate, Some(proof.clone()))
+            .unwrap()
+            .unwrap();
+        let replay_request =
+            request_for_proof(&mut receiver, &mut source, replay, &candidate, &proof);
+        let request_payload =
+            PairingCodec::decode(&replay_request, "mesh-proof-request-v1", "secret").unwrap();
+        let request_value: Value = serde_json::from_slice(&request_payload).unwrap();
+        assert!(!request_value["after"].as_str().unwrap().is_empty());
+        let final_page = proof_page(&mut source, &replay_request, &candidate, &proof);
+        let acknowledgement = receiver
+            .receive(&final_page)
+            .unwrap()
+            .expect("complete validated replay is acknowledged");
+
+        assert_eq!(receiver.host().accepted_changes, 1);
+        assert_eq!(receiver.host().document, candidate);
         assert_eq!(
             PairingCodec::inspect(&acknowledgement).unwrap().frame_type,
             "mesh-automerge-sync"

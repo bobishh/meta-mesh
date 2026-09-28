@@ -217,6 +217,19 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         Ok(())
     }
 
+    /// Reset only an incomplete document/proof receive after its response
+    /// exchange timed out. Product storage and the untrusted page cache remain.
+    pub fn abort_incomplete_document_receive(
+        &mut self,
+        workspace_id: &str,
+        remote_endpoint: &str,
+    ) -> Result<bool, String> {
+        self.peers
+            .get_mut(&(workspace_id.to_string(), remote_endpoint.to_string()))
+            .map(NativeScopePeer::abort_incomplete_document_receive)
+            .ok_or_else(|| "Mesh scope session is missing".into())
+    }
+
     fn refresh_authority(&mut self, workspace_id: &str, now_ms: i128) -> Result<(), String> {
         let authority = self.host.authority(workspace_id)?;
         for endpoint in self.admission.refresh(&authority, now_ms)? {
