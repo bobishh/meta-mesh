@@ -109,7 +109,7 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
                 return Err(error);
             }
         };
-        let native = match NativeScopePeer::new(
+        let mut native = match NativeScopePeer::new(
             workspace_id,
             secret,
             self.host.local_device_id(),
@@ -122,6 +122,11 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
                 return Err(error);
             }
         };
+        native.set_proof_paging_supported(paging_capability(
+            response,
+            "mesh-handshake-response",
+            secret,
+        )?);
         self.peers.insert(
             (workspace_id.to_string(), remote_endpoint.to_string()),
             native,
@@ -158,7 +163,7 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
                     return Err(error);
                 }
             };
-            let peer = match NativeScopePeer::new(
+            let mut peer = match NativeScopePeer::new(
                 &workspace_id,
                 &credential.secret,
                 self.host.local_device_id(),
@@ -171,6 +176,11 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
                     return Err(error);
                 }
             };
+            peer.set_proof_paging_supported(paging_capability(
+                frame,
+                "mesh-handshake-request",
+                &credential.secret,
+            )?);
             self.peers.insert(key, peer);
             return Ok(Some(response));
         }
@@ -237,6 +247,14 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         }
         Ok(())
     }
+}
+
+fn paging_capability(frame: &[u8], kind: &str, secret: &str) -> Result<bool, String> {
+    let payload = PairingCodec::decode(frame, kind, secret)?;
+    let value: Value = serde_json::from_slice(&payload).map_err(|_| "Invalid mesh handshake")?;
+    let capabilities = serde_json::from_value::<Vec<String>>(value["capabilities"].clone())
+        .map_err(|_| "Invalid mesh capabilities")?;
+    Ok(meta_mesh_core::mesh_handshake_features(&capabilities).proof_paging_supported)
 }
 
 #[cfg(test)]

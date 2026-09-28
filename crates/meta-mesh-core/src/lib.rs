@@ -83,8 +83,6 @@ pub use change_admission_flow::{
     ChangeAdmissionChange, ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
     plan_change_admission_flow, unsigned_change_error,
 };
-pub use proof_transfer::{authorization_admission_bundle, authorization_export, authorization_page, authorization_record_pages, authorization_records,
-    AuthorizationManifest, AuthorizationPage, AuthorizationPageReceiver, AuthorizationPageRequest};
 pub use credential_access::{
     CredentialPartition, CredentialPartitionInput, can_remove_workspace_device,
     credential_belongs_to_profile, has_left_workspace, is_device_revoked, is_grant_revoked,
@@ -147,6 +145,12 @@ pub use pairing::{
 pub use persistence::{
     ChangeAdmissionPlan, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
     OutboxClaimTransition, StoredDocumentChange, plan_change_admission, transition_outbox_claim,
+};
+pub use proof_transfer::authorization_export_for_peer;
+pub use proof_transfer::{
+    AuthorizationManifest, AuthorizationPage, AuthorizationPageReceiver, AuthorizationPageRequest,
+    authorization_admission_bundle, authorization_export, authorization_page,
+    authorization_record_pages, authorization_records,
 };
 pub use recovery::{
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity,

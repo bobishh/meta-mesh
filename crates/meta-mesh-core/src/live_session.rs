@@ -9,11 +9,18 @@ use serde_json::Value;
 
 const MAX_OWNER_OFFER_BYTES: usize = 24 * 1024 * 1024;
 const MAX_GOSSIP_PACKET_BYTES: usize = 256 * 1024;
-fn wire_proof(document: &[u8], value: Value) -> Result<Value, String> {
+fn wire_proof(document: &[u8], value: Value, paging: bool) -> Result<Value, String> {
     if value.get("authority").is_some()
         && (value.get("records").is_some() || value.get("pages").is_some())
     {
-        crate::authorization_export(document, &value)
+        let proof = crate::authorization_export_for_peer(document, &value, paging)?;
+        if !paging
+            && serde_json::to_vec(&proof).map_err(|e| e.to_string())?.len()
+                > crate::proof_transfer::MAX_PROOF_FRAME_BYTES
+        {
+            return Err("Peer does not support proof paging; update the app".into());
+        }
+        Ok(proof)
     } else {
         Ok(value)
     }
@@ -126,6 +133,7 @@ pub struct LiveWorkspaceSession {
     transfer_sequence: u64,
     last_control_sent: Option<Vec<u8>>,
     document_sync: Option<LiveDocumentSync>,
+    proof_paging_supported: bool,
 }
 
 impl LiveWorkspaceSession {
@@ -142,11 +150,24 @@ impl LiveWorkspaceSession {
             transfer_sequence: 0,
             last_control_sent: None,
             document_sync: None,
+            proof_paging_supported: true,
         })
+    }
+
+    pub fn set_proof_paging_supported(&mut self, supported: bool) {
+        self.proof_paging_supported = supported;
     }
 
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<LiveSessionAction>, String> {
         let header = PairingCodec::inspect(frame)?;
+        if !self.proof_paging_supported
+            && matches!(
+                header.frame_type.as_str(),
+                "mesh-proof-request-v1" | "mesh-proof-page-v1"
+            )
+        {
+            return Err("Peer did not negotiate proof paging; update the app".into());
+        }
         if matches!(
             header.frame_type.as_str(),
             "mesh-proof-request-v1" | "mesh-proof-page-v1"
@@ -303,7 +324,14 @@ impl LiveWorkspaceSession {
             );
         let payload =
             serde_json::to_vec(&value).map_err(|_| "Invalid Automerge sync frame".to_string())?;
-        self.encode("mesh-automerge-sync", &payload)
+        let encoded = self.encode("mesh-automerge-sync", &payload)?;
+        if !self.proof_paging_supported
+            && frame.proof.is_some()
+            && encoded.len() > crate::proof_transfer::MAX_PROOF_FRAME_BYTES
+        {
+            return Err("Peer does not support proof paging; update the app".into());
+        }
+        Ok(encoded)
     }
 
     pub fn decode_automerge_payload(&self, payload: &[u8]) -> Result<AutomergeSyncFrame, String> {
@@ -346,7 +374,9 @@ impl LiveWorkspaceSession {
         document: &[u8],
         proof: Option<Value>,
     ) -> Result<Option<Vec<u8>>, String> {
-        let proof = proof.map(|value| wire_proof(document, value)).transpose()?;
+        let proof = proof
+            .map(|value| wire_proof(document, value, self.proof_paging_supported))
+            .transpose()?;
         let workspace_id = self.workspace_id.clone();
         let sync = self
             .document_sync
@@ -356,7 +386,14 @@ impl LiveWorkspaceSession {
             .load_document(&workspace_id, &workspace_id, document)?;
         let frame = sync
             .engine
-            .generate(&workspace_id, &sync.remote_device_id, true, proof)?;
+            .generate(&workspace_id, &sync.remote_device_id, true, proof)
+            .map_err(|error| {
+                if !self.proof_paging_supported && error.contains("frame exceeds size limit") {
+                    "Peer does not support proof paging; update the app".into()
+                } else {
+                    error
+                }
+            })?;
         frame
             .map(|frame| self.encode_automerge_frame(&frame))
             .transpose()
@@ -369,9 +406,19 @@ impl LiveWorkspaceSession {
         response_proof: Option<Value>,
     ) -> Result<PreparedLiveDocument, String> {
         let response_proof = response_proof
-            .map(|value| wire_proof(document, value))
+            .map(|value| wire_proof(document, value, self.proof_paging_supported))
             .transpose()?;
         let frame = self.decode_automerge_payload(payload)?;
+        if !self.proof_paging_supported
+            && frame
+                .proof
+                .as_ref()
+                .and_then(|value| value.get("kind"))
+                .and_then(Value::as_str)
+                == Some("workspace-authorization-manifest")
+        {
+            return Err("Peer did not negotiate proof paging; update the app".into());
+        }
         if frame.document_id != self.workspace_id || frame.scope_id != self.workspace_id {
             return Err("Invalid Automerge sync frame".to_string());
         }
@@ -482,7 +529,7 @@ impl LiveWorkspaceSession {
         // Large proof history travels through requested pages, never through a
         // duplicate monolithic control snapshot.
         let authorization = authorization
-            .map(|value| wire_proof(document, value))
+            .map(|value| wire_proof(document, value, self.proof_paging_supported))
             .transpose()?;
         let authorization = authorization.map(|value| {
             if value.get("kind").and_then(Value::as_str) == Some("workspace-authorization-manifest") {
@@ -565,6 +612,43 @@ impl LiveWorkspaceSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unnegotiated_paging_keeps_legacy_proofs_and_rejects_page_frames() {
+        use automerge::{AutoCommit, ROOT, transaction::Transactable};
+        let mut doc = AutoCommit::new();
+        doc.put(ROOT, "id", "board").unwrap();
+        let document = doc.save();
+        let proof = serde_json::json!({"version": 1, "authority": {"genesisOwner": {"personId": "owner"}},
+            "records": (0..100).map(|i| serde_json::json!({"signed": {"signature": format!("{i}"), "payload": {"hashes": [doc.get_heads()[0].to_string()]}}, "padding": "x".repeat(800)})).collect::<Vec<_>>()});
+        let mut session = LiveWorkspaceSession::new("board", "secret").unwrap();
+        session.set_proof_paging_supported(false);
+        session.start_document_sync("source", "target").unwrap();
+        let frame = session
+            .generate_document(&document, Some(proof.clone()))
+            .unwrap()
+            .unwrap();
+        assert!(frame.len() <= crate::proof_transfer::MAX_PROOF_FRAME_BYTES);
+        let payload = PairingCodec::decode(&frame, "mesh-automerge-sync", "secret").unwrap();
+        assert_eq!(
+            session.decode_automerge_payload(&payload).unwrap().proof,
+            Some(proof)
+        );
+        let request = PairingCodec::encode("mesh-proof-request-v1", "secret", b"{}").unwrap();
+        assert!(
+            session
+                .receive(&request)
+                .unwrap_err()
+                .contains("did not negotiate")
+        );
+        let large = serde_json::json!({"version": 1, "authority": {"genesisOwner": {"personId": "owner"}},
+            "records": [{"signed": {"signature": "large", "payload": {"hashes": [doc.get_heads()[0].to_string()]}}, "padding": "x".repeat(270_000)}]});
+        assert!(
+            session
+                .generate_document(&document, Some(large))
+                .unwrap_err()
+                .contains("does not support proof paging")
+        );
+    }
     use automerge::{AutoCommit, ROOT, transaction::Transactable};
 
     #[test]

@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024;
 pub const CONTROL_CHUNK_BYTES: usize = 128 * 1024;
 pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
-pub const MESH_CAPABILITIES: [&str; 7] = [
+pub const MESH_CAPABILITIES: [&str; 8] = [
+    "proof-paging-v2",
     "heartbeat-v1",
     "automerge-sync-v1",
     "ownership-receipt-v1",
@@ -47,6 +48,7 @@ pub struct MeshHandshakeFeatures {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_workspace_offer_frame: Option<&'static str>,
     pub blob_transfer_supported: bool,
+    pub proof_paging_supported: bool,
 }
 
 pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures {
@@ -58,6 +60,7 @@ pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures
         owner_workspace_offer_frame: has("owner-workspace-v2")
             .then_some("mesh-owner-workspace-offer"),
         blob_transfer_supported: has("blob-transfer-v1"),
+        proof_paging_supported: has("proof-paging-v2"),
     }
 }
 

@@ -25,6 +25,7 @@ export type BrowserMeshSessionEntry<C extends MeshConnection, S extends BrowserM
   remotePersonId: string
   ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
   blobTransferSupported?: boolean
+  proofPagingSupported?: boolean
   runtimeGeneration?: number
   evict(cause: string): Promise<void>
 }
@@ -59,6 +60,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
     ownerWorkspaceSupported: boolean
     ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
     blobTransferSupported: boolean
+    proofPagingSupported: boolean
     remoteEndpoint: string
   }): { session: S; reset?(): void }
   runtime(): SessionRuntime
@@ -102,6 +104,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     ownerWorkspaceSupported?: boolean
     ownerWorkspaceOfferFrame?: MeshHandshakeFeatures["ownerWorkspaceOfferFrame"]
     blobTransferSupported?: boolean
+    proofPagingSupported?: boolean
     remoteEndpoint?: string
   }): Promise<boolean> {
     const key = this.host.key(input.workspaceId, input.deviceId, input.instanceId)
@@ -144,6 +147,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
         remotePersonId: input.remotePersonId ?? "", ownerWorkspaceSupported: input.ownerWorkspaceSupported ?? false,
         ownerWorkspaceOfferFrame: input.ownerWorkspaceOfferFrame,
         blobTransferSupported: input.blobTransferSupported ?? false,
+        proofPagingSupported: input.proofPagingSupported ?? false,
         remoteEndpoint: input.remoteEndpoint ?? "",
       })
     } catch (error) {
@@ -163,6 +167,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       connection: input.connection, session: created.session, ownershipReceiptSupported: input.ownershipReceiptSupported,
       remotePersonId: input.remotePersonId ?? "", ownerWorkspaceOfferFrame: input.ownerWorkspaceOfferFrame,
       blobTransferSupported: input.blobTransferSupported,
+      proofPagingSupported: input.proofPagingSupported,
       runtimeGeneration: generation,
       evict: async cause => {
         const decision = this.lifecycle.evict(sessionKey, generation)

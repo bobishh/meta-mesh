@@ -234,6 +234,10 @@ pub struct WasmMeshScopeRuntime {
 
 #[wasm_bindgen]
 impl WasmMeshScopeRuntime {
+    #[wasm_bindgen(js_name = setProofPagingSupported)]
+    pub fn set_proof_paging_supported(&mut self, supported: bool) {
+        self.inner.set_proof_paging_supported(supported);
+    }
     #[wasm_bindgen(js_name = beginAuthorizationTransfer)]
     pub fn begin_authorization_transfer(
         &mut self,

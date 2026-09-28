@@ -71,6 +71,7 @@ pub struct NativeScopePeer<H: NativeScopeHost> {
     host: H,
     secret: String,
     owner_offer: Option<PendingOwnerOffer>,
+    proof_paging_supported: bool,
 }
 
 struct PendingOwnerOffer {
@@ -93,6 +94,7 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
             host,
             secret: secret.into(),
             owner_offer: None,
+            proof_paging_supported: true,
         })
     }
 
@@ -101,6 +103,10 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
     }
     pub fn host_mut(&mut self) -> &mut H {
         &mut self.host
+    }
+    pub fn set_proof_paging_supported(&mut self, supported: bool) {
+        self.proof_paging_supported = supported;
+        self.runtime.set_proof_paging_supported(supported);
     }
 
     /// Abort an incomplete document/proof receive after its RPC exchange is
@@ -267,6 +273,9 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
             let Some(snapshot) = self.host.prepare_owner_offer(&payload)? else {
                 return self.saved(payload, |host, bytes| host.merge_owner_offer(bytes));
             };
+            if !self.proof_paging_supported {
+                return Err("Peer did not negotiate proof paging; update the app".into());
+            }
             let mut runtime = MeshScopeRuntime::new(&snapshot.workspace_id, &self.secret)?;
             let effect = runtime.begin_authorization_transfer(
                 &snapshot.candidate,

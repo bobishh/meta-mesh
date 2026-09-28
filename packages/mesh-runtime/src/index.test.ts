@@ -53,6 +53,7 @@ describe("MeshHandshakeCodec", () => {
       heartbeatSupported: true, ownershipReceiptSupported: false, ownerWorkspaceSupported: false,
       ownerWorkspaceOfferFrame: undefined,
       blobTransferSupported: true,
+      proofPagingSupported: false,
     })
   })
 
@@ -63,5 +64,11 @@ describe("MeshHandshakeCodec", () => {
     expect(codec.features(["owner-workspace-v2"])).toMatchObject({
       ownerWorkspaceSupported: true, ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer",
     })
+  })
+  it("negotiates proof paging separately from existing owner offer support", () => {
+    const codec = new MeshHandshakeCodec()
+    expect(codec.features(["owner-workspace-v2"])).toMatchObject({ proofPagingSupported: false })
+    expect(codec.features(["owner-workspace-v2", "proof-paging-v2"])).toMatchObject({ proofPagingSupported: true })
+    expect(codec.capabilities()).toContain("proof-paging-v2")
   })
 })

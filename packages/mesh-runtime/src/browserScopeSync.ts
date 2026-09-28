@@ -46,8 +46,10 @@ export class BrowserMeshScopeSync {
   private proofGeneration = 0
   constructor(private readonly runtime: RustMeshScopeRuntime, private readonly host: MeshScopeHost) {}
 
-  static create(workspaceId: string, secret: string, host: MeshScopeHost): BrowserMeshScopeSync {
-    return new BrowserMeshScopeSync(meshRustRuntime().createMeshScopeRuntime(workspaceId, secret), host)
+  static create(workspaceId: string, secret: string, host: MeshScopeHost, proofPagingSupported = true): BrowserMeshScopeSync {
+    const runtime = meshRustRuntime().createMeshScopeRuntime(workspaceId, secret)
+    runtime.setProofPagingSupported(proofPagingSupported)
+    return new BrowserMeshScopeSync(runtime, host)
   }
 
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void {
