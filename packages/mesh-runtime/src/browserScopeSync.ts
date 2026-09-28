@@ -81,6 +81,20 @@ export class BrowserMeshScopeSync {
     return this.queue as Promise<boolean>
   }
 
+  async reconcile(sendFrame: MeshScopeSendFrame): Promise<boolean> {
+    if (this.closing) return false
+    const run = async () => {
+      if (this.closing) return false
+      const document = await this.host.readDocument()
+      const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
+      if (this.closing) return false
+      const frame = this.runtime.publishFrame(document, proof)
+      return !frame || await sendFrame(toBytes(frame), "document")
+    }
+    this.queue = this.queue.then(run, run)
+    return this.queue as Promise<boolean>
+  }
+
   private async apply(stream: MeshScopeStream, frame: Uint8Array, effect: RustMeshScopeFrameEffect): Promise<void> {
     switch (effect.kind) {
       case "needDocument": {

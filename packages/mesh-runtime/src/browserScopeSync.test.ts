@@ -3,6 +3,28 @@ import type { RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import { BrowserMeshScopeSync } from "./browserScopeSync"
 
 describe("BrowserMeshScopeSync shutdown", () => {
+  it("runs document-only anti-entropy without reading control payloads", async () => {
+    const runtime = {
+      publishFrame: vi.fn(() => new Uint8Array([7])),
+    } as unknown as RustMeshScopeRuntime
+    const host = {
+      readDocument: vi.fn(async () => new Uint8Array([1])),
+      readAuthorization: vi.fn(async () => ({ proof: true })),
+      readChat: vi.fn(async () => ({ messages: [] })),
+      readMesh: vi.fn(async () => ({ peers: [] })),
+      persistDocument: vi.fn(),
+    }
+    const scope = new BrowserMeshScopeSync(runtime, host)
+    const send = vi.fn(async () => true)
+
+    await expect(scope.reconcile(send)).resolves.toBe(true)
+
+    expect(runtime.publishFrame).toHaveBeenCalledWith(new Uint8Array([1]), { proof: true })
+    expect(send).toHaveBeenCalledWith(new Uint8Array([7]), "document")
+    expect(host.readChat).not.toHaveBeenCalled()
+    expect(host.readMesh).not.toHaveBeenCalled()
+  })
+
   it("Given document read is pending, when session closes, then Rust is freed after the read and no publish starts", async () => {
     let finishRead!: (bytes: Uint8Array) => void
     const readDocument = vi.fn(() => new Promise<Uint8Array>(resolve => { finishRead = resolve }))

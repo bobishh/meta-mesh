@@ -64,4 +64,36 @@ describe("BrowserMeshSessions", () => {
     expect(runtime.removeSession).toHaveBeenCalled()
     expect(connection.close).toHaveBeenCalledOnce()
   })
+
+  it("runs document anti-entropy on a healthy session even when no change notification arrives", async () => {
+    vi.useFakeTimers()
+    const done = new Promise<never>(() => {})
+    const connection = {
+      close: vi.fn(async () => {}),
+      openStream: vi.fn(async () => { throw new Error("Unexpected stream open") }),
+      acceptStream: vi.fn(async () => { throw new Error("Unexpected stream accept") }),
+    }
+    const session = {
+      publish: vi.fn(async () => {}), reconcile: vi.fn(async () => {}), heartbeat: vi.fn(async () => {}),
+      close: vi.fn(async () => {}), done,
+    }
+    const runtime = { admitSession: vi.fn(() => ({ decision: "accepted" as const, generation: 1 })), removeSession: vi.fn(() => "connection") }
+    const sessions = new BrowserMeshSessions({
+      profile: async () => ({ deviceId: "local" }), deviceId: profile => profile.deviceId, instanceId: () => "tab-local",
+      credential: async () => ({}), create: () => ({ session }), runtime: () => runtime,
+      key: () => "workspace:remote:instance", stopped: () => false, trace: vi.fn(), diagnosticCleared: vi.fn(),
+      currentRemoved: vi.fn(async () => {}), notify: vi.fn(async () => {}), publishRecovered: vi.fn(async () => {}),
+      protocolFailure: vi.fn(), networkFailure: vi.fn(),
+    })
+
+    await sessions.install({ workspaceId: "workspace", deviceId: "remote", instanceId: "instance", remoteIssuedAt: "now",
+      direction: "outgoing", connection, connectionId: "connection", heartbeatSupported: true })
+    await vi.advanceTimersByTimeAsync(19_000)
+
+    expect(session.heartbeat.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(session.reconcile).toHaveBeenCalledOnce()
+    expect(session.publish).not.toHaveBeenCalled()
+    await sessions.closeAll()
+    vi.useRealTimers()
+  })
 })

@@ -4,6 +4,7 @@ import { meshRustRuntime, type RustMeshSessionLifecycleState } from "@meta-uber/
 
 export type BrowserMeshSession = {
   publish(): Promise<void>
+  reconcile?(): Promise<void>
   close(): Promise<void>
   done: Promise<unknown>
   heartbeat?: () => Promise<void>
@@ -76,6 +77,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
 
 /** Shared session lifecycle; product hosts provide authenticated document sync. */
 export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMeshSession, P> {
+  private static readonly HEARTBEATS_PER_ANTI_ENTROPY = 3
   readonly entries: Map<string, BrowserMeshSessionEntry<C, S>>
   private readonly lifecycle: RustMeshSessionLifecycleState
 
@@ -153,6 +155,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     }
     let stopHeartbeat: (() => void) | undefined
     let stableTimer: ReturnType<typeof setTimeout> | undefined
+    let healthyHeartbeats = 0
     const entry: BrowserMeshSessionEntry<C, S> = {
       connectionId: input.connectionId, workspaceId: input.workspaceId, deviceId: input.deviceId,
       instanceId: input.instanceId, endpoint: input.remoteEndpoint ?? "",
@@ -203,7 +206,14 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       }
     }, lifecycleInstall.stableAfterMs)
     if (input.heartbeatSupported) {
-      stopHeartbeat = startMeshHeartbeat(created.session, error => {
+      stopHeartbeat = startMeshHeartbeat({ heartbeat: async () => {
+        await created.session.heartbeat?.()
+        healthyHeartbeats += 1
+        if (healthyHeartbeats % BrowserMeshSessions.HEARTBEATS_PER_ANTI_ENTROPY === 0 && this.entries.get(key) === entry) {
+          this.host.trace("session.anti-entropy", { connectionId: input.connectionId, peerId: short(input.deviceId) })
+          await (created.session.reconcile?.() ?? created.session.publish())
+        }
+      } }, error => {
         const plan = this.lifecycle.callbackPlan(sessionKey, generation, "heartbeatFailed", Date.now())
         if (!plan.reportFailure) return
         this.host.networkFailure(key, error)
