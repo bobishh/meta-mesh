@@ -754,18 +754,34 @@ export class PeerStore {
   async upsertPeer(peer: WorkspacePeerRecord): Promise<WorkspacePeerRecord> {
     validatePeerRecord(peer)
 
+    // Replayed catalog entries are common. Avoid queueing a write transaction
+    // when the deterministic merge would leave the durable record unchanged.
+    // A changed snapshot still goes through the write transaction below and
+    // is merged again there, so concurrent newer routes/revocations win.
+    const existing = await this.runTx([STORE_PEERS], "readonly", async (tx) => {
+      const store = tx.objectStore(STORE_PEERS)
+      return await promisifyRequest<WorkspacePeerRecord | undefined>(
+        store.get([peer.workspaceId, peer.deviceId])
+      )
+    })
+    if (existing && canonicalJson(mergePeerRecords(existing, peer)) === canonicalJson(existing)) {
+      return existing
+    }
+
     return this.runTx([STORE_PEERS], "readwrite", async (tx) => {
       const store = tx.objectStore(STORE_PEERS)
-      const existing = await promisifyRequest<WorkspacePeerRecord | undefined>(
+      const current = await promisifyRequest<WorkspacePeerRecord | undefined>(
         store.get([peer.workspaceId, peer.deviceId])
       )
 
-      const merged = existing ? mergePeerRecords(existing, peer) : {
+      const merged = current ? mergePeerRecords(current, peer) : {
         ...peer,
         transportSecret: peer.transportSecret instanceof Uint8Array
           ? new Uint8Array(peer.transportSecret)
           : peer.transportSecret,
       }
+
+      if (current && canonicalJson(merged) === canonicalJson(current)) return current
 
       await promisifyRequest(store.put(merged))
       return merged

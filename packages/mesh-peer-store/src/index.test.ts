@@ -274,6 +274,73 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
   })
 
   describe("Outer BDD Integration: Complete peer lifecycle & persistent secret", () => {
+    it("Given a durable peer, when the identical advertisement is replayed, then no write transaction runs", async () => {
+      const store = new PeerStore("match-test-peer-idempotent-upsert", mockIdb as any)
+      const peer: WorkspacePeerRecord = {
+        workspaceId: "ws_idempotent", deviceId: "device_a", personId: "person_a",
+        endpoint: "endpoint_a", instanceId: "tab_a", transportSecret: "secret_a",
+        role: "editor", lastSeen: "2026-09-11T00:00:00.000Z", advertisement: { signed: true },
+      }
+      await store.upsertPeer(peer)
+      // First merge materializes deterministic instance/revocation fields on
+      // legacy-shaped records; the next identical replay is a true no-op.
+      await store.upsertPeer(peer)
+      const durable = await store.getPeer(peer.workspaceId, peer.deviceId)
+
+      const runTx = vi.spyOn(store as any, "runTx")
+      const result = await store.upsertPeer(structuredClone(peer))
+      const modes = runTx.mock.calls.map(([, mode]) => mode)
+      runTx.mockRestore()
+
+      expect(result).toEqual(durable)
+      expect(modes).toEqual(["readonly"])
+      expect(await store.getPeer(peer.workspaceId, peer.deviceId)).toEqual(durable)
+    })
+
+    it("Given an update racing with a newer route, when the older write retries, then newer durable route wins", async () => {
+      const store = new PeerStore("match-test-peer-upsert-race", mockIdb as any)
+      const initial: WorkspacePeerRecord = {
+        workspaceId: "ws_race", deviceId: "device_a", personId: "person_a",
+        endpoint: "endpoint_0", instanceId: "tab_a", transportSecret: "secret",
+        role: "editor", lastSeen: "2026-09-11T00:00:00.000Z",
+      }
+      const intermediate = { ...initial, endpoint: "endpoint_1", lastSeen: "2026-09-11T00:01:00.000Z" }
+      const newest = { ...initial, endpoint: "endpoint_2", lastSeen: "2026-09-11T00:02:00.000Z" }
+      await store.upsertPeer(initial)
+
+      let continueRead!: () => void
+      let readPaused!: () => void
+      const readAtSnapshot = new Promise<void>(resolve => { readPaused = resolve })
+      const resumeSnapshot = new Promise<void>(resolve => { continueRead = resolve })
+      const originalRunTx = (store as any).runTx.bind(store)
+      let paused = false
+      const runTx = vi.spyOn(store as any, "runTx").mockImplementation(async (...args: unknown[]) => {
+        const [storeNames, mode, fn] = args as [string[], "readonly" | "readwrite", (tx: unknown) => Promise<unknown>]
+        const result = await originalRunTx(storeNames, mode, fn)
+        if (!paused && mode === "readonly") {
+          paused = true
+          readPaused()
+          await resumeSnapshot
+        }
+        return result
+      })
+
+      const olderWrite = store.upsertPeer(intermediate)
+      await readAtSnapshot
+      const newerWrite = await store.upsertPeer(newest)
+      continueRead()
+      const retriedOlderWrite = await olderWrite
+      const modes = runTx.mock.calls.map(([, mode]) => mode)
+      runTx.mockRestore()
+
+      expect(newerWrite.endpoint).toBe("endpoint_2")
+      expect(retriedOlderWrite.endpoint).toBe("endpoint_2")
+      expect(await store.getPeer(initial.workspaceId, initial.deviceId)).toMatchObject({
+        endpoint: "endpoint_2", lastSeen: "2026-09-11T00:02:00.000Z",
+      })
+      expect(modes).toEqual(["readonly", "readonly", "readwrite", "readwrite"])
+    })
+
     it("Given an existing install upgrades, when slot zero starts, then it keeps the durable endpoint identity", async () => {
       const store = new PeerStore("match-test-peer-instance-migration", mockIdb as any)
       const legacySecret = new Uint8Array(32).fill(19)
