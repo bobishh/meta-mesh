@@ -3,6 +3,42 @@ import type { RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import { BrowserMeshScopeSync } from "./browserScopeSync"
 
 describe("BrowserMeshScopeSync shutdown", () => {
+  it("reports wait time separately from work held in the scope queue", async () => {
+    let finishRead!: (bytes: Uint8Array) => void
+    let readCount = 0
+    const readDocument = vi.fn(() => {
+      readCount += 1
+      return readCount === 1
+        ? new Promise<Uint8Array>(resolve => { finishRead = resolve })
+        : Promise.resolve(new Uint8Array([2]))
+    })
+    const timings: Array<{ operation: string; phase: string; elapsedMs: number }> = []
+    const runtime = {
+      preparePublish: vi.fn(() => ({ controlFrames: [], controlSnapshot: new Uint8Array() })),
+      finishPublish: vi.fn(),
+      publishFrame: vi.fn(() => undefined),
+    } as unknown as RustMeshScopeRuntime
+    const scope = new BrowserMeshScopeSync(runtime, {
+      readDocument,
+      persistDocument: vi.fn(),
+      onTiming: timing => timings.push(timing),
+    })
+    const send = vi.fn(async () => true)
+
+    const publishing = scope.publish(send)
+    await vi.waitFor(() => expect(readDocument).toHaveBeenCalledOnce())
+    const reconciling = scope.reconcile(send)
+    expect(timings.some(timing => timing.operation === "reconcile" && timing.phase === "queue-wait")).toBe(false)
+    finishRead(new Uint8Array([1]))
+    await Promise.all([publishing, reconciling])
+
+    expect(timings.map(({ operation, phase }) => `${operation}:${phase}`)).toEqual([
+      "publish:queue-wait", "publish:queue-run", "reconcile:queue-wait", "reconcile:queue-run",
+    ])
+    expect(timings.every(({ elapsedMs }) => elapsedMs >= 0)).toBe(true)
+    await scope.close()
+  })
+
   it("runs document-only anti-entropy without reading control payloads", async () => {
     const runtime = {
       publishFrame: vi.fn(() => new Uint8Array([7])),

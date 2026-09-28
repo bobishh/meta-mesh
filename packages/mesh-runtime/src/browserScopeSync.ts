@@ -6,6 +6,13 @@ export type MeshScopeStream = {
   closeSend(): Promise<void>
 }
 export type MeshScopeSendFrame = (frame: Uint8Array, kind: "document" | "control") => Promise<boolean>
+export type MeshScopeTiming = {
+  operation: "receive" | "publish" | "reconcile"
+  phase: "queue-wait" | "queue-run" | "out-of-queue-callback"
+  operationId: number
+  elapsedMs: number
+  frameBytes?: number
+}
 
 export type MeshScopeHost = {
   readDocument(): Promise<Uint8Array>
@@ -23,6 +30,7 @@ export type MeshScopeHost = {
   onBlobRequest?(stream: MeshScopeStream, frame: Uint8Array): Promise<void>
   onHandoffRequest?(stream: MeshScopeStream, frame: Uint8Array): Promise<void>
   onWorkspaceSnapshot?(payload: Uint8Array): Promise<void>
+  onTiming?(timing: MeshScopeTiming): void
 }
 
 /** Executes Rust scope effects against browser storage and transport callbacks. */
@@ -31,6 +39,7 @@ export class BrowserMeshScopeSync {
   private closing = false
   private closed?: Promise<void>
   private knownChat = new Set<string>()
+  private timingSequence = 0
   constructor(private readonly runtime: RustMeshScopeRuntime, private readonly host: MeshScopeHost) {}
 
   static create(workspaceId: string, secret: string, host: MeshScopeHost): BrowserMeshScopeSync {
@@ -43,21 +52,44 @@ export class BrowserMeshScopeSync {
 
   receive(stream: MeshScopeStream, frame: Uint8Array): Promise<void> {
     if (this.closing) return Promise.resolve()
-    const prepared = this.queue.then(() => this.runtime.receiveFrame(frame), () => this.runtime.receiveFrame(frame))
+    const enqueuedAt = now()
+    const operationId = ++this.timingSequence
+    let queueStartedAt = enqueuedAt
+    const prepared = this.queue.then(() => {
+      queueStartedAt = now()
+      this.reportTiming("receive", "queue-wait", enqueuedAt, operationId, frame.byteLength)
+      return this.runtime.receiveFrame(frame)
+    }, () => {
+      queueStartedAt = now()
+      this.reportTiming("receive", "queue-wait", enqueuedAt, operationId, frame.byteLength)
+      return this.runtime.receiveFrame(frame)
+    })
     // Gossip callback must stay outside document/control serialization. It may
     // publish another stream and waiting here recreates the old sync deadlock.
-    const queued = prepared.then(effect => {
+    const queued = prepared.then(async effect => {
       if (effect?.kind === "gossip") return
-      if (!effect) return stream.closeSend()
-      return this.apply(stream, frame, effect)
+      try {
+        if (!effect) return await stream.closeSend()
+        await this.apply(stream, frame, effect)
+      } finally { this.reportTiming("receive", "queue-run", queueStartedAt, operationId, frame.byteLength) }
     })
     this.queue = queued
-    return prepared.then(effect => effect?.kind === "gossip" ? this.apply(stream, frame, effect) : queued)
+    return prepared.then(async effect => {
+      if (effect?.kind !== "gossip") return queued
+      const startedAt = now()
+      try { await this.apply(stream, frame, effect) }
+      finally { this.reportTiming("receive", "out-of-queue-callback", startedAt, operationId, frame.byteLength) }
+    })
   }
 
   async publish(sendFrame: MeshScopeSendFrame): Promise<boolean> {
     if (this.closing) return false
+    const enqueuedAt = now()
+    const operationId = ++this.timingSequence
     const run = async () => {
+      this.reportTiming("publish", "queue-wait", enqueuedAt, operationId)
+      const startedAt = now()
+      try {
       if (this.closing) return false
       const document = await this.host.readDocument()
       const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
@@ -76,6 +108,7 @@ export class BrowserMeshScopeSync {
         this.knownChat = nextKnownChat
         return true
       } finally { this.runtime.finishPublish(toBytes(plan.controlSnapshot), allFramesSent) }
+      } finally { this.reportTiming("publish", "queue-run", startedAt, operationId) }
     }
     this.queue = this.queue.then(run, run)
     return this.queue as Promise<boolean>
@@ -83,13 +116,19 @@ export class BrowserMeshScopeSync {
 
   async reconcile(sendFrame: MeshScopeSendFrame): Promise<boolean> {
     if (this.closing) return false
+    const enqueuedAt = now()
+    const operationId = ++this.timingSequence
     const run = async () => {
+      this.reportTiming("reconcile", "queue-wait", enqueuedAt, operationId)
+      const startedAt = now()
+      try {
       if (this.closing) return false
       const document = await this.host.readDocument()
       const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
       if (this.closing) return false
       const frame = this.runtime.publishFrame(document, proof)
       return !frame || await sendFrame(toBytes(frame), "document")
+      } finally { this.reportTiming("reconcile", "queue-run", startedAt, operationId) }
     }
     this.queue = this.queue.then(run, run)
     return this.queue as Promise<boolean>
@@ -197,6 +236,13 @@ export class BrowserMeshScopeSync {
     try { this.runtime.completeSavedReceive(false) } catch { /* preserve host failure */ }
   }
 
+  private reportTiming(operation: MeshScopeTiming["operation"], phase: MeshScopeTiming["phase"], startedAt: number,
+    operationId: number, frameBytes?: number): void {
+    try { this.host.onTiming?.({ operation, phase, operationId, elapsedMs: Math.max(0, now() - startedAt),
+      ...(frameBytes === undefined ? {} : { frameBytes }) }) }
+    catch { /* diagnostic observers must not affect synchronization */ }
+  }
+
   close(): Promise<void> {
     if (!this.closed) {
       this.closing = true
@@ -204,6 +250,10 @@ export class BrowserMeshScopeSync {
     }
     return this.closed
   }
+}
+
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now()
 }
 
 function toBytes(value: Uint8Array | number[]): Uint8Array {
