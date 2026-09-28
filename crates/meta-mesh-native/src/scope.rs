@@ -11,6 +11,16 @@ pub struct NativeScopeSnapshot {
     pub mesh: Option<Value>,
 }
 
+/// Product-authorized new workspace. Preparing this value must verify the
+/// authenticated owner/controller and signed invitation without mutating
+/// durable storage. Final merge still validates all resolved change proofs.
+pub struct NativeOwnerOfferSnapshot {
+    pub workspace_id: String,
+    pub candidate: Vec<u8>,
+    pub local: Vec<u8>,
+    pub manifest: Value,
+}
+
 /// Product validation and persistence stay outside the mesh protocol.
 pub trait NativeScopeHost {
     fn snapshot(&mut self) -> Result<NativeScopeSnapshot, String>;
@@ -25,6 +35,12 @@ pub trait NativeScopeHost {
     fn merge_mesh(&mut self, value: &Value) -> Result<(), String>;
     fn merge_durable_batch(&mut self, bytes: &[u8]) -> Result<(), String>;
     fn merge_owner_offer(&mut self, bytes: &[u8]) -> Result<(), String>;
+    fn prepare_owner_offer(
+        &mut self,
+        _: &[u8],
+    ) -> Result<Option<NativeOwnerOfferSnapshot>, String> {
+        Ok(None)
+    }
     fn receive_gossip(&mut self, bytes: &[u8]) -> Result<(), String>;
     fn receive_blob_request(&mut self, _: &[u8]) -> Result<Option<Vec<u8>>, String> {
         Err("Unsupported blob request".into())
@@ -53,6 +69,13 @@ pub trait NativeScopeHost {
 pub struct NativeScopePeer<H: NativeScopeHost> {
     runtime: MeshScopeRuntime,
     host: H,
+    secret: String,
+    owner_offer: Option<PendingOwnerOffer>,
+}
+
+struct PendingOwnerOffer {
+    runtime: MeshScopeRuntime,
+    payload: Vec<u8>,
 }
 
 impl<H: NativeScopeHost> NativeScopePeer<H> {
@@ -65,7 +88,12 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
     ) -> Result<Self, String> {
         let mut runtime = MeshScopeRuntime::new(scope_id, secret)?;
         runtime.start_document_sync(local_device_id, remote_device_id)?;
-        Ok(Self { runtime, host })
+        Ok(Self {
+            runtime,
+            host,
+            secret: secret.into(),
+            owner_offer: None,
+        })
     }
 
     pub fn host(&self) -> &H {
@@ -79,11 +107,25 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
     /// lost. No product storage was committed while this receive was pending;
     /// the next publish restarts Automerge sync and revalidates staged pages.
     pub fn abort_incomplete_document_receive(&mut self) -> bool {
+        if self.owner_offer.take().is_some() {
+            let _ = self.runtime.complete_saved_receive(false);
+            return true;
+        }
         self.runtime.reject_document_receive().is_ok()
     }
 
     /// Return the reply frame only after product storage has accepted the change.
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        if self.owner_offer.is_some()
+            && meta_mesh_core::PairingCodec::inspect(frame)?.frame_type == "mesh-proof-page-v1"
+        {
+            let result = self.receive_owner_page(frame);
+            if result.is_err() {
+                self.owner_offer = None;
+                let _ = self.runtime.complete_saved_receive(false);
+            }
+            return result;
+        }
         let Some(mut effect) = self.runtime.receive_frame(frame)? else {
             return Ok(None);
         };
@@ -203,7 +245,7 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                     self.saved(payload, |host, bytes| host.merge_durable_batch(bytes))
                 }
                 MeshScopeFrameEffect::OwnerWorkspaceOffer { payload } => {
-                    self.saved(payload, |host, bytes| host.merge_owner_offer(bytes))
+                    self.begin_owner_offer(payload)
                 }
                 MeshScopeFrameEffect::BlobRequest { payload } => {
                     self.host.receive_blob_request(&payload)
@@ -217,6 +259,83 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                 }
             };
             return result;
+        }
+    }
+
+    fn begin_owner_offer(&mut self, payload: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+        let result = (|| {
+            let Some(snapshot) = self.host.prepare_owner_offer(&payload)? else {
+                return self.saved(payload, |host, bytes| host.merge_owner_offer(bytes));
+            };
+            let mut runtime = MeshScopeRuntime::new(&snapshot.workspace_id, &self.secret)?;
+            let effect = runtime.begin_authorization_transfer(
+                &snapshot.candidate,
+                &snapshot.local,
+                snapshot.manifest,
+            )?;
+            self.owner_offer = Some(PendingOwnerOffer { runtime, payload });
+            self.advance_owner_offer(effect)
+        })();
+        if result.is_err() {
+            self.owner_offer = None;
+            let _ = self.runtime.complete_saved_receive(false);
+        }
+        result
+    }
+
+    fn receive_owner_page(&mut self, frame: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        let effect = self
+            .owner_offer
+            .as_mut()
+            .ok_or("Owner offer is not pending")?
+            .runtime
+            .receive_frame(frame)?
+            .ok_or("Missing owner proof page")?;
+        self.advance_owner_offer(effect)
+    }
+
+    fn advance_owner_offer(
+        &mut self,
+        mut effect: MeshScopeFrameEffect,
+    ) -> Result<Option<Vec<u8>>, String> {
+        loop {
+            let pending = self
+                .owner_offer
+                .as_mut()
+                .ok_or("Owner offer is not pending")?;
+            match effect {
+                MeshScopeFrameEffect::ProofRequest { frame, cache_key } => {
+                    if let Some(cached) = self.host.read_proof_page(&cache_key).unwrap_or(None) {
+                        if let Ok(next) = pending.runtime.accept_proof_page(&cached) {
+                            effect = next;
+                            continue;
+                        }
+                    }
+                    return Ok(Some(frame));
+                }
+                MeshScopeFrameEffect::ProofPageReceived { cache_key, payload } => {
+                    let _ = self.host.write_proof_page(&cache_key, &payload);
+                    effect = pending.runtime.continue_proof_receive()?;
+                }
+                MeshScopeFrameEffect::DocumentReceive { proof, .. } => {
+                    let mut value: Value = serde_json::from_slice(&pending.payload)
+                        .map_err(|_| "Invalid owner offer")?;
+                    let workspace = value
+                        .get_mut("workspace")
+                        .and_then(Value::as_object_mut)
+                        .ok_or("Invalid owner offer workspace")?;
+                    workspace.insert(
+                        "authorization".into(),
+                        proof.ok_or("Missing owner offer proofs")?,
+                    );
+                    let payload = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+                    self.owner_offer = None;
+                    // The outer runtime still binds its receipt to the exact
+                    // original offer, while product admission sees full proofs.
+                    return self.saved(payload, |host, bytes| host.merge_owner_offer(bytes));
+                }
+                _ => return Err("Unexpected owner proof transfer state".into()),
+            }
         }
     }
 
@@ -274,6 +393,7 @@ mod tests {
         fail_cache_write: bool,
         proof_pages: HashMap<String, Vec<u8>>,
         admission_snapshot: Option<WorkspaceWriteAuthorizationSnapshot>,
+        approve_owner_offer: bool,
     }
 
     impl NativeScopeHost for Host {
@@ -366,7 +486,53 @@ mod tests {
             self.saved += 1;
             Ok(())
         }
-        fn merge_owner_offer(&mut self, _: &[u8]) -> Result<(), String> {
+        fn prepare_owner_offer(
+            &mut self,
+            bytes: &[u8],
+        ) -> Result<Option<NativeOwnerOfferSnapshot>, String> {
+            let value: Value = serde_json::from_slice(bytes).map_err(|_| "Invalid owner offer")?;
+            let snapshot = self
+                .admission_snapshot
+                .as_ref()
+                .ok_or("Missing owner authority")?;
+            if !self.approve_owner_offer
+                || value["controllerPersonId"] != snapshot.genesis_owner.person_id
+                || value["workspace"]["id"] != snapshot.workspace_id
+            {
+                return Err("Unapproved owner offer".into());
+            }
+            Ok(Some(NativeOwnerOfferSnapshot {
+                workspace_id: snapshot.workspace_id.clone(),
+                candidate: snapshot.document.clone(),
+                local: self.document.clone(),
+                manifest: value["workspace"]["authorization"].clone(),
+            }))
+        }
+        fn merge_owner_offer(&mut self, bytes: &[u8]) -> Result<(), String> {
+            if self.fail_saved {
+                return Err("durable store unavailable".into());
+            }
+            let value: Value = serde_json::from_slice(bytes).map_err(|_| "Invalid owner offer")?;
+            let candidate = self
+                .admission_snapshot
+                .as_ref()
+                .ok_or("Missing owner authority")?
+                .document
+                .clone();
+            let mut local = AutoCommit::load(&self.document).map_err(|e| e.to_string())?;
+            let heads = local.get_heads();
+            let mut remote = AutoCommit::load(&candidate).map_err(|e| e.to_string())?;
+            let hashes = remote
+                .get_changes(&heads)
+                .iter()
+                .map(|change| change.hash().to_string())
+                .collect::<Vec<_>>();
+            self.persist_document(
+                &candidate,
+                value.pointer("/workspace/authorization"),
+                &hashes,
+            )?;
+            self.saved += 1;
             Ok(())
         }
         fn receive_gossip(&mut self, _: &[u8]) -> Result<(), String> {
@@ -406,6 +572,7 @@ mod tests {
                 fail_cache_write: false,
                 proof_pages: HashMap::new(),
                 admission_snapshot: None,
+                approve_owner_offer: false,
             },
         )
         .unwrap();
@@ -441,6 +608,7 @@ mod tests {
                 fail_cache_write: false,
                 proof_pages: HashMap::new(),
                 admission_snapshot: None,
+                approve_owner_offer: false,
             },
         )
         .unwrap();
@@ -571,6 +739,7 @@ mod tests {
             fail_cache_write,
             proof_pages: HashMap::new(),
             admission_snapshot: Some(snapshot),
+            approve_owner_offer: false,
         }
     }
 
@@ -669,6 +838,106 @@ mod tests {
                 .expect("source sync response");
         }
         panic!("sync did not reach authorization page request")
+    }
+
+    fn owner_offer_fixture() -> (
+        NativeScopePeer<Host>,
+        MeshScopeRuntime,
+        LiveWorkspaceSession,
+        Vec<u8>,
+        Vec<u8>,
+        Value,
+    ) {
+        let (baseline, candidate, proof, snapshot) = signed_proof_fixture_with_pages(true);
+        let manifest = meta_mesh_core::authorization_export(&candidate, &proof).unwrap();
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "controllerPersonId": snapshot.genesis_owner.person_id,
+            "workspaceId": "board", "workspace": {"id": "board", "authorization": manifest},
+        }))
+        .unwrap();
+        let mut host = proof_host(baseline, snapshot, false, false);
+        host.approve_owner_offer = true;
+        let receiver =
+            NativeScopePeer::new("existing-board", "secret", "receiver", "source", host).unwrap();
+        let source = MeshScopeRuntime::new("board", "secret").unwrap();
+        let sender = LiveWorkspaceSession::new("existing-board", "secret").unwrap();
+        let frame = sender
+            .encode("mesh-owner-workspace-offer", &payload)
+            .unwrap();
+        (receiver, source, sender, frame, candidate, proof)
+    }
+
+    #[test]
+    fn owner_offer_pages_commit_before_original_offer_receipt_and_replay_after_timeout() {
+        let (mut receiver, mut source, sender, frame, candidate, proof) = owner_offer_fixture();
+        let first = receiver.receive(&frame).unwrap().unwrap();
+        assert_eq!(receiver.host().saved, 0);
+        let page = proof_page(&mut source, &first, &candidate, &proof);
+        let second = receiver.receive(&page).unwrap().unwrap();
+        assert_eq!(
+            PairingCodec::inspect(&second).unwrap().frame_type,
+            "mesh-proof-request-v1"
+        );
+        assert_eq!(receiver.host().saved, 0);
+        assert!(receiver.abort_incomplete_document_receive());
+        let replay = receiver.receive(&frame).unwrap().unwrap();
+        let after: Value = serde_json::from_slice(
+            &PairingCodec::decode(&replay, "mesh-proof-request-v1", "secret").unwrap(),
+        )
+        .unwrap();
+        assert!(!after["after"].as_str().unwrap().is_empty());
+        let final_page = proof_page(&mut source, &replay, &candidate, &proof);
+        let receipt = receiver.receive(&final_page).unwrap().unwrap();
+        assert_eq!(receiver.host().saved, 1);
+        assert_eq!(receiver.host().document, candidate);
+        let original =
+            PairingCodec::decode(&frame, "mesh-owner-workspace-offer", "secret").unwrap();
+        sender.verify_saved_receipt(&receipt, &original).unwrap();
+        assert!(receipt.len() < 256);
+    }
+
+    #[test]
+    fn unapproved_owner_offer_and_forged_or_missing_pages_never_ack_or_persist() {
+        let (mut receiver, _, _, frame, _, _) = owner_offer_fixture();
+        receiver.host_mut().approve_owner_offer = false;
+        assert!(receiver.receive(&frame).is_err());
+        assert_eq!(receiver.host().saved, 0);
+        for corruption in ["missing", "forged"] {
+            let (mut receiver, mut source, _, frame, candidate, proof) = owner_offer_fixture();
+            let baseline = receiver.host().document.clone();
+            let mut request = receiver.receive(&frame).unwrap().unwrap();
+            loop {
+                let page = proof_page(&mut source, &request, &candidate, &proof);
+                let mut value: Value = serde_json::from_slice(
+                    &PairingCodec::decode(&page, "mesh-proof-page-v1", "secret").unwrap(),
+                )
+                .unwrap();
+                if corruption == "forged" {
+                    value["records"][0]["signed"]["signature"] = serde_json::json!("forged");
+                } else {
+                    value["records"] = serde_json::json!([]);
+                }
+                let forged = PairingCodec::encode(
+                    "mesh-proof-page-v1",
+                    "secret",
+                    &serde_json::to_vec(&value).unwrap(),
+                )
+                .unwrap();
+                match receiver.receive(&forged) {
+                    Err(_) => break,
+                    Ok(Some(next))
+                        if PairingCodec::inspect(&next).unwrap().frame_type
+                            == "mesh-proof-request-v1" =>
+                    {
+                        request = next
+                    }
+                    _ => panic!("Invalid owner proofs were acknowledged"),
+                }
+            }
+            assert_eq!(receiver.host().document, baseline);
+            assert_eq!(receiver.host().saved, 0);
+            assert_eq!(receiver.host().persisted, 0);
+        }
     }
 
     #[test]

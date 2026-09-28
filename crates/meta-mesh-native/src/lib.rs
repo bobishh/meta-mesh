@@ -16,7 +16,7 @@ pub use node::{
     GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeBrowserConnection,
     NativeBrowserRequest, NativeNode, NativeNodeOptions, NativeRpcInbox, NativeRpcRequest,
 };
-pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
+pub use scope::{NativeOwnerOfferSnapshot, NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
 pub use scope_admission::NativeScopeAdmission;
 pub use scope_rpc::{
     ScopePublishError, ScopePublishFailureKind, publish_scope_to, serve_scope_connection,
