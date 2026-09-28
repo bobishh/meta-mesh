@@ -98,7 +98,10 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                     ));
                 }
                 MeshScopeFrameEffect::ProofRequest { frame, cache_key } => {
-                    if let Some(cached) = self.host.read_proof_page(&cache_key)? {
+                    // Staging is an optimization only. A cache outage must not
+                    // strand this authenticated transfer; cached bytes still
+                    // pass the normal receiver checks before they can advance it.
+                    if let Some(cached) = self.host.read_proof_page(&cache_key).unwrap_or(None) {
                         match self.runtime.accept_proof_page(&cached) {
                             Ok(next) => {
                                 effect = next;
@@ -110,7 +113,10 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
                     return Ok(Some(frame));
                 }
                 MeshScopeFrameEffect::ProofPageReceived { cache_key, payload } => {
-                    self.host.write_proof_page(&cache_key, &payload)?;
+                    // The receiver has validated and retained this page in
+                    // memory. Failure to persist its untrusted cache copy must
+                    // not block complete authorization admission.
+                    let _ = self.host.write_proof_page(&cache_key, &payload);
                     effect = self.runtime.continue_proof_receive()?;
                     continue;
                 }
@@ -238,7 +244,13 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
 #[cfg(test)]
 mod tests {
     use automerge::{AutoCommit, ROOT, transaction::Transactable};
-    use meta_mesh_core::LiveWorkspaceSession;
+    use meta_mesh_core::{
+        ChangeAdmissionChange, ChangeAdmissionFlowInput, DEFAULT_SIGNATURE_DOMAIN,
+        DeviceCertificatePayload, LiveWorkspaceSession, PairingCodec, WorkspaceAuthority,
+        WorkspaceWriteAuthorizationSnapshot, authorization_record_pages,
+        plan_change_admission_flow, public_key_from_seed, public_key_id, sign_device_certificate,
+        sign_json_envelope,
+    };
 
     use super::*;
 
@@ -246,8 +258,12 @@ mod tests {
         document: Vec<u8>,
         fail_persist: bool,
         persisted: usize,
+        accepted_changes: usize,
         fail_saved: bool,
         saved: usize,
+        fail_cache_read: bool,
+        fail_cache_write: bool,
+        admission_snapshot: Option<WorkspaceWriteAuthorizationSnapshot>,
     }
 
     impl NativeScopeHost for Host {
@@ -263,15 +279,64 @@ mod tests {
         fn persist_document(
             &mut self,
             document: &[u8],
-            _: Option<&Value>,
-            _: &[String],
+            proof: Option<&Value>,
+            accepted_hashes: &[String],
         ) -> Result<(), String> {
             if self.fail_persist {
                 return Err("disk unavailable".into());
             }
+            if let Some(snapshot) = &self.admission_snapshot {
+                let proof = proof.ok_or("missing authorization bundle")?;
+                let pages = authorization_record_pages(proof)?;
+                let mut incoming = AutoCommit::load(document).map_err(|error| error.to_string())?;
+                let changes = incoming
+                    .get_changes(&[])
+                    .iter()
+                    .filter(|change| accepted_hashes.contains(&change.hash().to_string()))
+                    .map(|change| ChangeAdmissionChange {
+                        hash: change.hash().to_string(),
+                        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+                        actor: change.actor_id().to_hex_string(),
+                        message: change.message().unwrap_or_default().to_string(),
+                    })
+                    .collect::<Vec<_>>();
+                let plan = plan_change_admission_flow(
+                    ChangeAdmissionFlowInput {
+                        records: vec![],
+                        record_pages: Some(pages),
+                        known_hashes: vec![],
+                        changes: changes.clone(),
+                        snapshot: WorkspaceWriteAuthorizationSnapshot {
+                            document: document.to_vec(),
+                            ..snapshot.clone()
+                        },
+                    },
+                    0,
+                )?;
+                if plan.unsigned_error.is_some() || plan.admitted_changes.len() != changes.len() {
+                    return Err("workspace change authorization rejected".into());
+                }
+            }
             self.document = document.to_vec();
             self.persisted += 1;
+            self.accepted_changes += accepted_hashes.len();
             Ok(())
+        }
+
+        fn read_proof_page(&mut self, _: &str) -> Result<Option<Vec<u8>>, String> {
+            if self.fail_cache_read {
+                Err("staging read failed".into())
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn write_proof_page(&mut self, _: &str, _: &[u8]) -> Result<(), String> {
+            if self.fail_cache_write {
+                Err("staging write failed".into())
+            } else {
+                Ok(())
+            }
         }
 
         fn merge_authorization(&mut self, _: &Value) -> Result<(), String> {
@@ -323,8 +388,12 @@ mod tests {
                 document: baseline.clone(),
                 fail_persist: true,
                 persisted: 0,
+                accepted_changes: 0,
                 fail_saved: false,
                 saved: 0,
+                fail_cache_read: false,
+                fail_cache_write: false,
+                admission_snapshot: None,
             },
         )
         .unwrap();
@@ -353,8 +422,12 @@ mod tests {
                 document: AutoCommit::new().save(),
                 fail_persist: false,
                 persisted: 0,
+                accepted_changes: 0,
                 fail_saved: true,
                 saved: 0,
+                fail_cache_read: false,
+                fail_cache_write: false,
+                admission_snapshot: None,
             },
         )
         .unwrap();
@@ -374,5 +447,240 @@ mod tests {
         sender
             .verify_saved_receipt(&acknowledgement, payload)
             .unwrap();
+    }
+
+    fn signed_proof_fixture() -> (Vec<u8>, Vec<u8>, Value, WorkspaceWriteAuthorizationSnapshot) {
+        let owner_seed = [41u8; 32];
+        let device_seed = [42u8; 32];
+        let owner_public_key = public_key_from_seed(&owner_seed).unwrap();
+        let person_id = public_key_id(&owner_public_key).unwrap();
+        let device_public_key = public_key_from_seed(&device_seed).unwrap();
+        let device_id = public_key_id(&device_public_key).unwrap();
+        let certificate = sign_device_certificate(
+            &owner_seed,
+            DeviceCertificatePayload {
+                kind: "device-certificate".into(),
+                version: 1,
+                person_id: person_id.clone(),
+                device_id: device_id.clone(),
+                device_public_key,
+                issuer_certificate_hash: None,
+                can_enroll_devices: true,
+            },
+            &person_id,
+            DEFAULT_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        let owner = WorkspaceAuthority {
+            person_id: person_id.clone(),
+            public_key: owner_public_key.clone(),
+            certificates: vec![certificate.clone()],
+        };
+        let mut baseline_doc = AutoCommit::new();
+        baseline_doc.put(ROOT, "id", "board").unwrap();
+        let baseline = baseline_doc.save();
+        let mut candidate_doc = AutoCommit::load(&baseline).unwrap();
+        candidate_doc.put(ROOT, "title", "signed update").unwrap();
+        let candidate = candidate_doc.save();
+        let hash = candidate_doc.get_heads()[0].to_string();
+        let signed = sign_json_envelope(
+            &device_seed,
+            serde_json::json!({
+                "kind": "workspace-changes",
+                "version": 1,
+                "workspaceId": "board",
+                "hashes": [hash],
+                "personId": person_id,
+                "deviceId": device_id,
+            }),
+            &device_id,
+            DEFAULT_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        let record = serde_json::json!({
+            "signed": signed,
+            "publicKey": owner_public_key,
+            "certificates": [certificate],
+        });
+        // Repeated identical evidence forces the manifest/page path while
+        // remaining valid under the same signer identity.
+        let proof = serde_json::json!({
+            "version": 1,
+            "authority": {"genesisOwner": owner},
+            "records": vec![record; 1_000],
+        });
+        let snapshot = WorkspaceWriteAuthorizationSnapshot {
+            workspace_id: "board".into(),
+            genesis_owner: owner.clone(),
+            genesis_epoch: 1,
+            expected_current_owner: owner,
+            document: candidate.clone(),
+            ownership_transfers: vec![],
+            succession_claims: vec![],
+            revocations: vec![],
+            device_revocations: vec![],
+            departures: vec![],
+        };
+        (baseline, candidate, proof, snapshot)
+    }
+
+    fn proof_host(
+        baseline: Vec<u8>,
+        snapshot: WorkspaceWriteAuthorizationSnapshot,
+        fail_cache_read: bool,
+        fail_cache_write: bool,
+    ) -> Host {
+        Host {
+            document: baseline,
+            fail_persist: false,
+            persisted: 0,
+            accepted_changes: 0,
+            fail_saved: false,
+            saved: 0,
+            fail_cache_read,
+            fail_cache_write,
+            admission_snapshot: Some(snapshot),
+        }
+    }
+
+    fn proof_page(
+        source: &mut MeshScopeRuntime,
+        frame: &[u8],
+        candidate: &[u8],
+        proof: &Value,
+    ) -> Vec<u8> {
+        let Some(MeshScopeFrameEffect::ProofSource { payload }) =
+            source.receive_frame(frame).unwrap()
+        else {
+            panic!("receiver did not request a proof page")
+        };
+        source
+            .provide_proof_page(&payload, candidate, proof.clone())
+            .unwrap()
+    }
+
+    fn signed_transfer(
+        fail_cache_read: bool,
+        fail_cache_write: bool,
+    ) -> (
+        NativeScopePeer<Host>,
+        MeshScopeRuntime,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        Value,
+    ) {
+        let (baseline, candidate, proof, snapshot) = signed_proof_fixture();
+        let mut source = MeshScopeRuntime::new("board", "secret").unwrap();
+        source.start_document_sync("source", "receiver").unwrap();
+        let document_frame = source
+            .publish_frame(&candidate, Some(proof.clone()))
+            .unwrap()
+            .unwrap();
+        let receiver = NativeScopePeer::new(
+            "board",
+            "secret",
+            "receiver",
+            "source",
+            proof_host(
+                baseline.clone(),
+                snapshot,
+                fail_cache_read,
+                fail_cache_write,
+            ),
+        )
+        .unwrap();
+        (receiver, source, document_frame, baseline, candidate, proof)
+    }
+
+    fn request_for_proof(
+        receiver: &mut NativeScopePeer<Host>,
+        source: &mut MeshScopeRuntime,
+        mut incoming: Vec<u8>,
+        candidate: &[u8],
+        proof: &Value,
+    ) -> Vec<u8> {
+        for _ in 0..4 {
+            let reply = receiver.receive(&incoming).unwrap().expect("sync reply");
+            if PairingCodec::inspect(&reply).unwrap().frame_type == "mesh-proof-request-v1" {
+                return reply;
+            }
+            let Some(MeshScopeFrameEffect::NeedDocument) = source.receive_frame(&reply).unwrap()
+            else {
+                panic!("source expected sync document")
+            };
+            let effect = source
+                .provide_document(candidate, Some(proof.clone()))
+                .unwrap();
+            assert!(matches!(
+                effect,
+                MeshScopeFrameEffect::DocumentReceive { .. }
+            ));
+            incoming = source
+                .complete_document_receive(true)
+                .unwrap()
+                .response
+                .expect("source sync response");
+        }
+        panic!("sync did not reach authorization page request")
+    }
+
+    #[test]
+    fn staging_cache_failures_do_not_block_signed_proof_admission_or_ack() {
+        let (mut receiver, mut source, document_frame, _, candidate, proof) =
+            signed_transfer(true, true);
+        let request = request_for_proof(
+            &mut receiver,
+            &mut source,
+            document_frame,
+            &candidate,
+            &proof,
+        );
+        let response_page = proof_page(&mut source, &request, &candidate, &proof);
+        let acknowledgement = receiver
+            .receive(&response_page)
+            .unwrap()
+            .expect("valid page is durably admitted and acknowledged");
+        assert_eq!(receiver.host().accepted_changes, 1);
+        assert_eq!(
+            receiver.host().document,
+            receiver
+                .host()
+                .admission_snapshot
+                .as_ref()
+                .unwrap()
+                .document
+        );
+        assert_eq!(
+            PairingCodec::inspect(&acknowledgement).unwrap().frame_type,
+            "mesh-automerge-sync"
+        );
+    }
+
+    #[test]
+    fn forged_signed_page_is_rejected_without_document_commit_or_ack() {
+        let (mut receiver, mut source, document_frame, baseline, candidate, proof) =
+            signed_transfer(false, false);
+        let request = request_for_proof(
+            &mut receiver,
+            &mut source,
+            document_frame,
+            &candidate,
+            &proof,
+        );
+        let mut page = proof_page(&mut source, &request, &candidate, &proof);
+        let payload = PairingCodec::decode(&page, "mesh-proof-page-v1", "secret").unwrap();
+        let mut value: Value = serde_json::from_slice(&payload).unwrap();
+        value["records"][0]["signed"]["signature"] = serde_json::json!("forged-signature");
+        page = PairingCodec::encode(
+            "mesh-proof-page-v1",
+            "secret",
+            &serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+
+        assert!(receiver.receive(&page).is_err());
+        assert_eq!(receiver.host().accepted_changes, 0);
+        assert_eq!(receiver.host().document, baseline);
     }
 }
