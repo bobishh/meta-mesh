@@ -29,7 +29,7 @@ export type RustStateCore = {
     remotePersonId: string): boolean
   meshHandshakeFeatures(capabilities: string[]): { heartbeatSupported: boolean;
     ownershipReceiptSupported: boolean; ownerWorkspaceSupported: boolean;
-    ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"; blobTransferSupported: boolean; proofPagingSupported: boolean }
+    ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"; blobTransferSupported: boolean }
   credentialBelongsToProfile(credential: unknown, personId: string, publicKey: string): boolean
   canReuseMemberBundle(input: unknown): boolean
   planSuccessionPolicyRefresh(current: unknown, eligible: string[], epoch: number): {
@@ -115,7 +115,6 @@ export type RustStateCore = {
   planChangeAdmissionFlow(input: unknown, nowMs: number): unknown
   authorizationRecordPages(bundle: unknown): unknown[][]
   authorizationExport(document: Uint8Array, bundle: unknown): unknown
-  authorizationExportForPeer(document: Uint8Array, bundle: unknown, paging: boolean): unknown
   transitionOutboxClaim(current: unknown, input: unknown): unknown
   mergePeerRecords(existing: unknown, incoming: unknown): unknown
   reconcileReplicaSets(left: unknown, right: unknown): unknown
@@ -262,7 +261,6 @@ export type RustMeshScopeFrameEffect =
 export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]; closeSend: boolean }
 
 export type RustMeshScopeRuntime = {
-  setProofPagingSupported(supported: boolean): void
   beginAuthorizationTransfer(candidate: Uint8Array, local: Uint8Array, manifest: unknown): RustMeshScopeFrameEffect
   provideProofPage(payload: Uint8Array, document: Uint8Array, authorization: unknown): Uint8Array | number[]
   provideCachedProofPage(payload: Uint8Array): Uint8Array | number[] | undefined

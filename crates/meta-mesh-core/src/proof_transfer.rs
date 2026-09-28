@@ -224,23 +224,6 @@ pub fn authorization_export(document: &[u8], bundle: &Value) -> Result<Value, St
     serde_json::to_value(manifest).map_err(|e| e.to_string())
 }
 
-/// Preserve the old complete bundle for a peer without paging support. Never
-/// downgrade a manifest to missing evidence or relax legacy admission bounds.
-pub fn authorization_export_for_peer(
-    document: &[u8],
-    bundle: &Value,
-    paging: bool,
-) -> Result<Value, String> {
-    if paging {
-        return authorization_export(document, bundle);
-    }
-    let records = stored_records(bundle)?;
-    let legacy = json!({"version": 1, "authority": bundle.get("authority"), "records": records});
-    authorization_record_pages(&legacy)
-        .map_err(|_| "Peer does not support proof paging; update the app".to_string())?;
-    Ok(legacy)
-}
-
 fn request_id(manifest: &AuthorizationManifest, hashes: &[String]) -> Result<String, String> {
     digest(&json!({"transferId": manifest.transfer_id, "hashes": hashes}))
 }
@@ -763,23 +746,6 @@ mod tests {
     }
     fn manifest(bytes: &[u8], proof: &Value) -> AuthorizationManifest {
         serde_json::from_value(authorization_export(bytes, proof).unwrap()).unwrap()
-    }
-    #[test]
-    fn legacy_peer_keeps_complete_mid_size_bundle_and_rejects_oversize_history() {
-        let (document, _, proof) = fixture(100, 800);
-        assert!(bytes(&proof).unwrap() > LEGACY_WIRE_BYTES);
-        let legacy = authorization_export_for_peer(&document, &proof, false).unwrap();
-        assert_eq!(legacy, proof);
-        assert_eq!(
-            authorization_export_for_peer(&document, &proof, true).unwrap()["kind"],
-            "workspace-authorization-manifest"
-        );
-        let (document, _, large) = fixture(20_001, 0);
-        assert!(
-            authorization_export_for_peer(&document, &large, false)
-                .unwrap_err()
-                .contains("does not support proof paging")
-        );
     }
     #[test]
     fn initial_history_exceeds_legacy_record_limit_but_every_record_travels_in_bounded_pages() {

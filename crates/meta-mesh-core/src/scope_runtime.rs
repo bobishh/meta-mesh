@@ -117,10 +117,6 @@ impl MeshScopeRuntime {
             .start_document_sync(local_device_id, remote_device_id)
     }
 
-    pub fn set_proof_paging_supported(&mut self, supported: bool) {
-        self.live.set_proof_paging_supported(supported);
-    }
-
     /// Decode one authenticated frame and return the next host operation.
     /// Document bytes are requested only after the authenticated frame says
     /// they are needed, so gossip and control handlers never read storage.

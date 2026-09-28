@@ -24,7 +24,6 @@ export type MeshHandshakeFeatures = {
   ownerWorkspaceSupported: boolean
   ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"
   blobTransferSupported: boolean
-  proofPagingSupported: boolean
 }
 
 /** Host diagnostics around the Rust-owned mesh handshake codec. */
