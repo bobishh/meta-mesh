@@ -327,6 +327,25 @@ impl MeshScopeRuntime {
         )
     }
 
+    /// Serve an already frozen transfer without loading/copying aggregate
+    /// host history again. New manifests must prepare a new source first.
+    pub fn provide_cached_proof_page(&self, payload: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        let request: crate::AuthorizationPageRequest =
+            serde_json::from_slice(payload).map_err(|_| "Invalid authorization page request")?;
+        let Some(source) = self
+            .proof_source
+            .as_ref()
+            .filter(|source| source.transfer_id() == request.manifest.transfer_id)
+        else {
+            return Ok(None);
+        };
+        let page = source.page(request)?;
+        Ok(Some(self.live.encode(
+            "mesh-proof-page-v1",
+            &serde_json::to_vec(&page).map_err(|e| e.to_string())?,
+        )?))
+    }
+
     pub fn accept_proof_page(&mut self, payload: &[u8]) -> Result<MeshScopeFrameEffect, String> {
         if payload.len() > crate::proof_transfer::MAX_PROOF_PAGE_BYTES {
             return Err("Authorization page exceeds payload limit".into());

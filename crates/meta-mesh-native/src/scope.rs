@@ -83,6 +83,9 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
         loop {
             let result = match effect {
                 MeshScopeFrameEffect::ProofSource { payload } => {
+                    if let Some(frame) = self.runtime.provide_cached_proof_page(&payload)? {
+                        return Ok(Some(frame));
+                    }
                     let snapshot = self.host.snapshot()?;
                     return Ok(Some(
                         self.runtime.provide_proof_page(

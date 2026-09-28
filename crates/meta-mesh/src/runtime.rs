@@ -260,6 +260,13 @@ impl WasmMeshScopeRuntime {
             .map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = provideCachedProofPage)]
+    pub fn provide_cached_proof_page(&self, payload: &[u8]) -> Result<Option<Vec<u8>>, JsValue> {
+        self.inner
+            .provide_cached_proof_page(payload)
+            .map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = acceptProofPage)]
     pub fn accept_proof_page(&mut self, payload: &[u8]) -> Result<JsValue, JsValue> {
         to_value(&self.inner.accept_proof_page(payload).map_err(js_error)?)

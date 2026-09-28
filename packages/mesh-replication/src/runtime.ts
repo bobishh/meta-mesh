@@ -263,6 +263,7 @@ export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]
 export type RustMeshScopeRuntime = {
   beginAuthorizationTransfer(candidate: Uint8Array, local: Uint8Array, manifest: unknown): RustMeshScopeFrameEffect
   provideProofPage(payload: Uint8Array, document: Uint8Array, authorization: unknown): Uint8Array | number[]
+  provideCachedProofPage(payload: Uint8Array): Uint8Array | number[] | undefined
   acceptProofPage(payload: Uint8Array): RustMeshScopeFrameEffect
   continueProofReceive(): RustMeshScopeFrameEffect
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void

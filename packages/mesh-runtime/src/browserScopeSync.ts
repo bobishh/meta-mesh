@@ -82,8 +82,9 @@ export class BrowserMeshScopeSync {
       try { this.runtime.rejectDocumentReceive() } catch { /* no candidate remains pending */ }
       throw error
     })
+    const guarded = this.queue
     return prepared.then(async effect => {
-      if (effect?.kind !== "gossip") return queued
+      if (effect?.kind !== "gossip") return guarded as Promise<void>
       const startedAt = now()
       try { await this.apply(stream, frame, effect) }
       finally { this.reportTiming("receive", "out-of-queue-callback", startedAt, operationId, frame.byteLength) }
@@ -145,6 +146,8 @@ export class BrowserMeshScopeSync {
   private async apply(stream: MeshScopeStream, frame: Uint8Array, effect: RustMeshScopeFrameEffect): Promise<void> {
     switch (effect.kind) {
       case "proofSource": {
+        const cached = this.runtime.provideCachedProofPage(toBytes(effect.payload))
+        if (cached) { await stream.send(toBytes(cached)); await stream.closeSend(); return }
         const document = await this.host.readDocument()
         const authorization = await this.host.readAuthorization?.(document)
         if (!authorization) throw new Error("Missing authorization proof history")

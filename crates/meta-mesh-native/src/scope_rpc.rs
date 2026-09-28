@@ -142,17 +142,7 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
             for round in 0..MAX_SYNC_REPLY_ROUNDS + MAX_PROOF_REPLY_ROUNDS {
                 let Some(frame) = next.take() else { break };
                 let kind = frame_kind(&frame);
-                if kind == "mesh-proof-request-v1" || kind == "mesh-proof-page-v1" {
-                    proof_rounds += 1;
-                    if proof_rounds > MAX_PROOF_REPLY_ROUNDS {
-                        return Err(ScopePublishError::new(ScopePublishFailureKind::ReplyLimit, "proof_reply_limit", "Native authorization transfer exceeded reply limit"));
-                    }
-                } else {
-                    sync_rounds += 1;
-                    if sync_rounds > MAX_SYNC_REPLY_ROUNDS {
-                        return Err(ScopePublishError::new(ScopePublishFailureKind::ReplyLimit, "reply_limit", "Native scope sync exceeded reply limit"));
-                    }
-                }
+                consume_reply_budget(&kind, &mut sync_rounds, &mut proof_rounds)?;
                 let exchange_started = std::time::Instant::now();
                 if trace {
                     eprintln!("trace.sync event=publish.frame.start id={publish_id} workspace={} route={} index={frame_index} round={round} kind={kind} bytes={} deadline_ms={}", short(workspace_id), short(remote_id), frame.len(), timeout.as_millis());
@@ -226,5 +216,49 @@ fn frame_kind_name(kind: ScopePublishFailureKind) -> &'static str {
         ScopePublishFailureKind::Prepare => "prepare_error",
         ScopePublishFailureKind::Receive => "receive_error",
         ScopePublishFailureKind::ReplyLimit => "reply_limit",
+    }
+}
+
+fn consume_reply_budget(
+    kind: &str,
+    sync: &mut usize,
+    proof: &mut usize,
+) -> Result<(), ScopePublishError> {
+    if kind == "mesh-proof-request-v1" || kind == "mesh-proof-page-v1" {
+        *proof += 1;
+        if *proof > MAX_PROOF_REPLY_ROUNDS {
+            return Err(ScopePublishError::new(
+                ScopePublishFailureKind::ReplyLimit,
+                "proof_reply_limit",
+                "Native authorization transfer exceeded reply limit",
+            ));
+        }
+    } else {
+        *sync += 1;
+        if *sync > MAX_SYNC_REPLY_ROUNDS {
+            return Err(ScopePublishError::new(
+                ScopePublishFailureKind::ReplyLimit,
+                "reply_limit",
+                "Native scope sync exceeded reply limit",
+            ));
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod proof_budget_tests {
+    use super::*;
+    #[test]
+    fn proof_pages_exceed_legacy_rounds_without_weakening_either_bound() {
+        let (mut sync, mut proof) = (0, 0);
+        for _ in 0..MAX_PROOF_REPLY_ROUNDS {
+            consume_reply_budget("mesh-proof-page-v1", &mut sync, &mut proof).unwrap();
+        }
+        for _ in 0..MAX_SYNC_REPLY_ROUNDS {
+            consume_reply_budget("mesh-automerge-sync", &mut sync, &mut proof).unwrap();
+        }
+        assert_eq!((sync, proof), (128, 4096));
+        assert!(consume_reply_budget("mesh-proof-request-v1", &mut sync, &mut proof).is_err());
+        assert!(consume_reply_budget("mesh-control-sync", &mut sync, &mut proof).is_err());
     }
 }

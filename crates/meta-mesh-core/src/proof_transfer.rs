@@ -844,4 +844,75 @@ mod tests {
                 .contains("authority changed")
         );
     }
+    #[test]
+    fn frozen_source_avoids_reloading_and_proof_only_additions_change_identity() {
+        let (document, empty, mut proof) = fixture(2, 70_000);
+        let initial = manifest(&document, &proof);
+        let receiver = AuthorizationPageReceiver::new(initial.clone(), &document, &empty).unwrap();
+        let request = serde_json::to_vec(&receiver.request().unwrap().unwrap()).unwrap();
+        let mut runtime = crate::MeshScopeRuntime::new("board", "secret").unwrap();
+        assert!(
+            runtime
+                .provide_cached_proof_page(&request)
+                .unwrap()
+                .is_none()
+        );
+        let frame = runtime
+            .provide_proof_page(&request, &document, proof.clone())
+            .unwrap();
+        assert_eq!(
+            runtime.provide_cached_proof_page(&request).unwrap(),
+            Some(frame)
+        );
+        let mut additional = proof["records"][0].clone();
+        additional["signed"]["signature"] = json!("additional-proof");
+        proof["records"].as_array_mut().unwrap().push(additional);
+        let changed = manifest(&document, &proof);
+        assert_ne!(initial.transfer_id, changed.transfer_id);
+        let receiver = AuthorizationPageReceiver::new(changed, &document, &empty).unwrap();
+        let request = serde_json::to_vec(&receiver.request().unwrap().unwrap()).unwrap();
+        assert!(
+            runtime
+                .provide_cached_proof_page(&request)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            runtime
+                .provide_proof_page(&request, &document, proof)
+                .is_ok()
+        );
+    }
+    #[test]
+    fn standalone_transfer_cannot_complete_or_publish_before_last_page() {
+        let (document, empty, proof) = fixture(4, 70_000);
+        let mut runtime = crate::MeshScopeRuntime::new("board", "secret").unwrap();
+        let effect = runtime
+            .begin_authorization_transfer(
+                &document,
+                &empty,
+                serde_json::to_value(manifest(&document, &proof)).unwrap(),
+            )
+            .unwrap();
+        assert!(matches!(
+            effect,
+            crate::MeshScopeFrameEffect::ProofRequest { .. }
+        ));
+        assert!(
+            runtime
+                .complete_document_receive(true)
+                .unwrap_err()
+                .contains("incomplete")
+        );
+        runtime.reject_document_receive().unwrap();
+        assert!(
+            runtime
+                .begin_authorization_transfer(
+                    &document,
+                    &empty,
+                    serde_json::to_value(manifest(&document, &proof)).unwrap()
+                )
+                .is_ok()
+        );
+    }
 }
