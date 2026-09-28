@@ -42,6 +42,8 @@ export class BrowserMeshScopeSync {
   private closed?: Promise<void>
   private knownChat = new Set<string>()
   private timingSequence = 0
+  private proofTimer?: ReturnType<typeof setTimeout>
+  private proofGeneration = 0
   constructor(private readonly runtime: RustMeshScopeRuntime, private readonly host: MeshScopeHost) {}
 
   static create(workspaceId: string, secret: string, host: MeshScopeHost): BrowserMeshScopeSync {
@@ -75,7 +77,11 @@ export class BrowserMeshScopeSync {
         await this.apply(stream, frame, effect)
       } finally { this.reportTiming("receive", "queue-run", queueStartedAt, operationId, frame.byteLength) }
     })
-    this.queue = queued
+    this.queue = queued.catch(error => {
+      this.clearProofTimer()
+      try { this.runtime.rejectDocumentReceive() } catch { /* no candidate remains pending */ }
+      throw error
+    })
     return prepared.then(async effect => {
       if (effect?.kind !== "gossip") return queued
       const startedAt = now()
@@ -147,7 +153,7 @@ export class BrowserMeshScopeSync {
         return
       }
       case "proofRequest": {
-        const cached = await this.host.readProofPage?.(effect.cacheKey)
+        const cached = await this.host.readProofPage?.(effect.cacheKey).catch(() => undefined)
         if (cached) {
           let accepted: RustMeshScopeFrameEffect | undefined
           try { accepted = this.runtime.acceptProofPage(cached) } catch { /* discard corrupt untrusted cache */ }
@@ -155,10 +161,20 @@ export class BrowserMeshScopeSync {
         }
         await stream.send(toBytes(effect.frame))
         await stream.closeSend()
+        this.clearProofTimer()
+        const generation = this.proofGeneration
+        this.proofTimer = setTimeout(() => {
+          this.queue = this.queue.catch(() => {}).then(() => {
+            if (generation !== this.proofGeneration || this.closing) return
+            this.clearProofTimer()
+            try { this.runtime.rejectDocumentReceive() } catch { /* already completed */ }
+          })
+        }, 20_000)
         return
       }
       case "proofPageReceived": {
-        await this.host.writeProofPage?.(effect.cacheKey, toBytes(effect.payload))
+        this.clearProofTimer()
+        await this.host.writeProofPage?.(effect.cacheKey, toBytes(effect.payload)).catch(() => {})
         return this.apply(stream, frame, this.runtime.continueProofReceive())
       }
       case "needDocument": {
@@ -234,6 +250,7 @@ export class BrowserMeshScopeSync {
         if (effect.closeSend) await stream.closeSend()
         return
       case "documentReceive": {
+        this.clearProofTimer()
         try {
           const persisted = !effect.shouldPersist || (await this.host.persistDocument(toBytes(effect.document), effect.proof)) !== false
           const completion = this.runtime.completeDocumentReceive(persisted)
@@ -247,6 +264,12 @@ export class BrowserMeshScopeSync {
         return
       }
     }
+  }
+
+  private clearProofTimer(): void {
+    this.proofGeneration++
+    if (this.proofTimer) clearTimeout(this.proofTimer)
+    this.proofTimer = undefined
   }
 
   private async applyControl(action: string, control: { authorization?: unknown; chat?: unknown; mesh?: unknown }): Promise<void> {
@@ -285,6 +308,7 @@ export class BrowserMeshScopeSync {
   close(): Promise<void> {
     if (!this.closed) {
       this.closing = true
+      this.clearProofTimer()
       this.closed = this.queue.then(() => {}, () => {}).then(() => { this.runtime.free?.() })
     }
     return this.closed

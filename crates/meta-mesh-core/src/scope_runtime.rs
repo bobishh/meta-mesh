@@ -30,6 +30,7 @@ pub struct MeshScopeRuntime {
     live: LiveWorkspaceSession,
     pending_document_receive: Option<PendingDocumentReceive>,
     pending_saved_receive: Option<PendingSavedReceive>,
+    proof_source: Option<crate::proof_transfer::PreparedAuthorizationSource>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,6 +104,7 @@ impl MeshScopeRuntime {
             live: LiveWorkspaceSession::new(workspace_id, secret)?,
             pending_document_receive: None,
             pending_saved_receive: None,
+            proof_source: None,
         })
     }
 
@@ -292,14 +294,33 @@ impl MeshScopeRuntime {
     }
 
     pub fn provide_proof_page(
-        &self,
+        &mut self,
         payload: &[u8],
         document: &[u8],
         authorization: Value,
     ) -> Result<Vec<u8>, String> {
-        let request =
+        let request: crate::AuthorizationPageRequest =
             serde_json::from_slice(payload).map_err(|_| "Invalid authorization page request")?;
-        let page = crate::authorization_page(document, &authorization, request)?;
+        if authorization.get("authority") != Some(&request.manifest.authority) {
+            self.proof_source = None;
+            return Err("Authorization authority changed; restart document sync".into());
+        }
+        if self
+            .proof_source
+            .as_ref()
+            .is_none_or(|source| source.transfer_id() != request.manifest.transfer_id)
+        {
+            self.proof_source = Some(crate::proof_transfer::PreparedAuthorizationSource::new(
+                document,
+                &authorization,
+                &request.manifest,
+            )?);
+        }
+        let page = self
+            .proof_source
+            .as_ref()
+            .expect("prepared source")
+            .page(request)?;
         self.live.encode(
             "mesh-proof-page-v1",
             &serde_json::to_vec(&page).map_err(|e| e.to_string())?,

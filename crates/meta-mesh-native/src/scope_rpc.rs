@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use crate::{NativeBrowserConnection, NativeNode, NativeScopeService, NativeScopeServiceHost};
 
 const MAX_SYNC_REPLY_ROUNDS: usize = 128;
+const MAX_PROOF_REPLY_ROUNDS: usize = 4096;
 static NEXT_PUBLISH_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,9 +137,22 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
     let sent = async {
         for (frame_index, frame) in frames.into_iter().enumerate() {
             let mut next = Some(frame);
-            for round in 0..MAX_SYNC_REPLY_ROUNDS {
+            let mut sync_rounds = 0;
+            let mut proof_rounds = 0;
+            for round in 0..MAX_SYNC_REPLY_ROUNDS + MAX_PROOF_REPLY_ROUNDS {
                 let Some(frame) = next.take() else { break };
                 let kind = frame_kind(&frame);
+                if kind == "mesh-proof-request-v1" || kind == "mesh-proof-page-v1" {
+                    proof_rounds += 1;
+                    if proof_rounds > MAX_PROOF_REPLY_ROUNDS {
+                        return Err(ScopePublishError::new(ScopePublishFailureKind::ReplyLimit, "proof_reply_limit", "Native authorization transfer exceeded reply limit"));
+                    }
+                } else {
+                    sync_rounds += 1;
+                    if sync_rounds > MAX_SYNC_REPLY_ROUNDS {
+                        return Err(ScopePublishError::new(ScopePublishFailureKind::ReplyLimit, "reply_limit", "Native scope sync exceeded reply limit"));
+                    }
+                }
                 let exchange_started = std::time::Instant::now();
                 if trace {
                     eprintln!("trace.sync event=publish.frame.start id={publish_id} workspace={} route={} index={frame_index} round={round} kind={kind} bytes={} deadline_ms={}", short(workspace_id), short(remote_id), frame.len(), timeout.as_millis());

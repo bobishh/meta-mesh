@@ -250,7 +250,7 @@ impl WasmMeshScopeRuntime {
     }
     #[wasm_bindgen(js_name = provideProofPage)]
     pub fn provide_proof_page(
-        &self,
+        &mut self,
         payload: &[u8],
         document: &[u8],
         authorization: JsValue,

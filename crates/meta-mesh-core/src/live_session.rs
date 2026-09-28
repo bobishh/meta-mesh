@@ -484,8 +484,12 @@ impl LiveWorkspaceSession {
         let authorization = authorization
             .map(|value| wire_proof(document, value))
             .transpose()?;
-        let authorization = authorization.filter(|value| {
-            value.get("kind").and_then(Value::as_str) != Some("workspace-authorization-manifest")
+        let authorization = authorization.map(|value| {
+            if value.get("kind").and_then(Value::as_str) == Some("workspace-authorization-manifest") {
+                // Proof-only authority transitions must propagate even when
+                // no document delta exists. History records remain paged.
+                serde_json::json!({"version": 1, "authority": value.get("authority"), "records": []})
+            } else { value }
         });
         let control = self.prepare_control_publish(authorization, chat, mesh)?;
         let control_snapshot = control.control_snapshot;

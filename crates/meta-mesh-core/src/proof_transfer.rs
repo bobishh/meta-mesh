@@ -25,6 +25,7 @@ pub struct AuthorizationManifest {
     pub workspace_id: String,
     pub heads: Vec<String>,
     pub authority: Value,
+    pub records_digest: String,
     pub transfer_id: String,
 }
 
@@ -69,7 +70,7 @@ fn signature(record: &Value) -> Result<&str, String> {
 fn manifest_id(manifest: &AuthorizationManifest) -> Result<String, String> {
     digest(
         &json!({"workspaceId": manifest.workspace_id, "heads": manifest.heads,
-                  "authority": manifest.authority, "version": 2}),
+                  "authority": manifest.authority, "recordsDigest": manifest.records_digest, "version": 2}),
     )
 }
 fn validate_manifest(manifest: &AuthorizationManifest) -> Result<(), String> {
@@ -79,6 +80,7 @@ fn validate_manifest(manifest: &AuthorizationManifest) -> Result<(), String> {
         || manifest.heads.is_empty()
         || manifest.heads.len() > 256
         || !manifest.authority.is_object()
+        || manifest.records_digest.len() != 64
         || manifest_id(manifest)? != manifest.transfer_id
         || bytes(manifest)? > MAX_PROOF_PAGE_BYTES
     {
@@ -214,6 +216,7 @@ pub fn authorization_export(document: &[u8], bundle: &Value) -> Result<Value, St
             .get("authority")
             .cloned()
             .ok_or("Missing workspace authority")?,
+        records_digest: records_digest(&records)?,
         transfer_id: String::new(),
     };
     manifest.transfer_id = manifest_id(&manifest)?;
@@ -225,102 +228,168 @@ fn request_id(manifest: &AuthorizationManifest, hashes: &[String]) -> Result<Str
     digest(&json!({"transferId": manifest.transfer_id, "hashes": hashes}))
 }
 
+fn records_digest(records: &[Value]) -> Result<String, String> {
+    let mut identities = BTreeMap::new();
+    for record in records {
+        let key = signature(record)?;
+        let value = digest(record)?;
+        if identities
+            .insert(key, value.clone())
+            .is_some_and(|previous| previous != value)
+        {
+            return Err("Conflicting stored authorization identity".into());
+        }
+    }
+    digest(&serde_json::to_value(identities).map_err(|e| e.to_string())?)
+}
+
 pub fn authorization_page(
     document: &[u8],
     bundle: &Value,
     request: AuthorizationPageRequest,
 ) -> Result<AuthorizationPage, String> {
-    validate_manifest(&request.manifest)?;
-    if request.version != 1
-        || request.hashes.is_empty()
-        || request.hashes.len() > MAX_PROOF_REQUEST_HASHES
-        || request.hashes.windows(2).any(|p| p[0] >= p[1])
-        || request_id(&request.manifest, &request.hashes)? != request.request_id
-        || bytes(&request)? > MAX_PROOF_PAGE_BYTES
-    {
-        return Err("Invalid authorization page request".into());
-    }
-    if bundle.get("authority") != Some(&request.manifest.authority) {
-        return Err("Authorization authority changed; restart document sync".into());
-    }
-    let mut doc = AutoCommit::load(document).map_err(|e| e.to_string())?;
-    let heads = request
-        .manifest
-        .heads
-        .iter()
-        .map(|h| {
-            ChangeHash::from_str(h).map_err(|_| "Invalid authorization source head".to_string())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut source = doc
-        .fork_at(&heads)
-        .map_err(|_| "Authorization source history unavailable")?;
-    let raw =
-        serde_json::to_value(automerge::AutoSerde::from(&source)).map_err(|e| e.to_string())?;
-    if raw.get("id").and_then(Value::as_str) != Some(request.manifest.workspace_id.as_str()) {
-        return Err("Wrong authorization source workspace".into());
-    }
-    let source_hashes = source
-        .get_changes(&[])
-        .iter()
-        .map(|c| c.hash().to_string())
-        .collect::<BTreeSet<_>>();
-    if request.hashes.iter().any(|h| !source_hashes.contains(h)) {
-        return Err("Requested authorization hash absent from actual source history".into());
-    }
-    let hashes = request
-        .hashes
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
-    let mut selected = BTreeMap::new();
-    for record in stored_records(bundle)? {
-        if record
-            .pointer("/signed/payload/hashes")
-            .and_then(Value::as_array)
-            .is_some_and(|values| {
-                values
+    PreparedAuthorizationSource::new(document, bundle, &request.manifest)?.page(request)
+}
+
+/// Frozen source index. Build once per transfer, retain whole records unchanged.
+/// Later pages touch requested hashes only; authority changes require restart.
+pub struct PreparedAuthorizationSource {
+    transfer_id: String,
+    source_hashes: BTreeSet<String>,
+    records: BTreeMap<String, Value>,
+    by_hash: BTreeMap<String, BTreeSet<String>>,
+}
+impl PreparedAuthorizationSource {
+    pub fn new(
+        document: &[u8],
+        bundle: &Value,
+        manifest: &AuthorizationManifest,
+    ) -> Result<Self, String> {
+        validate_manifest(manifest)?;
+        if bundle.get("authority") != Some(&manifest.authority) {
+            return Err("Authorization authority changed; restart document sync".into());
+        }
+        let mut doc = AutoCommit::load(document).map_err(|e| e.to_string())?;
+        let heads = manifest
+            .heads
+            .iter()
+            .map(|h| {
+                ChangeHash::from_str(h).map_err(|_| "Invalid authorization source head".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut source = doc
+            .fork_at(&heads)
+            .map_err(|_| "Authorization source history unavailable")?;
+        let raw =
+            serde_json::to_value(automerge::AutoSerde::from(&source)).map_err(|e| e.to_string())?;
+        if raw.get("id").and_then(Value::as_str) != Some(manifest.workspace_id.as_str()) {
+            return Err("Wrong authorization source workspace".into());
+        }
+        let source_hashes = source
+            .get_changes(&[])
+            .iter()
+            .map(|c| c.hash().to_string())
+            .collect::<BTreeSet<_>>();
+
+        let mut records = BTreeMap::new();
+        let mut by_hash: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let stored = stored_records(bundle)?;
+        if records_digest(&stored)? != manifest.records_digest {
+            return Err("Authorization records changed; restart document sync".into());
+        }
+        for record in stored {
+            let key = signature(&record)?.to_string();
+            if let Some(hashes) = record
+                .pointer("/signed/payload/hashes")
+                .and_then(Value::as_array)
+            {
+                for hash in hashes
                     .iter()
                     .filter_map(Value::as_str)
-                    .any(|h| hashes.contains(h))
-            })
-        {
-            let key = signature(&record)?.to_string();
-            if key > request.after {
-                selected.insert(key, record);
+                    .filter(|h| source_hashes.contains(*h))
+                {
+                    by_hash
+                        .entry(hash.to_string())
+                        .or_default()
+                        .insert(key.clone());
+                }
+            }
+            if let Some(previous) = records.insert(key, record.clone()) {
+                if previous != record {
+                    return Err("Conflicting stored authorization identity".into());
+                }
             }
         }
+        Ok(Self {
+            transfer_id: manifest.transfer_id.clone(),
+            source_hashes,
+            records,
+            by_hash,
+        })
     }
-    let mut page = AuthorizationPage {
-        version: 1,
-        transfer_id: request.manifest.transfer_id,
-        request_id: request.request_id,
-        after: request.after.clone(),
-        next: request.after,
-        complete: true,
-        records: vec![],
-    };
-    let mut page_bytes = bytes(&page)?;
-    for (key, record) in selected {
-        let next_bytes =
-            page_bytes + bytes(&record)? + usize::from(!page.records.is_empty()) + bytes(&key)?
-                - bytes(&page.next)?;
-        // complete:false is one byte longer than complete:true.
-        if page.records.len() == 20_000 || next_bytes + 1 > MAX_PROOF_PAGE_BYTES {
-            if page.records.is_empty() {
-                return Err(
+    pub fn transfer_id(&self) -> &str {
+        &self.transfer_id
+    }
+    pub fn page(&self, request: AuthorizationPageRequest) -> Result<AuthorizationPage, String> {
+        validate_manifest(&request.manifest)?;
+        if request.version != 1
+            || request.hashes.is_empty()
+            || request.hashes.len() > MAX_PROOF_REQUEST_HASHES
+            || request.hashes.windows(2).any(|p| p[0] >= p[1])
+            || request_id(&request.manifest, &request.hashes)? != request.request_id
+            || bytes(&request)? > MAX_PROOF_PAGE_BYTES
+        {
+            return Err("Invalid authorization page request".into());
+        }
+
+        if request.manifest.transfer_id != self.transfer_id {
+            return Err("Wrong frozen proof source".into());
+        }
+        if request
+            .hashes
+            .iter()
+            .any(|h| !self.source_hashes.contains(h))
+        {
+            return Err("Requested authorization hash absent from actual source history".into());
+        }
+        let mut selected = BTreeSet::new();
+        for hash in &request.hashes {
+            if let Some(keys) = self.by_hash.get(hash) {
+                selected.extend(keys.iter().filter(|k| *k > &request.after).cloned());
+            }
+        }
+        let mut page = AuthorizationPage {
+            version: 1,
+            transfer_id: request.manifest.transfer_id,
+            request_id: request.request_id,
+            after: request.after.clone(),
+            next: request.after,
+            complete: true,
+            records: vec![],
+        };
+        let mut page_bytes = bytes(&page)?;
+        for key in selected {
+            let record = self.records.get(&key).expect("indexed record").clone();
+            let next_bytes =
+                page_bytes + bytes(&record)? + usize::from(!page.records.is_empty()) + bytes(&key)?
+                    - bytes(&page.next)?;
+            // complete:false is one byte longer than complete:true.
+            if page.records.len() == 20_000 || next_bytes + 1 > MAX_PROOF_PAGE_BYTES {
+                if page.records.is_empty() {
+                    return Err(
                     "One signed authorization record exceeds page budget; cannot split signature"
                         .into(),
                 );
+                }
+                page.complete = false;
+                break;
             }
-            page.complete = false;
-            break;
+            page.records.push(record);
+            page.next = key;
+            page_bytes = next_bytes;
         }
-        page.records.push(record);
-        page.next = key;
-        page_bytes = next_bytes;
+        Ok(page)
     }
-    Ok(page)
 }
 
 pub struct AuthorizationPageReceiver {
@@ -457,6 +526,194 @@ impl AuthorizationPageReceiver {
 mod tests {
     use super::*;
     use automerge::{ROOT, transaction::Transactable};
+    /// Deterministic full signed-history regression and separate source/crypto timings.
+    /// Run explicitly in release mode; cryptography is deliberately not mocked.
+    #[test]
+    #[ignore = "large deterministic signed-history benchmark"]
+    fn signed_initial_and_incremental_history_benchmark() {
+        use crate::{
+            ChangeAdmissionChange, ChangeAdmissionFlowInput, DEFAULT_SIGNATURE_DOMAIN,
+            DeviceCertificatePayload, WorkspaceAuthority, WorkspaceWriteAuthorizationSnapshot,
+            plan_change_admission_flow, public_key_from_seed, public_key_id,
+            sign_device_certificate, sign_json_envelope,
+        };
+        use std::time::Instant;
+        let root_seed = [41u8; 32];
+        let seed = [42u8; 32];
+        let public_key = public_key_from_seed(&root_seed).unwrap();
+        let person_id = public_key_id(&public_key).unwrap();
+        let device_public_key = public_key_from_seed(&seed).unwrap();
+        let device_id = public_key_id(&device_public_key).unwrap();
+        let certificate = sign_device_certificate(
+            &root_seed,
+            DeviceCertificatePayload {
+                kind: "device-certificate".into(),
+                version: 1,
+                person_id: person_id.clone(),
+                device_id: device_id.clone(),
+                device_public_key,
+                issuer_certificate_hash: None,
+                can_enroll_devices: true,
+            },
+            &person_id,
+            DEFAULT_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        let owner = WorkspaceAuthority {
+            person_id: person_id.clone(),
+            public_key: public_key.clone(),
+            certificates: vec![certificate.clone()],
+        };
+        for count in [100usize, 1000, 20_001] {
+            let mut doc = AutoCommit::new();
+            let empty = doc.save();
+            let mut records = vec![];
+            for index in 0..count {
+                doc.put(ROOT, "id", "board").unwrap();
+                doc.put(ROOT, "counter", index as i64).unwrap();
+                let hash = doc.get_heads()[0].to_string();
+                let signed = sign_json_envelope(&seed, json!({"kind":"workspace-changes", "version":1,
+                    "workspaceId":"board", "hashes":[hash], "personId":person_id, "deviceId":device_id}),
+                    &device_id, DEFAULT_SIGNATURE_DOMAIN).unwrap();
+                records.push(
+                    json!({"signed":signed, "publicKey":public_key, "certificates":[certificate]}),
+                );
+            }
+            let document = doc.save();
+            let authority = json!({"genesisOwner":owner});
+            let legacy = json!({"version":1,"authority":authority,"records":records});
+            let wire_bytes = bytes(&legacy).unwrap();
+            if count > 20_000 {
+                assert!(authorization_record_pages(&legacy).is_err());
+                assert!(wire_bytes > 16 * 1024 * 1024);
+            }
+            let source_started = Instant::now();
+            let frozen_manifest = manifest(&document, &legacy);
+            let source =
+                PreparedAuthorizationSource::new(&document, &legacy, &frozen_manifest).unwrap();
+            let source_ms = source_started.elapsed().as_millis();
+            let mut receiver =
+                AuthorizationPageReceiver::new(frozen_manifest, &document, &empty).unwrap();
+            let pages_started = Instant::now();
+            let mut page_count = 0;
+            while let Some(request) = receiver.request().unwrap() {
+                let page = source.page(request).unwrap();
+                assert!(bytes(&page).unwrap() <= MAX_PROOF_PAGE_BYTES);
+                receiver.accept(page).unwrap();
+                page_count += 1;
+            }
+            let pages_ms = pages_started.elapsed().as_millis();
+            let bundle = receiver.bundle().unwrap();
+            let changes = doc
+                .get_changes(&[])
+                .iter()
+                .map(|change| ChangeAdmissionChange {
+                    hash: change.hash().to_string(),
+                    dependencies: change.deps().iter().map(ToString::to_string).collect(),
+                    actor: change.actor_id().to_hex_string(),
+                    message: change.message().unwrap_or_default().to_string(),
+                })
+                .collect::<Vec<_>>();
+            let snapshot = WorkspaceWriteAuthorizationSnapshot {
+                workspace_id: "board".into(),
+                genesis_owner: owner.clone(),
+                genesis_epoch: 1,
+                expected_current_owner: owner.clone(),
+                document: document.clone(),
+                ownership_transfers: vec![],
+                succession_claims: vec![],
+                revocations: vec![],
+                device_revocations: vec![],
+                departures: vec![],
+            };
+            let admission_started = Instant::now();
+            let plan = plan_change_admission_flow(
+                ChangeAdmissionFlowInput {
+                    records: vec![],
+                    record_pages: Some(authorization_record_pages(&bundle).unwrap()),
+                    known_hashes: vec![],
+                    changes: changes.clone(),
+                    snapshot: snapshot.clone(),
+                },
+                0,
+            )
+            .unwrap();
+            assert_eq!(plan.incoming_changes.len(), count);
+            assert!(plan.unsigned_error.is_none());
+            let admission_ms = admission_started.elapsed().as_millis();
+            let known = changes.iter().map(|c| c.hash.clone()).collect();
+            doc.put(ROOT, "counter", count as i64).unwrap();
+            let hash = doc.get_heads()[0].to_string();
+            let signed = sign_json_envelope(
+                &seed,
+                json!({"kind":"workspace-changes","version":1,"workspaceId":"board",
+                "hashes":[hash],"personId":person_id,"deviceId":device_id}),
+                &device_id,
+                DEFAULT_SIGNATURE_DOMAIN,
+            )
+            .unwrap();
+            let record =
+                json!({"signed":signed,"publicKey":public_key,"certificates":[certificate]});
+            let delta_started = Instant::now();
+            let all_changes = doc
+                .get_changes(&[])
+                .iter()
+                .map(|change| ChangeAdmissionChange {
+                    hash: change.hash().to_string(),
+                    dependencies: change.deps().iter().map(ToString::to_string).collect(),
+                    actor: change.actor_id().to_hex_string(),
+                    message: change.message().unwrap_or_default().to_string(),
+                })
+                .collect::<Vec<_>>();
+            let mut delta_snapshot = snapshot;
+            delta_snapshot.document = doc.save();
+            let delta = plan_change_admission_flow(
+                ChangeAdmissionFlowInput {
+                    records: vec![],
+                    record_pages: Some(vec![vec![record.clone()]]),
+                    known_hashes: known,
+                    changes: all_changes,
+                    snapshot: delta_snapshot.clone(),
+                },
+                0,
+            )
+            .unwrap();
+            assert_eq!(delta.incoming_changes.len(), 1);
+            assert!(delta.unsigned_error.is_none());
+            let delta_ms = delta_started.elapsed().as_millis();
+            let missing = plan_change_admission_flow(
+                ChangeAdmissionFlowInput {
+                    records: vec![],
+                    record_pages: Some(vec![]),
+                    known_hashes: changes.iter().map(|c| c.hash.clone()).collect(),
+                    changes: delta.incoming_changes.clone(),
+                    snapshot: delta_snapshot.clone(),
+                },
+                0,
+            )
+            .unwrap();
+            assert!(missing.unsigned_error.is_some());
+            let mut forged = record;
+            forged["signed"]["signature"] = json!("forged");
+            assert!(
+                plan_change_admission_flow(
+                    ChangeAdmissionFlowInput {
+                        records: vec![],
+                        record_pages: Some(vec![vec![forged]]),
+                        known_hashes: vec![],
+                        changes: delta.incoming_changes,
+                        snapshot: delta_snapshot
+                    },
+                    0
+                )
+                .is_err()
+            );
+            eprintln!(
+                "proof_benchmark history={count} proofs={count} aggregate_bytes={wire_bytes} pages={page_count} source_prepare_ms={source_ms} source_pages_ms={pages_ms} full_admission_ms={admission_ms} delta_history={} delta_proofs=1 delta_admission_ms={delta_ms}",
+                count + 1
+            );
+        }
+    }
     fn fixture(records: usize, padding: usize) -> (Vec<u8>, Vec<u8>, Value) {
         let mut local = AutoCommit::new();
         let empty = local.save();

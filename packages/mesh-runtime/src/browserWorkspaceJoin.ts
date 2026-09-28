@@ -119,6 +119,8 @@ export type WorkspaceJoinHostCallbacks<Request, Approval> = {
   approve(request: Request): Promise<WorkspaceJoinApproval<Approval>>
   prepare(approval: Approval): Promise<Uint8Array>
   acknowledged?(payload: Uint8Array): Promise<void>
+  /** Service authenticated proof requests while document installation remains pending. */
+  beforeAckFrame?(frame: Uint8Array, stream: WorkspaceJoinStream): Promise<boolean>
 }
 
 /** A peer's authenticated application rejection. Always terminal, even when its text mentions network failures. */
@@ -153,7 +155,7 @@ export class BrowserWorkspaceJoinHost {
     try { payload = await callbacks.prepare(decision.value) }
     catch (error) { return this.rejectFailure(stream, connection, error) }
 
-    const acknowledgement = await this.exchange(stream, connection, this.machine.respond(payload))
+    const acknowledgement = await this.exchange(stream, connection, this.machine.respond(payload), callbacks.beforeAckFrame)
     await callbacks.acknowledged?.(acknowledgement.payload)
     return { kind: "accepted" as const, value: decision.value }
   }
@@ -168,18 +170,27 @@ export class BrowserWorkspaceJoinHost {
     await this.exchange(stream, connection, this.machine.reject(message))
   }
 
-  private async exchange(stream: WorkspaceJoinStream, connection: WorkspaceJoinConnection, response: Uint8Array) {
+  private async exchange(stream: WorkspaceJoinStream, connection: WorkspaceJoinConnection, response: Uint8Array,
+    beforeAckFrame?: (frame: Uint8Array, stream: WorkspaceJoinStream) => Promise<boolean>) {
     await stream.send(response)
     await stream.closeSend()
-    return this.receiveAck(connection)
+    return this.receiveAck(connection, beforeAckFrame)
   }
 
-  private async receiveAck(connection: WorkspaceJoinConnection) {
-    const result = await withTimeout(async () => {
-      const acknowledgement = await connection.acceptStream()
-      try { return this.machine.receiveAck(await acknowledgement.read()) }
-      finally { await acknowledgement.closeSend() }
-    }, 20_000)
+  private async receiveAck(connection: WorkspaceJoinConnection,
+    beforeAckFrame?: (frame: Uint8Array, stream: WorkspaceJoinStream) => Promise<boolean>) {
+    let result: WorkspaceJoinAck | undefined
+    for (let rounds = 0; rounds < 4096 && !result; rounds++) {
+      result = await withTimeout(async () => {
+        const acknowledgement = await connection.acceptStream()
+        try {
+          const frame = await acknowledgement.read()
+          if (await beforeAckFrame?.(frame, acknowledgement)) return undefined
+          return this.machine.receiveAck(frame)
+        } finally { await acknowledgement.closeSend() }
+      }, 20_000)
+    }
+    if (!result) throw new Error("Workspace join proof reply limit exceeded")
     if (result.kind === "rejected") throw new WorkspaceJoinRejectedError(result.error)
     return result
   }
