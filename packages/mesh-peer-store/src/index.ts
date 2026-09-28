@@ -349,19 +349,35 @@ function mergeCredentialSecurity(current: WorkspaceMeshCredential, incoming: Wor
 async function putAuthorityIfNewer(store: IDBObjectStore, authority: WorkspaceAuthorityRecord): Promise<void> {
   const current = await promisifyRequest<WorkspaceAuthorityRecord | undefined>(store.get(authority.workspaceId))
   if (current) {
-    validateWorkspaceAuthority(current)
-    if (current.scopeAuthoritySnapshot && authority.scopeAuthoritySnapshot &&
-      JSON.stringify(current.scopeAuthoritySnapshot.genesis) !== JSON.stringify(authority.scopeAuthoritySnapshot.genesis)) {
-      throw new Error("Workspace scope genesis cannot change")
-    }
-    if (authority.epoch < current.epoch) return
-    if (authority.epoch === current.epoch && authority.updatedAt < current.updatedAt) return
-    if (!authority.scopeAuthoritySnapshot) authority = {
-      ...authority, scopeAuthoritySnapshot: current.scopeAuthoritySnapshot,
-    }
+    const merged = mergeWorkspaceAuthority(current, authority)
+    if (canonicalJson(merged) === canonicalJson(current)) return
+    authority = merged
+  } else {
+    validateWorkspaceAuthority(authority)
   }
-  validateWorkspaceAuthority(authority)
   await promisifyRequest(store.put(structuredClone(authority)))
+}
+
+/** Applies the same monotonic and snapshot-inheritance rules used by the durable write. */
+function mergeWorkspaceAuthority(
+  current: WorkspaceAuthorityRecord,
+  incoming: WorkspaceAuthorityRecord,
+): WorkspaceAuthorityRecord {
+  // Validate incoming before checking epoch or equality. A malformed stale
+  // snapshot must never be silently accepted as a harmless no-op.
+  validateWorkspaceAuthority(incoming)
+  validateWorkspaceAuthority(current)
+  if (current.scopeAuthoritySnapshot && incoming.scopeAuthoritySnapshot &&
+    JSON.stringify(current.scopeAuthoritySnapshot.genesis) !== JSON.stringify(incoming.scopeAuthoritySnapshot.genesis)) {
+    throw new Error("Workspace scope genesis cannot change")
+  }
+  if (incoming.epoch < current.epoch ||
+    (incoming.epoch === current.epoch && incoming.updatedAt < current.updatedAt)) return current
+
+  const merged = incoming.scopeAuthoritySnapshot ? incoming : {
+    ...incoming, scopeAuthoritySnapshot: current.scopeAuthoritySnapshot,
+  }
+  return merged
 }
 
 export class PeerStore {
@@ -702,7 +718,18 @@ export class PeerStore {
   }
 
   async putWorkspaceAuthority(authority: WorkspaceAuthorityRecord): Promise<void> {
-    validateWorkspaceAuthority(authority)
+    // Catalog replays commonly carry an unchanged authority snapshot. Avoid
+    // taking the cross-tab IndexedDB write lock when this merge is already
+    // durable; the write transaction below repeats the merge against its own
+    // current value if this snapshot represents a real change.
+    const current = await this.runTx([STORE_AUTHORITY], "readonly", async tx =>
+      promisifyRequest<WorkspaceAuthorityRecord | undefined>(tx.objectStore(STORE_AUTHORITY).get(authority.workspaceId)))
+    if (current) {
+      if (canonicalJson(mergeWorkspaceAuthority(current, authority)) === canonicalJson(current)) return
+    } else {
+      validateWorkspaceAuthority(authority)
+    }
+
     await this.runTx([STORE_AUTHORITY], "readwrite", async tx => {
       await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authority)
     })

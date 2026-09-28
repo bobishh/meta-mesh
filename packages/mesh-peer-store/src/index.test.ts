@@ -341,6 +341,85 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect(modes).toEqual(["readonly", "readonly", "readwrite", "readwrite"])
     })
 
+    it("Given an unchanged authority record, when the same record is saved, then no write transaction runs", async () => {
+      const store = new PeerStore("match-test-authority-idempotent-write", mockIdb as any)
+      const authority = {
+        version: 1 as const, workspaceId: "ws_authority_noop", ownerPersonId: "owner",
+        ownerPublicKey: "public-key", epoch: 1, updatedAt: "2026-09-11T00:00:00.000Z", ownerCertificates: [],
+      }
+      await store.putWorkspaceAuthority(authority)
+
+      const runTx = vi.spyOn(store as any, "runTx")
+      await store.putWorkspaceAuthority(structuredClone(authority))
+      const modes = runTx.mock.calls.map(([, mode]) => mode)
+      runTx.mockRestore()
+
+      expect(modes).toEqual(["readonly"])
+      expect(await store.getWorkspaceAuthority(authority.workspaceId)).toEqual(authority)
+    })
+
+    it("Given a stale authority write racing with a newer generation, when it retries, then latest authority and snapshot stay durable", async () => {
+      const store = new PeerStore("match-test-authority-write-race", mockIdb as any)
+      const workspaceId = "ws_authority_race"
+      const snapshot = { genesis: { signed: "fixture" }, grants: [], grantIssuers: [], revocations: [], controlTransfers: [] }
+      const state = (await import("@meta-uber/mesh-replication/runtime")).meshRustRuntime().state as any
+      const validateSnapshot = vi.spyOn(state, "validateScopeAuthority").mockReturnValue({
+        scopeId: workspaceId, controller: { personId: "owner", publicKey: "public-key" },
+      })
+      const initial = {
+        version: 1 as const, workspaceId, ownerPersonId: "owner", ownerPublicKey: "public-key",
+        epoch: 1, updatedAt: "2026-09-11T00:00:00.000Z", ownerCertificates: [], scopeAuthoritySnapshot: snapshot,
+      }
+      const older = { ...initial, epoch: 2, updatedAt: "2026-09-11T00:02:00.000Z", scopeAuthoritySnapshot: undefined }
+      const newer = { ...initial, epoch: 3, updatedAt: "2026-09-11T00:03:00.000Z", scopeAuthoritySnapshot: undefined }
+      try {
+        await store.putWorkspaceAuthority(initial)
+
+        let continueRead!: () => void
+        let readPaused!: () => void
+        const readAtSnapshot = new Promise<void>(resolve => { readPaused = resolve })
+        const resumeSnapshot = new Promise<void>(resolve => { continueRead = resolve })
+        const originalRunTx = (store as any).runTx.bind(store)
+        let paused = false
+        const runTx = vi.spyOn(store as any, "runTx").mockImplementation(async (...args: unknown[]) => {
+          const [storeNames, mode, fn] = args as [string[], "readonly" | "readwrite", (tx: unknown) => Promise<unknown>]
+          const result = await originalRunTx(storeNames, mode, fn)
+          if (!paused && mode === "readonly") {
+            paused = true
+            readPaused()
+            await resumeSnapshot
+          }
+          return result
+        })
+
+        const olderWrite = store.putWorkspaceAuthority(older)
+        await readAtSnapshot
+        await store.putWorkspaceAuthority(newer)
+        continueRead()
+        await olderWrite
+        const modes = runTx.mock.calls.map(([, mode]) => mode)
+        runTx.mockRestore()
+
+        expect(modes).toEqual(["readonly", "readonly", "readwrite", "readwrite"])
+        await expect(store.getWorkspaceAuthority(workspaceId)).resolves.toMatchObject({
+          epoch: 3, updatedAt: "2026-09-11T00:03:00.000Z", scopeAuthoritySnapshot: snapshot,
+        })
+      } finally { validateSnapshot.mockRestore() }
+    })
+
+    it("validates an older incoming scope snapshot before treating its authority as stale", async () => {
+      const store = new PeerStore("match-test-authority-invalid-stale", mockIdb as any)
+      const authority = {
+        version: 1 as const, workspaceId: "ws_authority_invalid_stale", ownerPersonId: "owner",
+        ownerPublicKey: "public-key", epoch: 2, updatedAt: "2026-09-11T00:02:00.000Z", ownerCertificates: [],
+      }
+      await store.putWorkspaceAuthority(authority)
+      await expect(store.putWorkspaceAuthority({ ...authority, epoch: 1,
+        scopeAuthoritySnapshot: { genesis: {}, grants: [], grantIssuers: [], revocations: [], controlTransfers: [] },
+      })).rejects.toThrow()
+      await expect(store.getWorkspaceAuthority(authority.workspaceId)).resolves.toEqual(authority)
+    })
+
     it("Given an existing install upgrades, when slot zero starts, then it keeps the durable endpoint identity", async () => {
       const store = new PeerStore("match-test-peer-instance-migration", mockIdb as any)
       const legacySecret = new Uint8Array(32).fill(19)
