@@ -448,16 +448,34 @@ impl AuthorizationPageReceiver {
         if self.offset >= self.hashes.len() {
             return Ok(None);
         }
-        let hashes = self.hashes
-            [self.offset..(self.offset + MAX_PROOF_REQUEST_HASHES).min(self.hashes.len())]
-            .to_vec();
-        Ok(Some(AuthorizationPageRequest {
-            version: 1,
-            manifest: self.manifest.clone(),
-            request_id: request_id(&self.manifest, &hashes)?,
-            hashes,
-            after: self.after.clone(),
-        }))
+        let available = (self.hashes.len() - self.offset).min(MAX_PROOF_REQUEST_HASHES);
+        let make = |count: usize| -> Result<AuthorizationPageRequest, String> {
+            let hashes = self.hashes[self.offset..self.offset + count].to_vec();
+            Ok(AuthorizationPageRequest {
+                version: 1,
+                manifest: self.manifest.clone(),
+                request_id: request_id(&self.manifest, &hashes)?,
+                hashes,
+                after: self.after.clone(),
+            })
+        };
+        let request = make(available)?;
+        if bytes(&request)? <= MAX_PROOF_PAGE_BYTES {
+            return Ok(Some(request));
+        }
+        let (mut low, mut high) = (1, available);
+        if bytes(&make(1)?)? > MAX_PROOF_PAGE_BYTES {
+            return Err("Authority evidence cannot fit a proof request envelope".into());
+        }
+        while low < high {
+            let middle = (low + high + 1) / 2;
+            if bytes(&make(middle)?)? <= MAX_PROOF_PAGE_BYTES {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        Ok(Some(make(low)?))
     }
     pub fn accept(&mut self, page: AuthorizationPage) -> Result<(), String> {
         let request = self.request()?.ok_or("Unexpected authorization page")?;
@@ -914,5 +932,23 @@ mod tests {
                 )
                 .is_ok()
         );
+    }
+    #[test]
+    fn request_hash_batch_shrinks_to_include_large_authority_evidence() {
+        let (mut document, empty, mut proof) = fixture(1, 0);
+        let mut doc = AutoCommit::load(&document).unwrap();
+        for i in 0..1200 {
+            doc.put(ROOT, "counter", i as i64).unwrap();
+            doc.get_heads();
+        }
+        document = doc.save();
+        proof["authority"]["evidencePadding"] = json!("x".repeat(190_000));
+        let frozen = manifest(&document, &proof);
+        let receiver = AuthorizationPageReceiver::new(frozen, &document, &empty).unwrap();
+        let request = receiver.request().unwrap().unwrap();
+        assert!(request.hashes.len() < MAX_PROOF_REQUEST_HASHES);
+        assert!(!request.hashes.is_empty());
+        assert!(bytes(&request).unwrap() <= MAX_PROOF_PAGE_BYTES);
+        assert_eq!(receiver.request().unwrap().unwrap().hashes, request.hashes);
     }
 }
