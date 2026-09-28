@@ -4,7 +4,7 @@ import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 
 describe("Rust mesh runtime", () => {
   it("advertises only the renamed owner workspace offer capability", () => {
-    expect(meshRustRuntime().state.meshCapabilities()).toContain("owner-workspace-v2")
+    expect(meshRustRuntime().state.meshCapabilities()).toContain("owner-workspace")
     expect(meshRustRuntime().state.meshCapabilities()).not.toContain("owner-workspace-v1")
   })
 
@@ -56,11 +56,11 @@ describe("MeshHandshakeCodec", () => {
     })
   })
 
-  it("uses owner workspace offers only with the renamed v2 protocol capability", () => {
+  it("uses owner workspace offers with the current capability", () => {
     const codec = new MeshHandshakeCodec()
     expect(codec.features(["owner-workspace-v1"])).toMatchObject({ ownerWorkspaceSupported: false })
     expect(codec.features(["owner-workspace-v1"])).not.toHaveProperty("ownerWorkspaceOfferFrame")
-    expect(codec.features(["owner-workspace-v2"])).toMatchObject({
+    expect(codec.features(["owner-workspace"])).toMatchObject({
       ownerWorkspaceSupported: true, ownerWorkspaceOfferFrame: "mesh-owner-workspace-offer",
     })
   })

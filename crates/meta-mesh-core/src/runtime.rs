@@ -10,7 +10,7 @@ pub const MESH_CAPABILITIES: [&str; 7] = [
     "heartbeat-v1",
     "automerge-sync-v1",
     "ownership-receipt-v1",
-    "owner-workspace-v2",
+    "owner-workspace",
     "iroh-gossip-v1",
     "blob-transfer-v1",
     "device-revocation-v1",
@@ -54,8 +54,8 @@ pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures
     MeshHandshakeFeatures {
         heartbeat_supported: has("heartbeat-v1"),
         ownership_receipt_supported: has("ownership-receipt-v1"),
-        owner_workspace_supported: has("owner-workspace-v2"),
-        owner_workspace_offer_frame: has("owner-workspace-v2")
+        owner_workspace_supported: has("owner-workspace"),
+        owner_workspace_offer_frame: has("owner-workspace")
             .then_some("mesh-owner-workspace-offer"),
         blob_transfer_supported: has("blob-transfer-v1"),
     }
