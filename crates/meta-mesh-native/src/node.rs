@@ -144,7 +144,12 @@ impl NativeBrowserConnection {
             Ok(response)
         })
         .await
-        .map_err(|_| io_error("Browser RPC request timed out"))?
+        .map_err(|_| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Browser RPC request timed out",
+            )) as BoxError
+        })?
     }
 
     pub fn close(&self) {
@@ -569,6 +574,52 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+        responder.await.unwrap();
+        session.close();
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn timed_out_browser_stream_does_not_close_the_peer_connection() {
+        let guest = NativeNode::start(Some([41; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([42; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let session = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let delayed = inbox.receive().await.unwrap();
+            assert_eq!(delayed.payload(), b"slow-scope-frame");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = delayed.respond(b"late-response".to_vec());
+
+            let heartbeat = inbox.receive().await.unwrap();
+            assert_eq!(heartbeat.payload(), b"sync-heartbeat");
+            heartbeat.respond(b"sync-heartbeat-ack".to_vec()).unwrap();
+        });
+
+        let timed_out = session
+            .exchange(b"slow-scope-frame", Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            timed_out
+                .downcast_ref::<std::io::Error>()
+                .map(std::io::Error::kind),
+            Some(std::io::ErrorKind::TimedOut)
+        );
+        assert_eq!(
+            session
+                .exchange(b"sync-heartbeat", Duration::from_secs(2))
+                .await
+                .unwrap(),
+            b"sync-heartbeat-ack"
+        );
+
         responder.await.unwrap();
         session.close();
         guest.close().await.unwrap();

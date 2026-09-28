@@ -1,10 +1,54 @@
-use std::time::Duration;
+use std::{
+    error::Error,
+    fmt, io,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use tokio::sync::Mutex;
 
 use crate::{NativeBrowserConnection, NativeNode, NativeScopeService, NativeScopeServiceHost};
 
 const MAX_SYNC_REPLY_ROUNDS: usize = 128;
+static NEXT_PUBLISH_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopePublishFailureKind {
+    Prepare,
+    ExchangeTimeout,
+    Exchange,
+    Receive,
+    ReplyLimit,
+}
+
+#[derive(Debug)]
+pub struct ScopePublishError {
+    pub kind: ScopePublishFailureKind,
+    pub stage: &'static str,
+    message: String,
+}
+
+impl ScopePublishError {
+    fn new(kind: ScopePublishFailureKind, stage: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            stage,
+            message: message.into(),
+        }
+    }
+
+    pub fn is_exchange_timeout(&self) -> bool {
+        self.kind == ScopePublishFailureKind::ExchangeTimeout
+    }
+}
+
+impl fmt::Display for ScopePublishError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.stage, self.message)
+    }
+}
+
+impl Error for ScopePublishError {}
 
 /// Serve one browser-compatible Iroh stream through signed native admission.
 /// A rejected frame drops the request, causing the transport to reset it.
@@ -61,42 +105,112 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
     remote_id: &str,
     now_ms: i128,
     timeout: Duration,
-) -> Result<(), String> {
+) -> Result<(), ScopePublishError> {
+    let trace = std::env::var_os("LIGHTHOUSE_TRACE_SYNC").is_some();
+    let publish_id = NEXT_PUBLISH_ID.fetch_add(1, Ordering::Relaxed);
+    let started = std::time::Instant::now();
+    let plan_started = std::time::Instant::now();
     let plan = service
         .lock()
         .await
-        .prepare_publish(workspace_id, remote_id, now_ms)?;
+        .prepare_publish(workspace_id, remote_id, now_ms)
+        .map_err(|error| {
+            ScopePublishError::new(ScopePublishFailureKind::Prepare, "prepare", error)
+        })?;
+    if trace {
+        eprintln!(
+            "trace.sync event=publish.plan id={publish_id} workspace={} route={} elapsed_ms={} document={} control_frames={} deadline_ms={}",
+            short(workspace_id),
+            short(remote_id),
+            plan_started.elapsed().as_millis(),
+            plan.document_frame.is_some(),
+            plan.control_frames.len(),
+            timeout.as_millis()
+        );
+    }
     let mut frames = Vec::with_capacity(plan.control_frames.len() + 1);
     if let Some(document) = plan.document_frame {
         frames.push(document);
     }
     frames.extend(plan.control_frames);
     let sent = async {
-        for frame in frames {
+        for (frame_index, frame) in frames.into_iter().enumerate() {
             let mut next = Some(frame);
-            for _ in 0..MAX_SYNC_REPLY_ROUNDS {
+            for round in 0..MAX_SYNC_REPLY_ROUNDS {
                 let Some(frame) = next.take() else { break };
-                let reply = connection
-                    .exchange(&frame, timeout)
-                    .await
-                    .map_err(|error| format!("Publish native scope frame: {error}"))?;
+                let kind = frame_kind(&frame);
+                let exchange_started = std::time::Instant::now();
+                if trace {
+                    eprintln!("trace.sync event=publish.frame.start id={publish_id} workspace={} route={} index={frame_index} round={round} kind={kind} bytes={} deadline_ms={}", short(workspace_id), short(remote_id), frame.len(), timeout.as_millis());
+                }
+                let reply = connection.exchange(&frame, timeout).await.map_err(|error| {
+                    let kind = if error.downcast_ref::<io::Error>().is_some_and(|error| error.kind() == io::ErrorKind::TimedOut) {
+                        ScopePublishFailureKind::ExchangeTimeout
+                    } else {
+                        ScopePublishFailureKind::Exchange
+                    };
+                    if trace {
+                        let failure_kind = frame_kind_name(kind);
+                        eprintln!("trace.sync event=publish.frame.failed id={publish_id} workspace={} route={} index={frame_index} round={round} kind={failure_kind} stage=exchange elapsed_ms={} deadline_ms={}", short(workspace_id), short(remote_id), exchange_started.elapsed().as_millis(), timeout.as_millis());
+                    }
+                    ScopePublishError::new(kind, "exchange", error.to_string())
+                })?;
+                if trace {
+                    eprintln!("trace.sync event=publish.frame.response id={publish_id} workspace={} route={} index={frame_index} round={round} kind={kind} response_bytes={} elapsed_ms={}", short(workspace_id), short(remote_id), reply.len(), exchange_started.elapsed().as_millis());
+                }
                 if reply.is_empty() {
                     break;
                 }
-                next = service.lock().await.receive(remote_id, &reply, now_ms)?;
+                next = service.lock().await.receive(remote_id, &reply, now_ms)
+                    .map_err(|error| ScopePublishError::new(ScopePublishFailureKind::Receive, "reply_receive", error))?;
             }
             if next.is_some() {
-                return Err("Native scope sync exceeded reply limit".to_string());
+                return Err(ScopePublishError::new(ScopePublishFailureKind::ReplyLimit, "reply_limit", "Native scope sync exceeded reply limit"));
             }
         }
         Ok(())
     }
     .await;
-    service.lock().await.finish_publish(
-        workspace_id,
-        remote_id,
-        &plan.control_snapshot,
-        sent.is_ok(),
-    )?;
+    service
+        .lock()
+        .await
+        .finish_publish(
+            workspace_id,
+            remote_id,
+            &plan.control_snapshot,
+            sent.is_ok(),
+        )
+        .map_err(|error| {
+            ScopePublishError::new(ScopePublishFailureKind::Prepare, "finish", error)
+        })?;
+    if trace {
+        eprintln!(
+            "trace.sync event=publish.end id={publish_id} workspace={} route={} result={} elapsed_ms={}",
+            short(workspace_id),
+            short(remote_id),
+            if sent.is_ok() { "ok" } else { "failed" },
+            started.elapsed().as_millis()
+        );
+    }
     sent
+}
+
+fn short(value: &str) -> &str {
+    value.get(..8).unwrap_or(value)
+}
+
+fn frame_kind(frame: &[u8]) -> String {
+    crate::PairingCodec::inspect(frame)
+        .map(|header| header.frame_type)
+        .unwrap_or_else(|_| "invalid".into())
+}
+
+fn frame_kind_name(kind: ScopePublishFailureKind) -> &'static str {
+    match kind {
+        ScopePublishFailureKind::ExchangeTimeout => "exchange_timeout",
+        ScopePublishFailureKind::Exchange => "exchange_error",
+        ScopePublishFailureKind::Prepare => "prepare_error",
+        ScopePublishFailureKind::Receive => "receive_error",
+        ScopePublishFailureKind::ReplyLimit => "reply_limit",
+    }
 }

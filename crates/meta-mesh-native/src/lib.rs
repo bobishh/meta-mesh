@@ -18,7 +18,10 @@ pub use node::{
 };
 pub use scope::{NativeScopeHost, NativeScopePeer, NativeScopeSnapshot};
 pub use scope_admission::NativeScopeAdmission;
-pub use scope_rpc::{publish_scope_to, serve_scope_connection, serve_scope_request};
+pub use scope_rpc::{
+    ScopePublishError, ScopePublishFailureKind, publish_scope_to, serve_scope_connection,
+    serve_scope_request,
+};
 pub use scope_service::{NativeScopeCredential, NativeScopeService, NativeScopeServiceHost};
 pub use scope_store::FileScopeStore;
 
