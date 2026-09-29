@@ -64,6 +64,27 @@ The Rust tests are explicitly ignored in ordinary `cargo test` because they
 require fresh TLC graphs. `check.sh` supplies them and runs `--ignored`; missing
 inputs fail rather than silently skip. The CI job runs that exact command.
 
+The receive-scheduling model is the executable boundary for the browser adapter
+in Match. `ReceiveScheduling.tla` uses two handler slots to keep the state space
+finite while representing a document whose persistence remains blocked, a
+rejected heartbeat, and an authenticated heartbeat. The authenticated heartbeat
+has a two-tick abstract deadline and a weak-fair `HeartbeatAck` obligation. The
+model deliberately does not assume storage recovery: heartbeat liveness must hold
+while persistence is blocked. `HeartbeatHandlerDoesNotWaitForStorage` catches a
+handler that is made dependent on document persistence, and
+`DurableAckRequiresPersistence` catches an acknowledgement sent before storage
+completion. The production adapter accepts up to 32 concurrent stream handlers;
+the two-slot model checks the same scheduling rule at a tractable bound. When
+all slots are occupied, no unconditional heartbeat recovery is claimed.
+
+`check.sh` also runs `check_match_mutations.py`. It executes the real
+`src/sync/workspaceSet.test.ts` receive contract, copies Match to a temporary
+directory, and inserts a mutation that waits for each stream handler before
+accepting the next stream. The mutated implementation must fail the blocked
+persistence heartbeat scenario. This couples the model's scheduling obligation
+to the actual TypeScript stream accept loop; it does not treat a standalone TLC
+pass as evidence about JavaScript scheduling.
+
 `check_rust_mutations.py` copies the actual crates into a temporary workspace and
 mutates production Rust (not the model). Each mutated implementation must fail a
 conformance assertion; a compilation error or successful test is a failed check.
@@ -99,6 +120,7 @@ GitHub release asset digest; a changed upstream asset fails closed.
 | `DeliveryImplementationStates` | two routes, one retry, old/current/future callbacks and invalid route index | 234 model states; 62 concrete Rust states / 1,551 enabled edges |
 | `DeliveryImplementationStates` recovery configuration | start after failed first round; one retry available; eventually handled successful routes | 23 states; eventual completion passed under weak fairness |
 | `DurableDelivery` | one two-hash batch, every persistence and ACK subset | 113 generated / 26 distinct states, depth 7; safety and liveness passed |
+| `ReceiveScheduling` | two handler slots, one blocked document, wrong and authenticated heartbeat, two abstract deadline ticks | bounded safety and liveness checked; the Match adapter contract and mutation are run by `check_match_mutations.py` |
 
 Every negative control must fail `Safety`; an unexpected pass fails the script:
 

@@ -124,6 +124,12 @@ run_pass DeliveryImplementationStates DeliveryImplementationStates_recovery
 run_expected_failure DurableDelivery DurableDelivery_partial_ack "partial ACK completes delivery"
 run_expected_failure DurableDelivery DurableDelivery_empty_ack "empty ACK completes delivery"
 
+run_pass ReceiveScheduling
+run_expected_failure ReceiveScheduling ReceiveScheduling_heartbeat_behind_persistence \
+  "heartbeat waits behind blocked persistence"
+run_expected_failure ReceiveScheduling ReceiveScheduling_ack_before_persistence \
+  "durable ACK precedes persistence"
+
 # Rebuild graphs on every run; expectations are never checked-in snapshots.
 run_pass AuthorityConformance
 export MESH_TLC_AUTHORITY_GRAPH="$GRAPH_DIR/AuthorityConformance.json"
@@ -136,3 +142,4 @@ cargo test --locked -p meta-mesh-core --test tlc_authority --test tlc_sessions -
 cargo test --locked -p meta-mesh-core --lib bounded_actual_session_states_conform_to_tla_transitions -- --ignored --nocapture
 cargo test --locked -p meta-mesh-core --lib bounded_actual_delivery_states_conform_to_tla_transitions -- --ignored --nocapture
 python3 "$ROOT/check_rust_mutations.py"
+python3 "$ROOT/check_match_mutations.py"
