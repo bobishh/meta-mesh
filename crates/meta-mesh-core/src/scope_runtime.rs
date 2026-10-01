@@ -29,6 +29,7 @@ struct PendingSavedReceive {
 pub struct MeshScopeRuntime {
     live: LiveWorkspaceSession,
     pending_document_receive: Option<PendingDocumentReceive>,
+    document_reset_pending: bool,
     pending_saved_receive: Option<PendingSavedReceive>,
     proof_source: Option<crate::proof_transfer::PreparedAuthorizationSource>,
 }
@@ -103,6 +104,7 @@ impl MeshScopeRuntime {
         Ok(Self {
             live: LiveWorkspaceSession::new(workspace_id, secret)?,
             pending_document_receive: None,
+            document_reset_pending: false,
             pending_saved_receive: None,
             proof_source: None,
         })
@@ -426,10 +428,15 @@ impl MeshScopeRuntime {
         if prepared.should_persist && !persisted {
             self.live.abort_document();
             self.live.reset_document();
+            self.document_reset_pending = false;
             return Err("Mesh document persistence failed".into());
         }
         if prepared.engine_prepared {
             self.live.commit_document()?;
+        }
+        if self.document_reset_pending {
+            self.live.reset_document();
+            self.document_reset_pending = false;
         }
         Ok(MeshScopeDocumentCompletion {
             response: prepared.response,
@@ -445,11 +452,19 @@ impl MeshScopeRuntime {
         }
         self.live.abort_document();
         self.live.reset_document();
+        self.document_reset_pending = false;
         Ok(())
     }
 
     pub fn reset_document(&mut self) {
-        self.live.reset_document();
+        // Authority control can arrive between proof pages. Keep the prepared
+        // candidate until product persistence revalidates it against current
+        // authority, then reset sync state for the next publish.
+        if self.pending_document_receive.is_some() {
+            self.document_reset_pending = true;
+        } else {
+            self.live.reset_document();
+        }
     }
 
     /// Acknowledge durable frames only after the host completed their storage
