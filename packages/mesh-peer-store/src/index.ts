@@ -155,7 +155,7 @@ export function validateWorkspaceAuthority(value: unknown): asserts value is Wor
     new TextEncoder().encode(JSON.stringify(item)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
     throw new Error("Invalid workspace authority")
   }
-  if (item.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(item.scopeAuthoritySnapshot)
+  if (item.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(item.scopeAuthoritySnapshot, Date.now())
 }
 
 export function authorityFromCredential(credential: WorkspaceMeshCredential): WorkspaceAuthorityRecord {
@@ -173,7 +173,7 @@ function validatePendingOwnershipTransfer(value: unknown, expectedWorkspaceId?: 
     new TextEncoder().encode(JSON.stringify(proposal)).byteLength > MAX_AUTH_BUNDLE_LENGTH) {
     throw new Error("Invalid pending ownership transfer")
   }
-  if (proposal.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(proposal.scopeAuthoritySnapshot)
+  if (proposal.scopeAuthoritySnapshot) meshRustRuntime().state.validateScopeAuthority(proposal.scopeAuthoritySnapshot, Date.now())
 }
 
 /**

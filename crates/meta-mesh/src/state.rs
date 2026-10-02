@@ -87,20 +87,31 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::authorization_export(document, &bundle).map_err(js_error)?)
     }
     #[wasm_bindgen(js_name = validateScopeAuthority)]
-    pub fn validate_scope_authority(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn validate_scope_authority(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
         let snapshot: meta_mesh_core::ScopeAuthoritySnapshot = from_value(raw)?;
-        to_value(&meta_mesh_core::validate_scope_authority(&snapshot).map_err(js_error)?)
+        to_value(
+            &meta_mesh_core::validate_scope_authority_at(
+                &snapshot,
+                i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+            )
+            .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = mergeScopeAuthoritySnapshots)]
     pub fn merge_scope_authority_snapshots(
         current: JsValue,
         incoming: JsValue,
+        now_ms: f64,
     ) -> Result<JsValue, JsValue> {
         let current: Option<meta_mesh_core::ScopeAuthoritySnapshot> = from_value(current)?;
         let incoming: meta_mesh_core::ScopeAuthoritySnapshot = from_value(incoming)?;
-        let merged = meta_mesh_core::merge_scope_authority_snapshots(current.as_ref(), &incoming)
-            .map_err(js_error)?;
+        let merged = meta_mesh_core::merge_scope_authority_snapshots_at(
+            current.as_ref(),
+            &incoming,
+            i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&merged)
     }
 
@@ -133,9 +144,18 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = createScopeControlTransferPayload)]
-    pub fn create_scope_control_transfer_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn create_scope_control_transfer_payload(
+        raw: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::ScopeControlTransferPayloadInput = from_value(raw)?;
-        to_value(&meta_mesh_core::create_scope_control_transfer_payload(input).map_err(js_error)?)
+        to_value(
+            &meta_mesh_core::create_scope_control_transfer_payload_at(
+                input,
+                i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+            )
+            .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = preferredSessionDirection)]
@@ -375,9 +395,13 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = isWorkspaceEnvelope)]
-    pub fn is_workspace_envelope(raw: JsValue) -> Result<bool, JsValue> {
+    pub fn is_workspace_envelope(raw: JsValue, now_ms: f64) -> Result<bool, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
-        meta_mesh_core::is_workspace_envelope(&raw).map_err(js_error)
+        meta_mesh_core::is_workspace_envelope_at(
+            &raw,
+            i128::from(integer(now_ms, "Invalid workspace envelope timestamp")?),
+        )
+        .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = hasLeftWorkspace)]
@@ -529,9 +553,13 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = validateMeshCatalog)]
-    pub fn validate_mesh_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn validate_mesh_catalog(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
-        let catalog = meta_mesh_core::validate_mesh_catalog(raw).map_err(js_error)?;
+        let catalog = meta_mesh_core::validate_mesh_catalog_at(
+            raw,
+            i128::from(integer(now_ms, "Invalid mesh catalog timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&catalog)
     }
 

@@ -1,12 +1,12 @@
 export type RustStateCore = {
-  validateScopeAuthority(snapshot: unknown): unknown
-  mergeScopeAuthoritySnapshots(current: unknown, incoming: unknown): unknown
+  validateScopeAuthority(snapshot: unknown, nowMs: number): unknown
+  mergeScopeAuthoritySnapshots(current: unknown, incoming: unknown, nowMs: number): unknown
   requireChangeAuthorizationCoverage(changeHashes: string[], records: unknown[]): void
   createScopeGenesis(input: unknown): { scopeId: string; creatorPersonId: string;
     creatorPublicKey: string; creatorCertificates: unknown[] }
   createScopeGenesisPayload(input: unknown): unknown
   planScopeGenesis(input: unknown): unknown
-  createScopeControlTransferPayload(input: unknown): unknown
+  createScopeControlTransferPayload(input: unknown, nowMs: number): unknown
   preferredSessionDirection(localDeviceId: string, localInstanceId: string, remoteDeviceId: string, remoteInstanceId: string): "incoming" | "outgoing"
   hasAuthorityConflict(credential: unknown): boolean
   prepareWriteEvidence(input: unknown): unknown
@@ -46,7 +46,7 @@ export type RustStateCore = {
   planOwnershipAuthorityFlow(input: unknown): { selection: { peerIndices: number[];
     advertisementIndex: number | null; pendingIndex: number | null; targetOnline: boolean };
     actions: Array<"verifyTarget" | "createTransfer" | "persistProposal" | "confirmDelivery" | "mergeTransfer" | "notify" | "publish"> }
-  isWorkspaceEnvelope(raw: unknown): boolean
+  isWorkspaceEnvelope(raw: unknown, nowMs: number): boolean
   hasLeftWorkspace(credential: unknown, personId: string, grant: unknown): boolean
   isGrantRevoked(credential: unknown, personId: string, grant: unknown): boolean
   isDeviceRevoked(credential: unknown, personId: string, deviceId: string): boolean
@@ -77,7 +77,7 @@ export type RustStateCore = {
     "persistProposal" | "confirmDelivery" | "mergeTransfer" | "createGrant" | "persistGrant"
   >
   decideWorkspaceAccess(input: unknown, nowMs: number): "owner" | "editor" | "visitor"
-  validateMeshCatalog(raw: unknown): unknown
+  validateMeshCatalog(raw: unknown, nowMs: number): unknown
   validateMeshHandshake(raw: unknown, expectedWorkspaceId?: string): unknown
   encodeMeshHandshake(frameType: "mesh-handshake-request" | "mesh-handshake-response", secret: string, payload: unknown): Uint8Array
   inspectMeshHandshake(frame: Uint8Array): { type: "mesh-handshake-request" | "mesh-handshake-response"; secret: string }

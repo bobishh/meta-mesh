@@ -249,6 +249,10 @@ pub fn can_remove_workspace_device(
 }
 
 pub fn is_workspace_envelope(value: &Value) -> Result<bool, String> {
+    is_workspace_envelope_at(value, 0)
+}
+
+pub fn is_workspace_envelope_at(value: &Value, now_ms: i128) -> Result<bool, String> {
     let Some(value) = value.as_object() else {
         return Ok(false);
     };
@@ -278,7 +282,7 @@ pub fn is_workspace_envelope(value: &Value) -> Result<bool, String> {
         None => true,
         Some(snapshot) => serde_json::from_value::<crate::ScopeAuthoritySnapshot>(snapshot.clone())
             .ok()
-            .and_then(|snapshot| crate::validate_scope_authority(&snapshot).ok())
+            .and_then(|snapshot| crate::validate_scope_authority_at(&snapshot, now_ms).ok())
             .is_some_and(|authority| {
                 Some(authority.scope_id.as_str()) == workspace_id
                     && Some(authority.controller.person_id.as_str()) == owner_person_id

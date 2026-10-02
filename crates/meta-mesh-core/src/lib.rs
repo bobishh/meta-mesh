@@ -78,17 +78,18 @@ pub use automerge_delivery::{
     encode_device_sync_response,
 };
 pub use bundle_reuse::{BundleReuseInput, can_reuse_member_bundle};
-pub use catalog::{MeshCatalog, merge_verified_peer_catalog, validate_mesh_catalog};
+pub use catalog::{
+    MeshCatalog, merge_verified_peer_catalog, validate_mesh_catalog, validate_mesh_catalog_at,
+};
 pub use change_admission_flow::{
     ChangeAdmissionChange, ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
     plan_change_admission_flow, unsigned_change_error,
 };
-pub use proof_transfer::{authorization_admission_bundle, authorization_export, authorization_page, authorization_record_pages, authorization_records,
-    AuthorizationManifest, AuthorizationPage, AuthorizationPageReceiver, AuthorizationPageRequest};
 pub use credential_access::{
     CredentialPartition, CredentialPartitionInput, can_remove_workspace_device,
     credential_belongs_to_profile, has_left_workspace, is_device_revoked, is_grant_revoked,
-    is_workspace_envelope, next_access_epoch, owned_workspace_ids, partition_credentials,
+    is_workspace_envelope, is_workspace_envelope_at, next_access_epoch, owned_workspace_ids,
+    partition_credentials,
 };
 pub use delivery_flow::{BatchDeliveryAction, BatchDeliveryUpdate, MeshBatchDeliveryFlow};
 pub use dial_schedule::{DialRouteInput, DialScheduleInput, DialSchedulePlan, plan_dial_schedule};
@@ -148,6 +149,11 @@ pub use persistence::{
     ChangeAdmissionPlan, IncomingDocumentChange, OutboxClaim, OutboxClaimInput,
     OutboxClaimTransition, StoredDocumentChange, plan_change_admission, transition_outbox_claim,
 };
+pub use proof_transfer::{
+    AuthorizationManifest, AuthorizationPage, AuthorizationPageReceiver, AuthorizationPageRequest,
+    authorization_admission_bundle, authorization_export, authorization_page,
+    authorization_record_pages, authorization_records,
+};
 pub use recovery::{
     IdentityPassphraseEnvelope, IdentityRecoveryEnvelope, IdentitySecurity,
     identity_security_for_recovery, legacy_recovery_from_samples, normalize_secret,
@@ -174,10 +180,12 @@ pub use scope_authority::{
     ScopeCapabilityGrantPayload, ScopeCapabilityRevocation, ScopeCapabilityRevocationPayload,
     ScopeControlTransfer, ScopeControlTransferPayload, ScopeControlTransferPayloadInput,
     ScopeGenesis, ScopeGenesisInput, ScopeGenesisPayload, ScopeGenesisPayloadInput,
-    ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, SignedScopeGenesis, ValidatedScopeAuthority,
-    create_scope_control_transfer_payload, create_scope_genesis, create_scope_genesis_payload,
-    merge_scope_authority_snapshots, plan_scope_genesis, sign_scope_record,
-    validate_scope_authority, verify_scope_capability_grant, verify_scope_capability_revocation,
+    ScopeGenesisPlanInput, ScopeGrantIssuerEvidence, ScopeSuccessionTransfer, SignedScopeGenesis,
+    ValidatedScopeAuthority, create_scope_control_transfer_payload,
+    create_scope_control_transfer_payload_at, create_scope_genesis, create_scope_genesis_payload,
+    merge_scope_authority_snapshots, merge_scope_authority_snapshots_at, plan_scope_genesis,
+    sign_scope_record, validate_scope_authority, validate_scope_authority_at,
+    verify_scope_capability_grant, verify_scope_capability_revocation,
     verify_scope_control_transfer, verify_scope_genesis,
 };
 pub use scope_runtime::{MeshScopeDocumentCompletion, MeshScopeFrameEffect, MeshScopeRuntime};
