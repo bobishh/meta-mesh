@@ -1,5 +1,11 @@
 import { meshRustRuntime, type RustMeshScopeFrameEffect, type RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 
+/** Scope computation can run behind an asynchronous worker boundary. */
+export type MeshScopeExecutor = {
+  [K in Exclude<keyof RustMeshScopeRuntime, "free">]:
+    (...args: Parameters<RustMeshScopeRuntime[K]>) => ReturnType<RustMeshScopeRuntime[K]> | Promise<ReturnType<RustMeshScopeRuntime[K]>>
+} & { free?(): void | Promise<void> }
+
 export type MeshScopeStream = {
   send(bytes: Uint8Array): Promise<void>
   read(): Promise<Uint8Array>
@@ -44,14 +50,15 @@ export class BrowserMeshScopeSync {
   private timingSequence = 0
   private proofTimer?: ReturnType<typeof setTimeout>
   private proofGeneration = 0
-  constructor(private readonly runtime: RustMeshScopeRuntime, private readonly host: MeshScopeHost) {}
+  constructor(private readonly runtime: MeshScopeExecutor, private readonly host: MeshScopeHost) {}
 
   static create(workspaceId: string, secret: string, host: MeshScopeHost): BrowserMeshScopeSync {
     return new BrowserMeshScopeSync(meshRustRuntime().createMeshScopeRuntime(workspaceId, secret), host)
   }
 
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void {
-    this.runtime.startDocumentSync(localDeviceId, remoteDeviceId)
+    this.queue = this.queue.then(() => this.runtime.startDocumentSync(localDeviceId, remoteDeviceId))
+    void this.queue.catch(() => undefined)
   }
 
   receive(stream: MeshScopeStream, frame: Uint8Array): Promise<void> {
@@ -77,9 +84,9 @@ export class BrowserMeshScopeSync {
         await this.apply(stream, frame, effect)
       } finally { this.reportTiming("receive", "queue-run", queueStartedAt, operationId, frame.byteLength) }
     })
-    this.queue = queued.catch(error => {
+    this.queue = queued.catch(async error => {
       this.clearProofTimer()
-      try { this.runtime.rejectDocumentReceive() } catch { /* no candidate remains pending */ }
+      try { await this.runtime.rejectDocumentReceive() } catch { /* no candidate remains pending */ }
       throw error
     })
     const guarded = this.queue
@@ -106,7 +113,7 @@ export class BrowserMeshScopeSync {
       const chat = this.host.readChat ? await this.host.readChat(nextKnownChat) : undefined
       const mesh = this.host.readMesh ? await this.host.readMesh() : undefined
       if (this.closing) return false
-      const plan = this.runtime.preparePublish(document, proof, proof, chat, mesh)
+      const plan = await this.runtime.preparePublish(document, proof, proof, chat, mesh)
       let allFramesSent = false
       try {
         if (plan.documentFrame && !await sendFrame(toBytes(plan.documentFrame), "document")) return false
@@ -116,7 +123,7 @@ export class BrowserMeshScopeSync {
         allFramesSent = true
         this.knownChat = nextKnownChat
         return true
-      } finally { this.runtime.finishPublish(toBytes(plan.controlSnapshot), allFramesSent) }
+      } finally { await this.runtime.finishPublish(toBytes(plan.controlSnapshot), allFramesSent) }
       } finally { this.reportTiming("publish", "queue-run", startedAt, operationId) }
     }
     this.queue = this.queue.then(run, run)
@@ -135,7 +142,7 @@ export class BrowserMeshScopeSync {
       const document = await this.host.readDocument()
       const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
       if (this.closing) return false
-      const frame = this.runtime.publishFrame(document, proof)
+      const frame = await this.runtime.publishFrame(document, proof)
       return !frame || await sendFrame(toBytes(frame), "document")
       } finally { this.reportTiming("reconcile", "queue-run", startedAt, operationId) }
     }
@@ -146,12 +153,12 @@ export class BrowserMeshScopeSync {
   private async apply(stream: MeshScopeStream, frame: Uint8Array, effect: RustMeshScopeFrameEffect): Promise<void> {
     switch (effect.kind) {
       case "proofSource": {
-        const cached = this.runtime.provideCachedProofPage(toBytes(effect.payload))
+        const cached = await this.runtime.provideCachedProofPage(toBytes(effect.payload))
         if (cached) { await stream.send(toBytes(cached)); await stream.closeSend(); return }
         const document = await this.host.readDocument()
         const authorization = await this.host.readAuthorization?.(document)
         if (!authorization) throw new Error("Missing authorization proof history")
-        await stream.send(toBytes(this.runtime.provideProofPage(toBytes(effect.payload), document, authorization)))
+        await stream.send(toBytes(await this.runtime.provideProofPage(toBytes(effect.payload), document, authorization)))
         await stream.closeSend()
         return
       }
@@ -159,7 +166,7 @@ export class BrowserMeshScopeSync {
         const cached = await this.host.readProofPage?.(effect.cacheKey).catch(() => undefined)
         if (cached) {
           let accepted: RustMeshScopeFrameEffect | undefined
-          try { accepted = this.runtime.acceptProofPage(cached) } catch { /* discard corrupt untrusted cache */ }
+          try { accepted = await this.runtime.acceptProofPage(cached) } catch { /* discard corrupt untrusted cache */ }
           if (accepted) return this.apply(stream, frame, accepted)
         }
         await stream.send(toBytes(effect.frame))
@@ -167,10 +174,10 @@ export class BrowserMeshScopeSync {
         this.clearProofTimer()
         const generation = this.proofGeneration
         this.proofTimer = setTimeout(() => {
-          this.queue = this.queue.catch(() => {}).then(() => {
+          this.queue = this.queue.catch(() => {}).then(async () => {
             if (generation !== this.proofGeneration || this.closing) return
             this.clearProofTimer()
-            try { this.runtime.rejectDocumentReceive() } catch { /* already completed */ }
+            try { await this.runtime.rejectDocumentReceive() } catch { /* already completed */ }
           })
         }, 20_000)
         return
@@ -178,14 +185,14 @@ export class BrowserMeshScopeSync {
       case "proofPageReceived": {
         this.clearProofTimer()
         await this.host.writeProofPage?.(effect.cacheKey, toBytes(effect.payload)).catch(() => {})
-        return this.apply(stream, frame, this.runtime.continueProofReceive())
+        return this.apply(stream, frame, await this.runtime.continueProofReceive())
       }
       case "needDocument": {
         let pending = true
         try {
           const document = await this.host.readDocument()
           const proof = this.host.readAuthorization ? await this.host.readAuthorization(document) : undefined
-          const prepared = this.runtime.provideDocument(document, proof)
+          const prepared = await this.runtime.provideDocument(document, proof)
           if (prepared.kind !== "documentReceive") {
             pending = false
             return await this.apply(stream, frame, prepared)
@@ -194,13 +201,13 @@ export class BrowserMeshScopeSync {
           persisted = !prepared.shouldPersist || (await this.host.persistDocument(toBytes(prepared.document), prepared.proof)) !== false
           // complete(false) consumes pending state while aborting Rust sync.
           pending = false
-          const completion = this.runtime.completeDocumentReceive(persisted)
+          const completion = await this.runtime.completeDocumentReceive(persisted)
           if (completion.response) await stream.send(toBytes(completion.response))
           if (completion.closeSend) await stream.closeSend()
           this.host.onDocumentAccepted?.(prepared.acceptedChanges)
         } catch (error) {
           if (pending) {
-            try { this.runtime.rejectDocumentReceive() } catch { /* completion failure already owns error */ }
+            try { await this.runtime.rejectDocumentReceive() } catch { /* completion failure already owns error */ }
           }
           throw error
         }
@@ -225,7 +232,7 @@ export class BrowserMeshScopeSync {
           await this.host.mergeDurableBatch(toBytes(effect.payload))
           await this.finishSaved(stream, true)
         } catch (error) {
-          this.abortSaved()
+          await this.abortSaved()
           throw error
         }
         return
@@ -235,7 +242,7 @@ export class BrowserMeshScopeSync {
           await this.host.onOwnerWorkspaceOffer(toBytes(effect.payload))
           await this.finishSaved(stream, true)
         } catch (error) {
-          this.abortSaved()
+          await this.abortSaved()
           throw error
         }
         return
@@ -256,12 +263,12 @@ export class BrowserMeshScopeSync {
         this.clearProofTimer()
         try {
           const persisted = !effect.shouldPersist || (await this.host.persistDocument(toBytes(effect.document), effect.proof)) !== false
-          const completion = this.runtime.completeDocumentReceive(persisted)
+          const completion = await this.runtime.completeDocumentReceive(persisted)
           if (completion.response) await stream.send(toBytes(completion.response))
           if (completion.closeSend) await stream.closeSend()
           this.host.onDocumentAccepted?.(effect.acceptedChanges)
         } catch (error) {
-          try { this.runtime.rejectDocumentReceive() } catch { /* preserve original failure */ }
+          try { await this.runtime.rejectDocumentReceive() } catch { /* preserve original failure */ }
           throw error
         }
         return
@@ -279,7 +286,7 @@ export class BrowserMeshScopeSync {
     if (action === "mergeAuthorization") {
       if (!this.host.mergeAuthorization) throw new Error("Unsupported mesh authorization control")
       await this.host.mergeAuthorization(control.authorization)
-      this.runtime.resetDocument()
+      await this.runtime.resetDocument()
     } else if (action === "mergeChat") {
       if (!this.host.mergeChat) throw new Error("Unsupported mesh chat control")
       await this.host.mergeChat(control.chat)
@@ -292,13 +299,13 @@ export class BrowserMeshScopeSync {
   }
 
   private async finishSaved(stream: MeshScopeStream, persisted: boolean): Promise<void> {
-    const completion = this.runtime.completeSavedReceive(persisted)
+    const completion = await this.runtime.completeSavedReceive(persisted)
     if (completion.response) await stream.send(toBytes(completion.response))
     if (completion.closeSend) await stream.closeSend()
   }
 
-  private abortSaved(): void {
-    try { this.runtime.completeSavedReceive(false) } catch { /* preserve host failure */ }
+  private async abortSaved(): Promise<void> {
+    try { await this.runtime.completeSavedReceive(false) } catch { /* preserve host failure */ }
   }
 
   private reportTiming(operation: MeshScopeTiming["operation"], phase: MeshScopeTiming["phase"], startedAt: number,
@@ -312,7 +319,7 @@ export class BrowserMeshScopeSync {
     if (!this.closed) {
       this.closing = true
       this.clearProofTimer()
-      this.closed = this.queue.then(() => {}, () => {}).then(() => { this.runtime.free?.() })
+      this.closed = this.queue.then(() => {}, () => {}).then(async () => { await this.runtime.free?.() })
     }
     return this.closed
   }

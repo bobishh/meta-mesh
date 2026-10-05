@@ -110,4 +110,4 @@ export class MeshReconnectPolicy {
 }
 
 export { BrowserMeshLifecycle, type BrowserMeshLifecycleHost } from "./browserLifecycle"
-export { BrowserMeshScopeSync, type MeshScopeHost, type MeshScopeStream } from "./browserScopeSync"
+export { BrowserMeshScopeSync, type MeshScopeExecutor, type MeshScopeHost, type MeshScopeStream } from "./browserScopeSync"

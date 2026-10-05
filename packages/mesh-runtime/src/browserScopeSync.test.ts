@@ -1,6 +1,55 @@
 import { describe, expect, it, vi } from "vitest"
 import type { RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
-import { BrowserMeshScopeSync } from "./browserScopeSync"
+import { BrowserMeshScopeSync, type MeshScopeExecutor } from "./browserScopeSync"
+
+describe("asynchronous scope computation", () => {
+  it("awaits worker persistence decision and completion before freeing its scope", async () => {
+    let finishPersistence!: (saved: boolean) => void
+    let finishCompletion!: () => void
+    const order: string[] = []
+    const runtime = {
+      receiveFrame: vi.fn(async () => ({ kind: "documentReceive", document: new Uint8Array([1]), shouldPersist: true, acceptedChanges: 1 })),
+      completeDocumentReceive: vi.fn(async (saved: boolean) => {
+        order.push(`complete:${saved}`)
+        await new Promise<void>(resolve => { finishCompletion = resolve })
+        return { closeSend: true }
+      }),
+      free: vi.fn(async () => { order.push("free") }),
+    } as unknown as MeshScopeExecutor
+    const scope = new BrowserMeshScopeSync(runtime, {
+      readDocument: vi.fn(),
+      persistDocument: () => new Promise(resolve => { finishPersistence = resolve }),
+    })
+    const stream = { send: vi.fn(), read: vi.fn(), closeSend: vi.fn(async () => { order.push("closeSend") }) }
+    const receiving = scope.receive(stream, new Uint8Array([2]))
+    await vi.waitFor(() => expect(finishPersistence).toBeDefined())
+    const closing = scope.close()
+    finishPersistence(false)
+    await vi.waitFor(() => expect(order).toEqual(["complete:false"]))
+    expect(runtime.free).not.toHaveBeenCalled()
+    finishCompletion()
+    await receiving
+    await closing
+    expect(order).toEqual(["complete:false", "closeSend", "free"])
+  })
+
+  it("rejects failed worker computation without acknowledging a saved document", async () => {
+    const runtime = {
+      receiveFrame: vi.fn(async () => { throw new Error("worker unavailable") }),
+      rejectDocumentReceive: vi.fn(async () => undefined),
+      free: vi.fn(async () => undefined),
+    } as unknown as MeshScopeExecutor
+    const host = { readDocument: vi.fn(), persistDocument: vi.fn() }
+    const scope = new BrowserMeshScopeSync(runtime, host)
+    const stream = { send: vi.fn(), read: vi.fn(), closeSend: vi.fn() }
+    await expect(scope.receive(stream, new Uint8Array([1]))).rejects.toThrow("worker unavailable")
+    expect(host.persistDocument).not.toHaveBeenCalled()
+    expect(stream.send).not.toHaveBeenCalled()
+    expect(runtime.rejectDocumentReceive).toHaveBeenCalledOnce()
+    await scope.close()
+    expect(runtime.free).toHaveBeenCalledOnce()
+  })
+})
 
 describe("BrowserMeshScopeSync shutdown", () => {
   it("reports wait time separately from work held in the scope queue", async () => {
