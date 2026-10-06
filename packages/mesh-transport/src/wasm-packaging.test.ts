@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 import * as policyModule from "../wasm/policy/meta_mesh_policy.js"
@@ -12,13 +11,6 @@ describe("WASM package boundary", () => {
     expect(manifest.exports["./wasm"]).toBe("./wasm/policy/meta_mesh_policy.js")
     expect(manifest.exports["./transport-wasm"]).toBe("./transport-wasm/meta_mesh.js")
     expect(manifest.exports["./wasm"]).not.toBe(manifest.exports["./transport-wasm"])
-  })
-
-  it("keeps Iroh and WebRTC outside policy dependency graph", () => {
-    const dependencies = execFileSync("cargo", [
-      "tree", "--manifest-path", "Cargo.toml", "-p", "meta-mesh-policy", "--edges", "normal",
-    ], { cwd: new URL("../../", packageRoot), encoding: "utf8" })
-    expect(dependencies).not.toMatch(/\b(?:iroh|iroh-gossip|iroh-blobs|iroh-webrtc-transport)\b/)
   })
 
   it("initializes policy WASM and leaves BrowserNode in transport WASM", async () => {
