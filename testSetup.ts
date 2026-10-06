@@ -15,7 +15,7 @@ import {
   WasmStateCore,
 } from "@meta-uber/mesh-transport/wasm"
 
-const wasm = readFileSync(resolve(process.cwd(), "packages/mesh-transport/wasm/meta_mesh_bg.wasm"))
+const wasm = readFileSync(resolve(process.cwd(), "packages/mesh-transport/wasm/policy/meta_mesh_policy_bg.wasm"))
 initSync({ module: wasm })
 installMeshRustRuntime({
   state: WasmStateCore,
