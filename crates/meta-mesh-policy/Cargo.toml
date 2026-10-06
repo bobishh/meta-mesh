@@ -1,0 +1,17 @@
+[package]
+name = "meta-mesh-policy"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+meta-mesh-core = { path = "../meta-mesh-core", features = ["wasm"] }
+wasm-bindgen = "=0.2.118"
+js-sys = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+getrandom = { version = "0.2", features = ["js"] }

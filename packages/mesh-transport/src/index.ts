@@ -23,48 +23,25 @@ export type IrohModule = {
   BrowserNode: { start(seed?: Uint8Array): Promise<IrohNode> }
   WasmGossipEngine?: { new(localPeerId: string): any }
   WasmBlobEngine?: { new(): any }
-  WasmPairingCodec?: { new(): {
-    encode(type: string, secret: string, bytes: Uint8Array): Uint8Array
-    inspect(frame: Uint8Array): unknown
-    decode(frame: Uint8Array, expectedType: string, expectedSecret: string): Uint8Array
-  } }
-  WasmWorkspaceJoinHandshake?: { new(secret: string, side: "host" | "guest"): {
-    sendRequest(payload: Uint8Array): Uint8Array
-    receiveRequest(frame: Uint8Array): Uint8Array
-    respond(payload: Uint8Array): Uint8Array
-    reject(message: string): Uint8Array
-    receiveResponse(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
-    acknowledgeRejection(): Uint8Array
-    acknowledgeSuccess(payload: Uint8Array): Uint8Array
-    rejectAcceptedResponse(message: string): Uint8Array
-    receiveAck(frame: Uint8Array): { kind: "accepted"; payload: Uint8Array } | { kind: "rejected"; error: string }
-  } }
-  WasmWorkspaceJoinHandoff?: { new(secret: string, side: "host" | "guest"): {
-    guestRequest(): Uint8Array
-    hostReceiveRequest(frame: Uint8Array): Uint8Array
-    guestReceiveReady(frame: Uint8Array): void
-    guestTransportFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
-    guestResumeSucceeded(): void
-    guestResumeFailed(retryable: boolean): "retry" | "failed" | "adopted" | "complete"
-    guestBeginConfirmation(): Uint8Array
-    guestConfirmationSent(): "retry" | "failed" | "adopted" | "complete"
-    guestConfirmationFailed(): "retry" | "failed" | "adopted" | "complete"
-    hostReceiveConfirmation(frame: Uint8Array): void
-  } }
-  WasmStateCore?: typeof import("../wasm/meta_mesh.js").WasmStateCore
-  WasmDeviceRouteCatalog?: { new(): any }
-  WasmAutomergeSyncEngine?: { new(localDeviceId: string, maximumFrameBytes?: number): any }
-  WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/meta_mesh.js").WasmAutomergeDeviceSyncFlow
-  WasmMeshBatchDeliveryFlow?: typeof import("../wasm/meta_mesh.js").WasmMeshBatchDeliveryFlow
-  WasmMeshRuntimeState?: { new(): any }
-  WasmMeshLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmMeshLifecycleState
-  WasmGossipLifecycleState?: typeof import("../wasm/meta_mesh.js").WasmGossipLifecycleState
-  WasmMeshSessionLifecycle?: typeof import("../wasm/meta_mesh.js").WasmMeshSessionLifecycle
-  WasmLiveWorkspaceSession?: typeof import("../wasm/meta_mesh.js").WasmLiveWorkspaceSession
-  WasmMeshScopeRuntime?: typeof import("../wasm/meta_mesh.js").WasmMeshScopeRuntime
-  WasmMeshHandshakeFlow?: { new(direction: "incoming" | "outgoing"): any }
-  WasmMeshAuthenticatedSessions?: { new(): any }
+  WasmPairingCodec?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmPairingCodec
+  WasmWorkspaceJoinHandshake?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandshake
+  WasmWorkspaceJoinHandoff?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandoff
+  WasmStateCore?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmStateCore
+  WasmDeviceRouteCatalog?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmDeviceRouteCatalog
+  WasmAutomergeSyncEngine?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeSyncEngine
+  WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeDeviceSyncFlow
+  WasmMeshBatchDeliveryFlow?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshBatchDeliveryFlow
+  WasmMeshRuntimeState?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshRuntimeState
+  WasmMeshLifecycleState?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshLifecycleState
+  WasmGossipLifecycleState?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmGossipLifecycleState
+  WasmMeshSessionLifecycle?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshSessionLifecycle
+  WasmLiveWorkspaceSession?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmLiveWorkspaceSession
+  WasmMeshScopeRuntime?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshScopeRuntime
+  WasmMeshHandshakeFlow?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshHandshakeFlow
+  WasmMeshAuthenticatedSessions?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshAuthenticatedSessions
 }
+
+export type PolicyModule = typeof import("../wasm/policy/meta_mesh_policy.js")
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
 
