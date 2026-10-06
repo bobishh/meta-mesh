@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{AutoCommit, Change};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use automerge::{AutoCommit, Change, ReadDoc, ScalarValue, hydrate::Value as HydratedValue, ROOT};
+use base64::{Engine, engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD}};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -171,7 +171,7 @@ pub fn evaluate_causal_admission(
         if covered.is_empty() {
             continue;
         }
-        let admitted = crate::authorization::admit_with_needed(record, &context, &needed)?;
+        let admitted = crate::authorization::admit_with_needed_for_causal(record, &context, &needed, true)?;
         verified_authorizations.push(record.clone());
         for proof in admitted {
             let node = by_hash[proof.hash.as_str()];
@@ -197,6 +197,15 @@ pub fn evaluate_causal_admission(
                         .into(),
                 );
                 continue;
+            }
+            if proof.role == WorkspaceRole::Visitor {
+                if let Err(reason) = visitor_profile_change_only(&mut raw, node, &record.signed.payload.person_id) {
+                provenance_errors.insert(
+                    proof.hash,
+                    format!("Visitors may change only their own avatar profile ({reason})"),
+                );
+                continue;
+                }
             }
             // Match's established duplicate-proof rule: owner evidence wins.
             if roles.get(&proof.hash) != Some(&WorkspaceRole::Owner) {
@@ -367,6 +376,140 @@ pub fn evaluate_causal_admission(
         verified_authorizations,
         authorized_document: authorized.save(),
     })
+}
+
+fn visitor_profile_change_only(raw: &mut AutoCommit, node: &ChangeNode, person_id: &str) -> Result<(), &'static str> {
+    let Ok(mut before) = raw.fork_at(node.change.deps()) else { return Err("dependency view unavailable") };
+    let before_value = match before.hydrate(&ROOT, None) {
+        Ok(value) => value,
+        Err(_) => return Err("dependency root unavailable"),
+    };
+    let mut after = before.fork();
+    if after.apply_changes(vec![node.change.clone()]).is_err() { return Err("change could not be replayed") }
+    let after_value = match after.hydrate(&ROOT, None) {
+        Ok(value) => value,
+        Err(_) => return Err("result root unavailable"),
+    };
+    let (HydratedValue::Map(mut before_root), HydratedValue::Map(mut after_root)) = (before_value, after_value) else { return Err("root is not a map") };
+    let (Some(HydratedValue::Map(mut before_entities)), Some(HydratedValue::Map(mut after_entities))) =
+        (before_root.remove("entities").map(|value| value.value), after_root.remove("entities").map(|value| value.value)) else { return Err("entity map is missing") };
+    if before_root != after_root { return Err("workspace root changed") }
+    let profile_id = format!("member-profile:{person_id}");
+    let before_profile = before_entities.remove(&profile_id).map(|value| value.value);
+    let after_profile = after_entities.remove(&profile_id).map(|value| value.value);
+    if before_entities != after_entities { return Err("another entity changed") }
+    if let Some(reason) = profile_delta_rejection(before_profile.as_ref(), after_profile.as_ref(), person_id) { return Err(reason) }
+    Ok(())
+}
+
+fn profile_delta_rejection(before: Option<&HydratedValue>, after: Option<&HydratedValue>, person_id: &str) -> Option<&'static str> {
+    match (before, after) {
+        (None, Some(value)) | (Some(value), None) => avatar_profile_invalid_reason(value, person_id),
+        (Some(before), Some(after)) => {
+            if let Some(reason) = avatar_profile_invalid_reason(before, person_id) { return Some(reason) }
+            if let Some(reason) = avatar_profile_invalid_reason(after, person_id) { return Some(reason) }
+            let (HydratedValue::Map(mut left), HydratedValue::Map(mut right)) = (before.clone(), after.clone()) else { return Some("profile record is not a map") };
+            let previous_data = left.remove("data").map(|value| value.value);
+            let next_data = right.remove("data").map(|value| value.value);
+            left.remove("updatedAt");
+            right.remove("updatedAt");
+            (previous_data == next_data || left != right).then_some("profile update changed fields beyond avatar data")
+        }
+        (None, None) => Some("profile record was not changed"),
+    }
+}
+
+fn avatar_profile_invalid_reason(value: &HydratedValue, person_id: &str) -> Option<&'static str> {
+    let HydratedValue::Map(profile) = value else { return Some("profile record is not a map") };
+    let expected_keys = ["id", "kind", "personId", "data", "title", "placement", "archivedAt", "createdAt", "updatedAt"];
+    if profile.len() != expected_keys.len() || expected_keys.iter().any(|key| !profile.contains_key(*key)) { return Some("profile fields are missing or unexpected") }
+    let expected_id = format!("member-profile:{person_id}");
+    if scalar_string(profile.get("id")).as_deref() != Some(expected_id.as_str()) { return Some("profile id differs from signed actor") }
+    if scalar_string(profile.get("kind")).as_deref() != Some("member_profile") { return Some("profile kind is invalid") }
+    if scalar_string(profile.get("personId")).as_deref() != Some(person_id) { return Some("profile person differs from signed actor") }
+    if scalar_string(profile.get("title")).as_deref() != Some("Member profile") { return Some("profile title is invalid") }
+    if !matches!(profile.get("archivedAt"), Some(HydratedValue::Scalar(ScalarValue::Null))) { return Some("profile archive marker is invalid") }
+    if !is_rfc3339(profile.get("createdAt")) { return Some("profile creation time is invalid") }
+    if !is_rfc3339(profile.get("updatedAt")) { return Some("profile update time is invalid") }
+    let Some(HydratedValue::Map(placement)) = profile.get("placement") else { return Some("profile placement is invalid") };
+    if placement.len() != 2
+        || !matches!(placement.get("parentId"), Some(HydratedValue::Scalar(ScalarValue::Null)))
+        || scalar_string(placement.get("rank")).as_deref() != Some("0/1")
+    { return Some("profile placement is invalid") }
+    let Some(data) = scalar_string(profile.get("data")) else { return Some("avatar data is missing") };
+    if !valid_avatar_data(&data) { return Some("avatar data is malformed or outside bounds") }
+    None
+}
+
+fn scalar_string(value: Option<&HydratedValue>) -> Option<String> {
+    match value? {
+        HydratedValue::Scalar(ScalarValue::Str(value)) => Some(value.to_string()),
+        HydratedValue::Text(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn is_rfc3339(value: Option<&HydratedValue>) -> bool {
+    scalar_string(value).is_some_and(|value| time::OffsetDateTime::parse(&value, &time::format_description::well_known::Rfc3339).is_ok())
+}
+
+fn valid_avatar_data(value: &str) -> bool {
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(value) else { return false };
+    let Some(object) = record.as_object() else { return false };
+    if object.len() != 2 { return false }
+    let Some(avatar) = object.get("avatarData").and_then(serde_json::Value::as_str) else { return false };
+    let Some(changed_at) = object.get("changedAt").and_then(serde_json::Value::as_str) else { return false };
+    if time::OffsetDateTime::parse(changed_at, &time::format_description::well_known::Rfc3339).is_err() { return false }
+    let (encoded, webp) = if let Some(encoded) = avatar.strip_prefix("data:image/webp;base64,") {
+        (encoded, true)
+    } else if let Some(encoded) = avatar.strip_prefix("data:image/jpeg;base64,") {
+        (encoded, false)
+    } else { return false };
+    if encoded.len() > 22_000 || encoded.len() % 4 != 0 { return false }
+    BASE64.decode(encoded).is_ok_and(|bytes| !bytes.is_empty() && bytes.len() <= 16 * 1024 && avatar_dimensions(&bytes, webp))
+}
+
+fn avatar_dimensions(bytes: &[u8], webp: bool) -> bool {
+    if webp {
+        if bytes.len() < 30 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WEBP" { return false }
+        if &bytes[12..16] == b"VP8X" {
+            return bytes[24..30] == [127, 0, 0, 127, 0, 0];
+        }
+        if &bytes[12..16] == b"VP8 " {
+            let width = u16::from_le_bytes([bytes[26], bytes[27]]) & 0x3fff;
+            let height = u16::from_le_bytes([bytes[28], bytes[29]]) & 0x3fff;
+            return bytes[23..26] == [0x9d, 0x01, 0x2a] && width == 128 && height == 128;
+        }
+        if &bytes[12..16] == b"VP8L" && bytes.len() >= 25 && bytes[20] == 0x2f {
+            let width = 1 + bytes[21] as u32 + (((bytes[22] & 0x3f) as u32) << 8);
+            let height = 1 + (((bytes[22] & 0xc0) as u32) >> 6) + ((bytes[23] as u32) << 2) + (((bytes[24] & 0x0f) as u32) << 10);
+            return width == 128 && height == 128;
+        }
+        false
+    } else {
+        jpeg_dimensions(bytes)
+    }
+}
+
+fn jpeg_dimensions(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 || bytes[0..2] != [0xff, 0xd8] { return false }
+    let mut offset = 2;
+    while offset + 3 < bytes.len() {
+        if bytes[offset] != 0xff { return false }
+        let marker = bytes[offset + 1];
+        offset += 2;
+        if marker == 0xd8 || marker == 0xd9 || (0xd0..=0xd7).contains(&marker) || marker == 0x01 { continue }
+        let length = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        if length < 2 || offset + length > bytes.len() { return false }
+        if matches!(marker, 0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf) {
+            if length < 7 { return false }
+            let height = u16::from_be_bytes([bytes[offset + 3], bytes[offset + 4]]);
+            let width = u16::from_be_bytes([bytes[offset + 5], bytes[offset + 6]]);
+            return width == 128 && height == 128;
+        }
+        offset += length;
+    }
+    false
 }
 
 fn parse_change_authority_metadata(message: Option<&str>) -> Option<ChangeAuthorityMetadata> {

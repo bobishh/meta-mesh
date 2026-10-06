@@ -7,7 +7,7 @@ use crate::{
     public_key_from_seed, public_key_id, sign_device_certificate, sign_json_envelope,
 };
 use automerge::{
-    AutoCommit, ROOT, ReadDoc,
+    AutoCommit, ObjType, ROOT, ReadDoc,
     transaction::{CommitOptions, Transactable},
 };
 
@@ -73,6 +73,22 @@ fn grant(
         signer_key_id: signed.signer_key_id,
         signature: signed.signature,
     }
+}
+
+fn visitor_grant(
+    owner: &WorkspaceAuthority,
+    owner_seed: &[u8; 32],
+    visitor: &WorkspaceAuthority,
+) -> WorkspaceGrant {
+    let payload = WorkspaceGrantPayload {
+        kind: "workspace-grant".into(), version: 1,
+        grant_id: "visitor-profile".into(), workspace_id: "workspace".into(),
+        person_id: visitor.person_id.clone(), role: WorkspaceRole::Visitor,
+        access_epoch: Some(1),
+    };
+    let signed = sign_json_envelope(owner_seed, serde_json::to_value(&payload).unwrap(),
+        &owner.person_id, DEFAULT_SIGNATURE_DOMAIN).unwrap();
+    WorkspaceGrant { payload, signer_key_id: signed.signer_key_id, signature: signed.signature }
 }
 
 fn grant_hash(grant: &WorkspaceGrant) -> String {
@@ -165,6 +181,97 @@ fn document_with_editor_change(
         .find(|hash| hash != &genesis)
         .unwrap();
     (doc, genesis, editor_change)
+}
+
+fn write_avatar(doc: &mut AutoCommit, person_id: &str, avatar: Option<&str>) {
+    let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
+    let profile_id = format!("member-profile:{person_id}");
+    match avatar {
+        Some(avatar) => {
+            let profile = doc.put_object(entities, profile_id, ObjType::Map).unwrap();
+            put_js_text(doc, &profile, "id", &format!("member-profile:{person_id}"));
+            put_js_text(doc, &profile, "kind", "member_profile");
+            put_js_text(doc, &profile, "personId", person_id);
+            put_js_text(doc, &profile, "data", &serde_json::json!({
+                "avatarData": avatar, "changedAt": "2026-10-07T10:00:00Z"
+            }).to_string());
+            put_js_text(doc, &profile, "title", "Member profile");
+            doc.put(&profile, "archivedAt", automerge::ScalarValue::Null).unwrap();
+            put_js_text(doc, &profile, "createdAt", "2026-10-07T10:00:00Z");
+            put_js_text(doc, &profile, "updatedAt", "2026-10-07T10:00:00Z");
+            let placement = doc.put_object(&profile, "placement", ObjType::Map).unwrap();
+            doc.put(&placement, "parentId", automerge::ScalarValue::Null).unwrap();
+            put_js_text(doc, &placement, "rank", "0/1");
+        }
+        None => { doc.delete(entities, profile_id).unwrap(); }
+    }
+}
+
+fn put_js_text(doc: &mut AutoCommit, parent: &automerge::ObjId, key: &str, value: &str) {
+    let text = doc.put_object(parent, key, ObjType::Text).unwrap();
+    doc.splice_text(&text, 0, 0, value).unwrap();
+}
+
+fn visitor_avatar_document(mixed_root: bool, foreign_profile: bool, remove_avatar: bool) -> (WorkspaceAuthority, AutoCommit,
+    Vec<IncomingWorkspaceChangeAuthorization>, String) {
+    let (owner, owner_seed, owner_device_id, owner_certs) = authority([81; 32], [82; 32]);
+    let (visitor, visitor_device_seed, visitor_device_id, visitor_certs) = authority([83; 32], [84; 32]);
+    let grant = visitor_grant(&owner, &[81; 32], &visitor);
+    let mut doc = AutoCommit::new();
+    doc.put_object(ROOT, "entities", ObjType::Map).unwrap();
+    doc.put(ROOT, "title", "Workspace").unwrap();
+    doc.commit();
+    let genesis = doc.get_changes(&[]).into_iter().next().unwrap().hash().to_string();
+    let genesis_record = change_proof(&owner, &owner_seed, &owner_device_id, &owner_certs, &[genesis.clone()], None);
+    write_avatar(&mut doc, &visitor.person_id, Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA"));
+    if mixed_root { doc.put(ROOT, "title", "Injected title").unwrap(); }
+    if foreign_profile { write_avatar(&mut doc, &owner.person_id, Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA")); }
+    let visitor_metadata = || serde_json::json!({
+        "kind": "workspace-change-metadata", "version": 1,
+        "personId": visitor.person_id, "deviceId": visitor_device_id,
+        "action": "setMemberAvatar", "entityIds": [format!("member-profile:{}", visitor.person_id)]
+    }).to_string();
+    doc.commit_with(CommitOptions::default().with_message(visitor_metadata()));
+    if remove_avatar {
+        write_avatar(&mut doc, &visitor.person_id, None);
+        doc.commit_with(CommitOptions::default().with_message(visitor_metadata()));
+    }
+    let visitor_changes = doc.get_changes(&[]).into_iter().map(|change| change.hash().to_string())
+        .filter(|hash| hash != &genesis).collect::<Vec<_>>();
+    let visitor_record = change_proof(&visitor, &visitor_device_seed, &visitor_device_id, &visitor_certs,
+        &visitor_changes, Some(grant.clone()));
+    (owner, doc, vec![genesis_record, visitor_record], visitor.person_id)
+}
+
+#[test]
+fn visitor_avatar_change_is_admitted_but_mixed_and_foreign_profile_changes_are_quarantined() {
+    for (mixed_root, foreign_profile, remove_avatar, admitted) in [
+        (false, false, false, true), (false, false, true, true),
+        (true, false, false, false), (false, true, false, false),
+    ] {
+        let (owner, mut doc, records, _) = visitor_avatar_document(mixed_root, foreign_profile, remove_avatar);
+        let plan = evaluate_causal_admission(CausalAdmissionInput {
+            records, snapshot: snapshot(owner, doc.save()), pending_change_bytes: vec![], now_ms: 0,
+        }).unwrap();
+        let visitor_decisions = plan.decisions.iter().filter(|decision| {
+            matches!(decision.status, CausalAdmissionStatus::Admitted { role: WorkspaceRole::Visitor })
+                || matches!(decision.status, CausalAdmissionStatus::Quarantined { .. })
+        }).collect::<Vec<_>>();
+        assert!(!visitor_decisions.is_empty());
+        assert!(visitor_decisions.iter().all(|decision|
+            matches!(decision.status, CausalAdmissionStatus::Admitted { .. }) == admitted));
+        if remove_avatar { assert_eq!(visitor_decisions.len(), 2); }
+    }
+}
+
+#[test]
+fn avatar_payload_requires_bounded_128_pixel_image_headers() {
+    let data = |avatar_data: &str| serde_json::json!({
+        "avatarData": avatar_data, "changedAt": "2026-10-07T10:00:00Z"
+    }).to_string();
+    assert!(valid_avatar_data(&data("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA")));
+    assert!(!valid_avatar_data(&data("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAPwAAfwAA")));
+    assert!(!valid_avatar_data(&data("data:image/webp;base64,AA==")));
 }
 
 #[test]

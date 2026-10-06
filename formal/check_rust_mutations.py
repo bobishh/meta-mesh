@@ -59,6 +59,7 @@ def main():
         root = Path(directory)
         shutil.copy2(ROOT / 'Cargo.toml', root / 'Cargo.toml')
         shutil.copytree(ROOT / 'crates/meta-mesh', root / 'crates/meta-mesh')
+        shutil.copytree(ROOT / 'crates/meta-mesh-policy', root / 'crates/meta-mesh-policy')
         shutil.copytree(ROOT / 'vendor/iroh-webrtc-transport', root / 'vendor/iroh-webrtc-transport')
         shutil.copy2(ROOT / 'Cargo.lock', root / 'Cargo.lock')
         core = root / 'crates/meta-mesh-core'

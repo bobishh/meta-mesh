@@ -163,6 +163,15 @@ pub(crate) fn admit_with_needed(
     context: &ValidatedWorkspaceWriteAuthorizationContext,
     needed: &std::collections::HashSet<&String>,
 ) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
+    admit_with_needed_for_causal(incoming, context, needed, false)
+}
+
+pub(crate) fn admit_with_needed_for_causal(
+    incoming: &IncomingWorkspaceChangeAuthorization,
+    context: &ValidatedWorkspaceWriteAuthorizationContext,
+    needed: &std::collections::HashSet<&String>,
+    allow_visitor_candidate: bool,
+) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
     let payload = &incoming.signed.payload;
     if payload.kind != "workspace-changes"
         || payload.version != 1
@@ -196,6 +205,9 @@ pub(crate) fn admit_with_needed(
         &payload.device_id,
         incoming.grant.as_ref(),
     )?;
+    if role == WorkspaceRole::Visitor && !allow_visitor_candidate {
+        return Err("Visitors cannot write workspace changes".to_string());
+    }
     Ok(payload
         .hashes
         .iter()
@@ -353,8 +365,8 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
                 .ok()?;
                 Some((role, grant.payload.effective_access_epoch()))
             });
-        if let Some((WorkspaceRole::Editor, epoch)) = verified_grant {
-            Ok((WorkspaceRole::Editor, Some(epoch)))
+        if let Some((role @ (WorkspaceRole::Editor | WorkspaceRole::Visitor), epoch)) = verified_grant {
+            Ok((role, Some(epoch)))
         } else if self.historical_hashes.contains_key(person_id) {
             Ok((WorkspaceRole::Owner, None))
         } else {
