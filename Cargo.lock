@@ -2096,6 +2096,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "meta-mesh-policy"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "js-sys",
+ "meta-mesh-core",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

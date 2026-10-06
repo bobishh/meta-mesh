@@ -239,6 +239,16 @@ struct RevocationBoundary {
 }
 
 impl ValidatedWorkspaceWriteAuthorizationContext {
+    /// Verify signed causal authority without making a receiver wall clock part
+    /// of the permission result. Authority timestamps still pass the legacy
+    /// RFC3339 shape check in their record verifiers; this sentinel only removes
+    /// their future-skew comparison for this explicit causal-admission path.
+    pub(crate) fn from_snapshot_causal(
+        raw: &WorkspaceWriteAuthorizationSnapshot,
+    ) -> Result<Self, String> {
+        Self::from_snapshot(raw, i128::MAX / 2)
+    }
+
     pub(crate) fn from_snapshot(
         raw: &WorkspaceWriteAuthorizationSnapshot,
         now_ms: i128,
@@ -387,6 +397,50 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
     pub(crate) fn device_was_revoked(&self, person_id: &str, device_id: &str) -> bool {
         self.revoked_devices
             .contains_key(&(person_id.to_string(), device_id.to_string()))
+    }
+
+    pub(crate) fn inside_signed_frontiers(
+        &self,
+        person_id: &str,
+        device_id: &str,
+        hash: &str,
+    ) -> bool {
+        self.revocation_boundaries
+            .get(person_id)
+            .is_none_or(|boundaries| {
+                boundaries
+                    .iter()
+                    .all(|boundary| boundary.hashes.contains(hash))
+            })
+            && self
+                .departure_boundaries
+                .get(person_id)
+                .is_none_or(|boundaries| {
+                    boundaries
+                        .iter()
+                        .all(|boundary| boundary.hashes.contains(hash))
+                })
+            && self
+                .revoked_devices
+                .get(&(person_id.to_string(), device_id.to_string()))
+                .is_none_or(|boundaries| boundaries.iter().all(|frontier| frontier.contains(hash)))
+    }
+
+    pub(crate) fn inside_all_signed_frontiers(&self, hash: &str) -> bool {
+        self.revocation_boundaries
+            .values()
+            .flatten()
+            .all(|boundary| boundary.hashes.contains(hash))
+            && self
+                .departure_boundaries
+                .values()
+                .flatten()
+                .all(|boundary| boundary.hashes.contains(hash))
+            && self
+                .revoked_devices
+                .values()
+                .flatten()
+                .all(|frontier| frontier.contains(hash))
     }
 }
 

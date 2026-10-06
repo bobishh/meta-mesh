@@ -75,6 +75,73 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = evaluateCausalAdmission)]
+    pub fn evaluate_causal_admission(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::causal_admission::CausalAdmissionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::causal_admission::evaluate_causal_admission(input)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = createCoownershipGenesisPayload)]
+    pub fn create_coownership_genesis_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipGenesisInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::create_coownership_genesis_payload(input)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = validateCoownershipLedger)]
+    pub fn validate_coownership_ledger(raw: JsValue) -> Result<JsValue, JsValue> {
+        let ledger: meta_mesh_core::coownership::CoownershipLedger = strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::validate_coownership_ledger(&ledger).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = mergeCoownershipLedgers)]
+    pub fn merge_coownership_ledgers(
+        current: JsValue,
+        incoming: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let current: Option<meta_mesh_core::coownership::CoownershipLedger> =
+            optional_strict_protocol_value(current)?;
+        let incoming: meta_mesh_core::coownership::CoownershipLedger =
+            strict_protocol_value(incoming)?;
+        to_value(
+            &meta_mesh_core::coownership::merge_coownership_ledgers(current.as_ref(), &incoming)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipTransition)]
+    pub fn plan_coownership_transition(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipTransitionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::plan_coownership_transition(input).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipResolution)]
+    pub fn plan_coownership_resolution(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipResolutionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::plan_coownership_resolution(input).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipFork)]
+    pub fn plan_coownership_fork(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipForkInput = strict_protocol_value(raw)?;
+        to_value(&meta_mesh_core::coownership::plan_coownership_fork(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = authorizationRecordPages)]
     pub fn authorization_record_pages(raw: JsValue) -> Result<JsValue, JsValue> {
         let bundle: serde_json::Value = from_value(raw)?;
@@ -1150,6 +1217,23 @@ impl WasmDeviceRouteCatalog {
 impl Default for WasmDeviceRouteCatalog {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// serde-wasm-bindgen's struct adapter reads declared properties only. Route strict protocols
+// through a JSON value so serde's deny_unknown_fields applies at every v2 level.
+fn strict_protocol_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
+    let json: serde_json::Value = serde_wasm_bindgen::from_value(value).map_err(js_error)?;
+    serde_json::from_value(json).map_err(js_error)
+}
+
+fn optional_strict_protocol_value<T: serde::de::DeserializeOwned>(
+    value: JsValue,
+) -> Result<Option<T>, JsValue> {
+    if value.is_null() || value.is_undefined() {
+        Ok(None)
+    } else {
+        strict_protocol_value(value).map(Some)
     }
 }
 

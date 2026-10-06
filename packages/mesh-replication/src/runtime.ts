@@ -1,4 +1,11 @@
 export type RustStateCore = {
+  evaluateCausalAdmission(input: unknown): unknown
+  createCoownershipGenesisPayload(input: unknown): unknown
+  validateCoownershipLedger(ledger: unknown): unknown
+  mergeCoownershipLedgers(current: unknown, incoming: unknown): unknown
+  planCoownershipTransition(input: unknown): unknown
+  planCoownershipResolution(input: unknown): unknown
+  planCoownershipFork(input: unknown): unknown
   validateScopeAuthority(snapshot: unknown, nowMs: number): unknown
   mergeScopeAuthoritySnapshots(current: unknown, incoming: unknown, nowMs: number): unknown
   requireChangeAuthorizationCoverage(changeHashes: string[], records: unknown[]): void

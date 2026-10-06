@@ -1,5 +1,15 @@
 # MetaMesh protocol models
 
+Opt-in v2 co-owned authority has a separate focused runner and explicit conflict
+resolution/fork model. See [CoOwnership](CoOwnership.md) for commands, finite
+bounds, conditional progress, implementation conformance and artifact pin.
+
+Causal write admission has its own [model and runner](CausalAdmission.md).
+It checks retained evidence, dependency closure, late revocation and clock
+independence. Its fresh graph supplies clean replica-state snapshots to the
+production Rust evaluator; exported action edges are not action-replayed by
+this runner. Separate mutations must fail concrete Rust assertions.
+
 These finite TLA+ models cover three protocol seams where asynchronous history
 must not be mistaken for current authority or durable success. The runner also
 exports fresh TLC state graphs and replays every exported edge against the real

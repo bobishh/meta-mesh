@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./wasm": "./wasm/meta_mesh.js"
+    "./wasm": "./wasm/policy/meta_mesh_policy.js",
+    "./transport-wasm": "./transport-wasm/meta_mesh.js"
+  },
+  "scripts": {
+    "check:policy": "node ../../scripts/verify-policy-deps.mjs"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0"
