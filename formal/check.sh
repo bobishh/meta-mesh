@@ -142,4 +142,15 @@ cargo test --locked -p meta-mesh-core --test tlc_authority --test tlc_sessions -
 cargo test --locked -p meta-mesh-core --lib bounded_actual_session_states_conform_to_tla_transitions -- --ignored --nocapture
 cargo test --locked -p meta-mesh-core --lib bounded_actual_delivery_states_conform_to_tla_transitions -- --ignored --nocapture
 python3 "$ROOT/check_rust_mutations.py"
-python3 "$ROOT/check_match_mutations.py"
+case "${MATCH_MUTATIONS:-run}" in
+  run)
+    python3 "$ROOT/check_match_mutations.py"
+    ;;
+  skip)
+    printf '%s\n' 'Match mutation gate delegated to Match CI.'
+    ;;
+  *)
+    printf 'Invalid MATCH_MUTATIONS value: %s (expected run or skip).\n' "$MATCH_MUTATIONS" >&2
+    exit 1
+    ;;
+esac
