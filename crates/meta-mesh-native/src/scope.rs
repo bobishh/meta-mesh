@@ -973,6 +973,61 @@ mod tests {
     }
 
     #[test]
+    fn authorization_control_during_proof_transfer_preserves_prepared_receive() {
+        for fail_persist in [false, true] {
+            let (mut receiver, mut source, document_frame, baseline, candidate, proof) =
+                signed_transfer_with_pages(false, false, true);
+            let mut request = request_for_proof(
+                &mut receiver,
+                &mut source,
+                document_frame,
+                &candidate,
+                &proof,
+            );
+            receiver.host_mut().fail_persist = fail_persist;
+            let mut control_sender = LiveWorkspaceSession::new("board", "secret").unwrap();
+            let control = control_sender
+                .encode_control(Some(proof.clone()), None, None)
+                .unwrap();
+            for frame in control_sender.control_frames(&control).unwrap() {
+                receiver.receive(&frame).unwrap();
+            }
+            assert_eq!(receiver.host().document, baseline);
+            let heartbeat = control_sender.encode("sync-heartbeat", &[]).unwrap();
+            let ack = receiver.receive(&heartbeat).unwrap().unwrap();
+            assert_eq!(
+                PairingCodec::inspect(&ack).unwrap().frame_type,
+                "sync-heartbeat-ack"
+            );
+            loop {
+                let page = proof_page(&mut source, &request, &candidate, &proof);
+                let response = match receiver.receive(&page) {
+                    Ok(response) => response.expect("proof response"),
+                    Err(error) if fail_persist => {
+                        assert_eq!(error, "disk unavailable");
+                        assert_eq!(receiver.host().accepted_changes, 0);
+                        assert_eq!(receiver.host().document, baseline);
+                        break;
+                    }
+                    Err(error) => panic!("unexpected receive failure: {error}"),
+                };
+                if PairingCodec::inspect(&response).unwrap().frame_type != "mesh-proof-request-v1" {
+                    assert_eq!(
+                        PairingCodec::inspect(&response).unwrap().frame_type,
+                        "mesh-automerge-sync"
+                    );
+                    break;
+                }
+                request = response;
+            }
+            if !fail_persist {
+                assert_eq!(receiver.host().accepted_changes, 1);
+                assert_eq!(receiver.host().document, candidate);
+            }
+        }
+    }
+
+    #[test]
     fn lost_page_response_aborts_only_incomplete_receive_and_replays_cached_page() {
         let (mut receiver, mut source, document_frame, baseline, candidate, proof) =
             signed_transfer_with_pages(false, false, true);

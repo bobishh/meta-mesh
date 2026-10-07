@@ -163,6 +163,15 @@ pub(crate) fn admit_with_needed(
     context: &ValidatedWorkspaceWriteAuthorizationContext,
     needed: &std::collections::HashSet<&String>,
 ) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
+    admit_with_needed_for_causal(incoming, context, needed, false)
+}
+
+pub(crate) fn admit_with_needed_for_causal(
+    incoming: &IncomingWorkspaceChangeAuthorization,
+    context: &ValidatedWorkspaceWriteAuthorizationContext,
+    needed: &std::collections::HashSet<&String>,
+    allow_visitor_candidate: bool,
+) -> Result<Vec<AuthorizedWorkspaceChange>, String> {
     let payload = &incoming.signed.payload;
     if payload.kind != "workspace-changes"
         || payload.version != 1
@@ -196,6 +205,9 @@ pub(crate) fn admit_with_needed(
         &payload.device_id,
         incoming.grant.as_ref(),
     )?;
+    if role == WorkspaceRole::Visitor && !allow_visitor_candidate {
+        return Err("Visitors cannot write workspace changes".to_string());
+    }
     Ok(payload
         .hashes
         .iter()
@@ -239,6 +251,16 @@ struct RevocationBoundary {
 }
 
 impl ValidatedWorkspaceWriteAuthorizationContext {
+    /// Verify signed causal authority without making a receiver wall clock part
+    /// of the permission result. Authority timestamps still pass the legacy
+    /// RFC3339 shape check in their record verifiers; this sentinel only removes
+    /// their future-skew comparison for this explicit causal-admission path.
+    pub(crate) fn from_snapshot_causal(
+        raw: &WorkspaceWriteAuthorizationSnapshot,
+    ) -> Result<Self, String> {
+        Self::from_snapshot(raw, i128::MAX / 2)
+    }
+
     pub(crate) fn from_snapshot(
         raw: &WorkspaceWriteAuthorizationSnapshot,
         now_ms: i128,
@@ -343,8 +365,8 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
                 .ok()?;
                 Some((role, grant.payload.effective_access_epoch()))
             });
-        if let Some((WorkspaceRole::Editor, epoch)) = verified_grant {
-            Ok((WorkspaceRole::Editor, Some(epoch)))
+        if let Some((role @ (WorkspaceRole::Editor | WorkspaceRole::Visitor), epoch)) = verified_grant {
+            Ok((role, Some(epoch)))
         } else if self.historical_hashes.contains_key(person_id) {
             Ok((WorkspaceRole::Owner, None))
         } else {
@@ -387,6 +409,50 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
     pub(crate) fn device_was_revoked(&self, person_id: &str, device_id: &str) -> bool {
         self.revoked_devices
             .contains_key(&(person_id.to_string(), device_id.to_string()))
+    }
+
+    pub(crate) fn inside_signed_frontiers(
+        &self,
+        person_id: &str,
+        device_id: &str,
+        hash: &str,
+    ) -> bool {
+        self.revocation_boundaries
+            .get(person_id)
+            .is_none_or(|boundaries| {
+                boundaries
+                    .iter()
+                    .all(|boundary| boundary.hashes.contains(hash))
+            })
+            && self
+                .departure_boundaries
+                .get(person_id)
+                .is_none_or(|boundaries| {
+                    boundaries
+                        .iter()
+                        .all(|boundary| boundary.hashes.contains(hash))
+                })
+            && self
+                .revoked_devices
+                .get(&(person_id.to_string(), device_id.to_string()))
+                .is_none_or(|boundaries| boundaries.iter().all(|frontier| frontier.contains(hash)))
+    }
+
+    pub(crate) fn inside_all_signed_frontiers(&self, hash: &str) -> bool {
+        self.revocation_boundaries
+            .values()
+            .flatten()
+            .all(|boundary| boundary.hashes.contains(hash))
+            && self
+                .departure_boundaries
+                .values()
+                .flatten()
+                .all(|boundary| boundary.hashes.contains(hash))
+            && self
+                .revoked_devices
+                .values()
+                .flatten()
+                .all(|frontier| frontier.contains(hash))
     }
 }
 

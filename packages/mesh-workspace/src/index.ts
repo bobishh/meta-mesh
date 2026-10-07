@@ -11,6 +11,8 @@ import {
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import { WasmIdentityCrypto } from "@meta-uber/mesh-transport/wasm"
 
+export * from "./coownership"
+
 export type WorkspaceRole = "owner" | "editor" | "visitor"
 export type WorkspaceGrant = SignedEnvelope<{
   kind: "workspace-grant"

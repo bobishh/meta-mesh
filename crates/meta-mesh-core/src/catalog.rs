@@ -6,7 +6,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{
     MESH_CAPABILITIES, MeshHandshake, ScopeAuthoritySnapshot, WorkspaceWriteAuthorizationSnapshot,
-    admit_mesh_peer, validate_scope_authority,
+    admit_mesh_peer,
 };
 
 const MAX_CATALOG_BYTES: usize = 8 * 1024 * 1024;
@@ -39,7 +39,11 @@ pub struct MeshCatalog {
     pub scope_authority_snapshot: Option<ScopeAuthoritySnapshot>,
 }
 
-pub fn validate_mesh_catalog(mut raw: Value) -> Result<MeshCatalog, String> {
+pub fn validate_mesh_catalog(raw: Value) -> Result<MeshCatalog, String> {
+    validate_mesh_catalog_at(raw, 0)
+}
+
+pub fn validate_mesh_catalog_at(mut raw: Value, now_ms: i128) -> Result<MeshCatalog, String> {
     if let Some(claims) = raw.get("breakGlassClaims") {
         if !matches!(claims, Value::Array(items) if items.is_empty()) {
             return Err("Break-glass authority is no longer supported".to_string());
@@ -75,7 +79,7 @@ pub fn validate_mesh_catalog(mut raw: Value) -> Result<MeshCatalog, String> {
         return Err("Invalid mesh catalog".to_string());
     }
     if let Some(snapshot) = &catalog.scope_authority_snapshot {
-        validate_scope_authority(snapshot)?;
+        crate::validate_scope_authority_at(snapshot, now_ms)?;
     }
     Ok(catalog)
 }

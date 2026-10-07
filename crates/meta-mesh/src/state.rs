@@ -75,6 +75,73 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = evaluateCausalAdmission)]
+    pub fn evaluate_causal_admission(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::causal_admission::CausalAdmissionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::causal_admission::evaluate_causal_admission(input)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = createCoownershipGenesisPayload)]
+    pub fn create_coownership_genesis_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipGenesisInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::create_coownership_genesis_payload(input)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = validateCoownershipLedger)]
+    pub fn validate_coownership_ledger(raw: JsValue) -> Result<JsValue, JsValue> {
+        let ledger: meta_mesh_core::coownership::CoownershipLedger = strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::validate_coownership_ledger(&ledger).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = mergeCoownershipLedgers)]
+    pub fn merge_coownership_ledgers(
+        current: JsValue,
+        incoming: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let current: Option<meta_mesh_core::coownership::CoownershipLedger> =
+            optional_strict_protocol_value(current)?;
+        let incoming: meta_mesh_core::coownership::CoownershipLedger =
+            strict_protocol_value(incoming)?;
+        to_value(
+            &meta_mesh_core::coownership::merge_coownership_ledgers(current.as_ref(), &incoming)
+                .map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipTransition)]
+    pub fn plan_coownership_transition(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipTransitionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::plan_coownership_transition(input).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipResolution)]
+    pub fn plan_coownership_resolution(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipResolutionInput =
+            strict_protocol_value(raw)?;
+        to_value(
+            &meta_mesh_core::coownership::plan_coownership_resolution(input).map_err(js_error)?,
+        )
+    }
+
+    #[wasm_bindgen(js_name = planCoownershipFork)]
+    pub fn plan_coownership_fork(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::coownership::CoownershipForkInput = strict_protocol_value(raw)?;
+        to_value(&meta_mesh_core::coownership::plan_coownership_fork(input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = authorizationRecordPages)]
     pub fn authorization_record_pages(raw: JsValue) -> Result<JsValue, JsValue> {
         let bundle: serde_json::Value = from_value(raw)?;
@@ -87,20 +154,31 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::authorization_export(document, &bundle).map_err(js_error)?)
     }
     #[wasm_bindgen(js_name = validateScopeAuthority)]
-    pub fn validate_scope_authority(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn validate_scope_authority(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
         let snapshot: meta_mesh_core::ScopeAuthoritySnapshot = from_value(raw)?;
-        to_value(&meta_mesh_core::validate_scope_authority(&snapshot).map_err(js_error)?)
+        to_value(
+            &meta_mesh_core::validate_scope_authority_at(
+                &snapshot,
+                i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+            )
+            .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = mergeScopeAuthoritySnapshots)]
     pub fn merge_scope_authority_snapshots(
         current: JsValue,
         incoming: JsValue,
+        now_ms: f64,
     ) -> Result<JsValue, JsValue> {
         let current: Option<meta_mesh_core::ScopeAuthoritySnapshot> = from_value(current)?;
         let incoming: meta_mesh_core::ScopeAuthoritySnapshot = from_value(incoming)?;
-        let merged = meta_mesh_core::merge_scope_authority_snapshots(current.as_ref(), &incoming)
-            .map_err(js_error)?;
+        let merged = meta_mesh_core::merge_scope_authority_snapshots_at(
+            current.as_ref(),
+            &incoming,
+            i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&merged)
     }
 
@@ -133,9 +211,18 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = createScopeControlTransferPayload)]
-    pub fn create_scope_control_transfer_payload(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn create_scope_control_transfer_payload(
+        raw: JsValue,
+        now_ms: f64,
+    ) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::ScopeControlTransferPayloadInput = from_value(raw)?;
-        to_value(&meta_mesh_core::create_scope_control_transfer_payload(input).map_err(js_error)?)
+        to_value(
+            &meta_mesh_core::create_scope_control_transfer_payload_at(
+                input,
+                i128::from(integer(now_ms, "Invalid scope authority timestamp")?),
+            )
+            .map_err(js_error)?,
+        )
     }
 
     #[wasm_bindgen(js_name = preferredSessionDirection)]
@@ -375,9 +462,13 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = isWorkspaceEnvelope)]
-    pub fn is_workspace_envelope(raw: JsValue) -> Result<bool, JsValue> {
+    pub fn is_workspace_envelope(raw: JsValue, now_ms: f64) -> Result<bool, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
-        meta_mesh_core::is_workspace_envelope(&raw).map_err(js_error)
+        meta_mesh_core::is_workspace_envelope_at(
+            &raw,
+            i128::from(integer(now_ms, "Invalid workspace envelope timestamp")?),
+        )
+        .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = hasLeftWorkspace)]
@@ -529,9 +620,13 @@ impl WasmStateCore {
     }
 
     #[wasm_bindgen(js_name = validateMeshCatalog)]
-    pub fn validate_mesh_catalog(raw: JsValue) -> Result<JsValue, JsValue> {
+    pub fn validate_mesh_catalog(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
         let raw: serde_json::Value = from_value(raw)?;
-        let catalog = meta_mesh_core::validate_mesh_catalog(raw).map_err(js_error)?;
+        let catalog = meta_mesh_core::validate_mesh_catalog_at(
+            raw,
+            i128::from(integer(now_ms, "Invalid mesh catalog timestamp")?),
+        )
+        .map_err(js_error)?;
         to_value(&catalog)
     }
 
@@ -1122,6 +1217,23 @@ impl WasmDeviceRouteCatalog {
 impl Default for WasmDeviceRouteCatalog {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// serde-wasm-bindgen's struct adapter reads declared properties only. Route strict protocols
+// through a JSON value so serde's deny_unknown_fields applies at every v2 level.
+fn strict_protocol_value<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
+    let json: serde_json::Value = serde_wasm_bindgen::from_value(value).map_err(js_error)?;
+    serde_json::from_value(json).map_err(js_error)
+}
+
+fn optional_strict_protocol_value<T: serde::de::DeserializeOwned>(
+    value: JsValue,
+) -> Result<Option<T>, JsValue> {
+    if value.is_null() || value.is_undefined() {
+        Ok(None)
+    } else {
+        strict_protocol_value(value).map(Some)
     }
 }
 

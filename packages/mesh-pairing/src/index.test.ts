@@ -129,9 +129,8 @@ describe("pairing protocol", () => {
         "endpoint_test",
         "secret_456",
         mockProfile,
-        "ws_job",
-        "Job search",
-        now
+        [{ id: "ws_job", title: "Job search" }],
+        { now }
       )
       expect(invite.kind).toBe("workspace-join")
       expect(invite.workspaceId).toBe("ws_job")
@@ -140,6 +139,20 @@ describe("pairing protocol", () => {
       const url = invitationUrl("https://match.test", invite)
       const parsed = parseInvitation(url, now)
       expect(parsed).toEqual(invite)
+    })
+
+    it("allows a scoped workspace invitation to grant editor access explicitly", () => {
+      const now = 1700000000000
+      const invite = createWorkspaceJoinInvite(
+        "endpoint_test",
+        "secret_456",
+        mockProfile,
+        [{ id: "ws_job", title: "Job search" }],
+        { now, role: "editor" }
+      )
+
+      expect(invite.role).toBe("editor")
+      expect(parseInvitation(invitationUrl("https://match.test", invite), now)).toEqual(invite)
     })
 
     it("rejects an expired invitation", () => {
@@ -159,11 +172,70 @@ describe("pairing protocol", () => {
     it("rejects device-enrollment with forbidden workspace fields", () => {
       const url = "https://match.test/pair#v=1&kind=device-enrollment&invitationId=inv_1&issuerPersonId=p1&issuerDeviceId=d1&issuerPublicKey=pk1&endpoint=ep1&createdAt=2026-01-01T00:00:00.000Z&expiresAt=2099-01-01T00:00:00.000Z&secret=sec1&workspaceId=ws_illegal"
       expect(() => parseInvitation(url)).toThrow(/wrong-kind/i)
+      expect(() => parseInvitation(url.replace("workspaceId=ws_illegal", "workspaceIds=ws_illegal"))).toThrow(/wrong-kind/i)
     })
 
     it("rejects workspace-join without required workspace fields", () => {
       const url = "https://match.test/pair#v=1&kind=workspace-join&invitationId=inv_1&issuerPersonId=p1&issuerDeviceId=d1&issuerPublicKey=pk1&endpoint=ep1&createdAt=2026-01-01T00:00:00.000Z&expiresAt=2099-01-01T00:00:00.000Z&secret=sec1"
       expect(() => parseInvitation(url)).toThrow(/missing workspace/i)
+    })
+
+    it("rejects ambiguous invitation keys and malformed workspace lists", () => {
+      const invite = createWorkspaceJoinInvite("ep1", "sec1", mockProfile, [
+        { id: "ws_1", title: "One" },
+        { id: "ws_2", title: "Two" },
+      ], { now: 1700000000000 })
+      const validUrl = invitationUrl("https://match.test", invite)
+      const duplicatedRole = new URL(validUrl)
+      duplicatedRole.hash += "&role=visitor"
+      expect(() => parseInvitation(duplicatedRole.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+      const duplicatedKind = new URL(validUrl)
+      duplicatedKind.hash += "&kind=device-enrollment"
+      expect(() => parseInvitation(duplicatedKind.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+
+      const duplicateWorkspaceId = new URL(validUrl)
+      duplicateWorkspaceId.hash = duplicateWorkspaceId.hash.replace("ws_1%2Cws_2", "ws_1%2Cws_1")
+      expect(() => parseInvitation(duplicateWorkspaceId.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+
+      const mismatchedPrimary = new URL(validUrl)
+      mismatchedPrimary.hash = mismatchedPrimary.hash.replace("workspaceId=ws_1", "workspaceId=ws_other")
+      expect(() => parseInvitation(mismatchedPrimary.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+
+      const emptyScopeId = new URL(validUrl)
+      emptyScopeId.hash = emptyScopeId.hash.replace("ws_1%2Cws_2", "ws_1%2C%2Cws_2")
+      expect(() => parseInvitation(emptyScopeId.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+
+      const wrongTitleCount = new URL(validUrl)
+      const wrongTitleParams = new URLSearchParams(wrongTitleCount.hash.slice(1))
+      wrongTitleParams.set("workspaceTitles", "Only one")
+      wrongTitleCount.hash = wrongTitleParams.toString()
+      expect(() => parseInvitation(wrongTitleCount.toString(), 1700000000000)).toThrow(/invalid pairing link/i)
+    })
+
+    it("rejects invalid timestamps and malformed workspace-title escapes", () => {
+      const url = "https://match.test/pair#v=1&kind=workspace-join&invitationId=inv_1&issuerPersonId=p1&issuerDeviceId=d1&issuerPublicKey=pk1&endpoint=ep1&createdAt=not-a-date&expiresAt=2099-01-01T00:00:00.000Z&secret=sec1&workspaceId=ws_1&role=editor"
+      expect(() => parseInvitation(url)).toThrow(/invalid pairing link/i)
+      const reversedDates = url.replace("createdAt=not-a-date", "createdAt=2099-01-02T00:00:00.000Z")
+      expect(() => parseInvitation(reversedDates)).toThrow(/invalid pairing link/i)
+      const malformedTitle = url.replace("createdAt=not-a-date", "createdAt=2026-01-01T00:00:00.000Z")
+        .replace("role=editor", "role=editor&workspaceIds=ws_1&workspaceTitles=%25ZZ")
+      expect(() => parseInvitation(malformedTitle)).toThrow(/invalid pairing link/i)
+    })
+
+    it("keeps version, identity, and role validation at the invitation boundary", () => {
+      const invite = createWorkspaceJoinInvite("ep1", "sec1", mockProfile, [{ id: "ws_1", title: "One" }])
+      const validUrl = invitationUrl("https://match.test", invite)
+      const invalidVersion = new URL(validUrl)
+      invalidVersion.hash = invalidVersion.hash.replace("v=1", "v=2")
+      expect(() => parseInvitation(invalidVersion.toString())).toThrow(/invalid pairing link/i)
+
+      const emptyIssuer = new URL(validUrl)
+      emptyIssuer.hash = emptyIssuer.hash.replace("issuerPersonId=person_1", "issuerPersonId=")
+      expect(() => parseInvitation(emptyIssuer.toString())).toThrow(/invalid pairing link/i)
+
+      const invalidRole = new URL(validUrl)
+      invalidRole.hash = invalidRole.hash.replace("role=visitor", "role=admin")
+      expect(() => parseInvitation(invalidRole.toString())).toThrow(/valid role/i)
     })
 
     it("creates and parses a workspace-join invitation for a fixed set of multiple workspaces", () => {
@@ -177,7 +249,7 @@ describe("pairing protocol", () => {
         "secret_456",
         mockProfile,
         workspaces,
-        now
+        { now }
       )
       expect(invite.kind).toBe("workspace-join")
       expect(invite.workspaces).toHaveLength(2)

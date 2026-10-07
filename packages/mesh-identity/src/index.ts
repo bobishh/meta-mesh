@@ -766,6 +766,28 @@ export class BrowserIdentityStore {
     try { return await this.booting } finally { this.booting = null }
   }
 
+  /** Replaces a device key under the same locally held identity root. Old revocations remain valid. */
+  async renewDevice(): Promise<LocalProfile> {
+    const current = await this.bootstrap()
+    const rootKey = current.privateKeys.identityPrivateKey
+    if (!rootKey) throw new Error("Use Add your device from another authorized device to renew this device")
+    const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair
+    const publicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", keys.publicKey)))
+    const deviceId = await publicKeyId(publicKey)
+    const certificate = await signEnvelope(rootKey, {
+      kind: "device-certificate" as const, version: 1 as const, personId: current.identity.personId,
+      deviceId, devicePublicKey: publicKey, issuerCertificateHash: null, canEnrollDevices: true as const,
+    }, current.identity.personId, this.domain)
+    const profile: LocalProfile = { ...current, certificate,
+      device: { ...current.device, deviceId, publicKey },
+      privateKeys: { ...current.privateKeys, devicePrivateKey: keys.privateKey } }
+    const previous = await this.get(this.options.storageKey)
+    if (previous) await this.set(`${this.options.storageKey}.backup.device.${current.device.deviceId}`, previous, true)
+    await this.persist(profile, true)
+    this.profile = profile
+    return profile
+  }
+
   async adopt(identity: PublicIdentity, certificate: DeviceCertificate): Promise<LocalProfile> {
     const current = await this.bootstrap()
     const previous = await this.get(this.options.storageKey)
