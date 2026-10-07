@@ -23,6 +23,18 @@ Workspace authority is durable application state, separate from live transport. 
 
 No direct-derived identity compatibility or migration path exists. Applications discard pre-envelope sessions. Application-specific passphrases can encrypt a separate envelope around the same random-root model; they never derive identity keys.
 
+## Browser WASM packaging
+
+`@meta-uber/mesh-transport/wasm` exports policy, identity, pairing, Automerge and
+runtime state machines from `meta-mesh-policy`. Initialize it before local policy
+reads. This crate has no transitive Iroh/WebRTC dependency.
+
+`@meta-uber/mesh-transport/transport-wasm` exports `BrowserNode`, gossip and blobs
+from the transport adapter. Import and initialize it when starting network work.
+`scripts/build-wasm.sh` generates both artifacts. The previous relative
+`wasm/meta_mesh.js` files remain for existing direct-path consumers; package
+imports use the new boundaries.
+
 ## Apple package
 
 Build the iOS device and Apple Silicon simulator binaries, then package them with the generated Swift bindings:
