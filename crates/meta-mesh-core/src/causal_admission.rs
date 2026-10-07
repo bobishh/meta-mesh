@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use automerge::{AutoCommit, Change, ReadDoc, ScalarValue, hydrate::Value as HydratedValue, ROOT};
 use base64::{Engine, engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD}};
@@ -319,7 +319,7 @@ pub fn evaluate_causal_admission(
         }
     }
 
-    let mut remaining = nodes
+    let remaining = nodes
         .iter()
         .filter(|node| {
             matches!(
@@ -333,27 +333,16 @@ pub fn evaluate_causal_admission(
         .iter()
         .map(|node| (node.hash.as_str(), node))
         .collect::<HashMap<_, _>>();
-    let mut ordered_changes = Vec::with_capacity(remaining.len());
-    while !remaining.is_empty() {
-        let mut ready = remaining
+    let ordered_hashes = ordered_admitted_hashes(
+        nodes
             .iter()
-            .filter(|hash| {
-                node_by_hash[hash.as_str()]
-                    .dependencies
-                    .iter()
-                    .all(|dependency| !remaining.contains(dependency))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        ready.sort();
-        if ready.is_empty() {
-            return Err("Authorized workspace change dependencies are cyclic".into());
-        }
-        for hash in ready {
-            remaining.remove(&hash);
-            ordered_changes.push(node_by_hash[hash.as_str()].change.clone());
-        }
-    }
+            .map(|node| (node.hash.as_str(), node.dependencies.as_slice())),
+        &remaining,
+    )?;
+    let ordered_changes = ordered_hashes
+        .iter()
+        .map(|hash| node_by_hash[hash.as_str()].change.clone())
+        .collect::<Vec<_>>();
     let mut authorized = AutoCommit::new();
     authorized
         .apply_changes(ordered_changes)
@@ -376,6 +365,54 @@ pub fn evaluate_causal_admission(
         verified_authorizations,
         authorized_document: authorized.save(),
     })
+}
+
+/// Orders admitted changes in deterministic dependency layers. Building each
+/// frontier by rescanning all remaining changes is quadratic for long histories.
+fn ordered_admitted_hashes<'a>(
+    nodes: impl IntoIterator<Item = (&'a str, &'a [String])>,
+    admitted: &HashSet<String>,
+) -> Result<Vec<String>, String> {
+    let mut indegrees = HashMap::<String, usize>::with_capacity(admitted.len());
+    let mut children = HashMap::<String, Vec<String>>::with_capacity(admitted.len());
+    for (hash, dependencies) in nodes {
+        if !admitted.contains(hash) {
+            continue;
+        }
+        let mut unique_dependencies = HashSet::new();
+        for dependency in dependencies {
+            if admitted.contains(dependency) && unique_dependencies.insert(dependency.clone()) {
+                children.entry(dependency.clone()).or_default().push(hash.to_string());
+            }
+        }
+        indegrees.insert(hash.to_string(), unique_dependencies.len());
+    }
+
+    let mut frontier = indegrees
+        .iter()
+        .filter_map(|(hash, degree)| (*degree == 0).then_some(hash.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut ordered = Vec::with_capacity(admitted.len());
+    while !frontier.is_empty() {
+        let current = std::mem::take(&mut frontier);
+        let mut next = BTreeSet::new();
+        for hash in current {
+            ordered.push(hash.clone());
+            for child in children.get(&hash).into_iter().flatten() {
+                let degree = indegrees.get_mut(child).expect("child has an indegree");
+                *degree -= 1;
+                if *degree == 0 {
+                    next.insert(child.clone());
+                }
+            }
+        }
+        frontier = next;
+    }
+
+    if ordered.len() != admitted.len() {
+        return Err("Authorized workspace change dependencies are cyclic".into());
+    }
+    Ok(ordered)
 }
 
 fn visitor_profile_change_only(raw: &mut AutoCommit, node: &ChangeNode, person_id: &str) -> Result<(), &'static str> {

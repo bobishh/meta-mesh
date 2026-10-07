@@ -664,3 +664,115 @@ fn pending_raw_change_with_missing_dependency_is_retained_pending() {
     let projection = AutoCommit::load(&result.authorized_document).unwrap();
     assert!(projection.get(ROOT, "value").unwrap().is_none());
 }
+
+#[test]
+fn admitted_order_matches_layer_scan_for_dags_and_rejects_cycles() {
+    fn old_layer_scan(
+        nodes: &[(String, Vec<String>)],
+        included: &HashSet<String>,
+    ) -> Result<Vec<String>, ()> {
+        let mut remaining = included.clone();
+        let mut ordered = Vec::with_capacity(remaining.len());
+        while !remaining.is_empty() {
+            let mut ready = remaining
+                .iter()
+                .filter(|hash| {
+                    nodes
+                        .iter()
+                        .find(|(candidate, _)| candidate == *hash)
+                        .is_some_and(|(_, dependencies)| {
+                            dependencies.iter().all(|dep| !remaining.contains(dep))
+                        })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            ready.sort();
+            if ready.is_empty() {
+                return Err(());
+            }
+            for hash in ready {
+                remaining.remove(&hash);
+                ordered.push(hash);
+            }
+        }
+        Ok(ordered)
+    }
+
+    let mut seed = 0x9e37_79b9_u32;
+    for fixture in 0..100 {
+        let count = 1 + fixture % 40;
+        let mut nodes = Vec::with_capacity(count);
+        for index in 0..count {
+            let hash = format!("hash-{index:03}");
+            let mut dependencies = Vec::new();
+            for parent in 0..index {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                if seed % 7 == 0 {
+                    let parent_hash = format!("hash-{parent:03}");
+                    dependencies.push(parent_hash.clone());
+                    if fixture % 5 == 0 && seed % 2 == 0 {
+                        dependencies.push(parent_hash);
+                    }
+                }
+            }
+            if fixture % 3 == 0 && index == count - 1 {
+                dependencies.push("missing-parent".into());
+            }
+            nodes.push((hash, dependencies));
+        }
+        if fixture % 2 == 0 {
+            nodes.reverse();
+        }
+        let included = nodes.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+        let expected = old_layer_scan(&nodes, &included).unwrap();
+        let actual = ordered_admitted_hashes(
+            nodes
+                .iter()
+                .map(|(hash, deps)| (hash.as_str(), deps.as_slice())),
+            &included,
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "frontier ordering differs for fixture {fixture}");
+    }
+
+    let cyclic = vec![
+        ("a".to_string(), vec!["b".to_string()]),
+        ("b".to_string(), vec!["a".to_string()]),
+    ];
+    let included = cyclic.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+    assert!(old_layer_scan(&cyclic, &included).is_err());
+    assert_eq!(
+        ordered_admitted_hashes(
+            cyclic
+                .iter()
+                .map(|(hash, deps)| (hash.as_str(), deps.as_slice())),
+            &included,
+        ),
+        Err("Authorized workspace change dependencies are cyclic".into())
+    );
+}
+
+#[test]
+fn admitted_order_handles_twenty_thousand_change_chain() {
+    let nodes = (0..20_000)
+        .map(|index| {
+            let hash = format!("hash-{index:05}");
+            let dependencies: Vec<String> = (index > 0)
+                .then(|| format!("hash-{:05}", index - 1))
+                .into_iter()
+                .collect();
+            (hash, dependencies)
+        })
+        .collect::<Vec<_>>();
+    let included = nodes.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+    let ordered = ordered_admitted_hashes(
+        nodes
+            .iter()
+            .map(|(hash, deps)| (hash.as_str(), deps.as_slice())),
+        &included,
+    )
+    .unwrap();
+    assert_eq!(ordered.first().map(String::as_str), Some("hash-00000"));
+    assert_eq!(ordered.last().map(String::as_str), Some("hash-19999"));
+    assert_eq!(ordered.len(), nodes.len());
+}
