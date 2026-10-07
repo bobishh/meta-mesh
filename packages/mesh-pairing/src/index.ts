@@ -204,7 +204,36 @@ export function invitationUrl(origin: string, invite: ScopedInvitation): string 
   return url.toString()
 }
 
+type InvitationEnvelope = {
+  version: 1
+  invitationId: string
+  issuerPersonId: string
+  issuerDeviceId: string
+  issuerPublicKey: string
+  issuerEndpoint: string
+  createdAt: string
+  expiresAt: string
+  secret: string
+}
+
+type InvitationDecoder = (params: URLSearchParams, envelope: InvitationEnvelope) => ScopedInvitation
+
+const invitationDecoders = new Map<string, InvitationDecoder>([
+  ["device-enrollment", decodeDeviceEnrollment],
+  ["workspace-join", decodeWorkspaceJoin],
+])
+
 export function parseInvitation(raw: string, now = Date.now()): ScopedInvitation {
+  const params = invitationParams(raw)
+  validateInvitationVersion(params)
+  const envelope = readInvitationEnvelope(params, now)
+  const kind = params.get("kind") ?? ""
+  const decoder = invitationDecoders.get(kind)
+  if (!decoder) throw new PairingError("Invalid pairing link")
+  return decoder(params, envelope)
+}
+
+function invitationParams(raw: string) {
   let url: URL
   try {
     url = new URL(raw.trim(), "http://localhost")
@@ -212,102 +241,112 @@ export function parseInvitation(raw: string, now = Date.now()): ScopedInvitation
     throw new PairingError("Invalid pairing link")
   }
 
-  const hashContent = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash
-  const params = new URLSearchParams(hashContent)
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash)
+  const singularFields = ["v", "kind", "invitationId", "issuerPersonId", "issuerDeviceId", "issuerPublicKey", "endpoint", "createdAt", "expiresAt", "secret", "workspaceId", "workspaceTitle", "workspaceIds", "workspaceTitles", "role"]
+  if (singularFields.some(field => params.getAll(field).length > 1)) throw new PairingError("Invalid pairing link")
+  return params
+}
 
+function validateInvitationVersion(params: URLSearchParams) {
   const v = params.get("v")
-  const secret = params.get("secret") || ""
-  if (!secret) {
+  if (!params.get("secret")) {
     throw new PairingError("This pairing link is invalid.")
   }
-
   if (v === "0.0.1" || !params.has("kind")) {
     throw new PairingError("This sync link was created by an older version of Match. Please create a new invitation.")
   }
-  if (v !== "1") {
-    throw new PairingError("Invalid pairing link")
-  }
+  if (v !== "1") throw new PairingError("Invalid pairing link")
+}
 
-  const kind = params.get("kind")
+function readInvitationEnvelope(params: URLSearchParams, now: number): InvitationEnvelope {
   const invitationId = params.get("invitationId") || ""
+  const secret = params.get("secret") || ""
+  const endpoint = params.get("endpoint") || ""
   const issuerPersonId = params.get("issuerPersonId") || ""
   const issuerDeviceId = params.get("issuerDeviceId") || ""
   const issuerPublicKey = params.get("issuerPublicKey") || ""
-  const endpoint = params.get("endpoint") || ""
-  const createdAt = params.get("createdAt") || ""
-  const expiresAt = params.get("expiresAt") || ""
-
-  if (!invitationId || !secret || !endpoint) {
+  if (!invitationId || !endpoint || !issuerPersonId || !issuerDeviceId || !issuerPublicKey) {
     throw new PairingError("Invalid pairing link")
   }
 
-  if (expiresAt) {
-    const expiryTime = Date.parse(expiresAt)
-    if (!Number.isNaN(expiryTime) && expiryTime <= now) {
-      throw new PairingError("This invitation has expired.")
-    }
+  const createdAt = params.get("createdAt") || ""
+  const expiresAt = params.get("expiresAt") || ""
+  const createdTime = Date.parse(createdAt)
+  const expiryTime = Date.parse(expiresAt)
+  if (Number.isNaN(createdTime) || Number.isNaN(expiryTime) || expiryTime <= createdTime) {
+    throw new PairingError("Invalid pairing link")
+  }
+  if (expiryTime <= now) throw new PairingError("This invitation has expired.")
+
+  return {
+    version: 1,
+    invitationId,
+    issuerPersonId,
+    issuerDeviceId,
+    issuerPublicKey,
+    issuerEndpoint: endpoint,
+    createdAt,
+    expiresAt,
+    secret,
+  }
+}
+
+function decodeDeviceEnrollment(params: URLSearchParams, envelope: InvitationEnvelope): DeviceEnrollmentInvitation {
+  const workspaceFields = ["workspaceId", "workspaceTitle", "workspaceIds", "workspaceTitles", "role"]
+  if (workspaceFields.some(field => params.has(field))) {
+    throw new PairingError("Invalid invitation: wrong-kind fields present on device-enrollment")
+  }
+  return { ...envelope, kind: "device-enrollment" }
+}
+
+function decodeWorkspaceJoin(params: URLSearchParams, envelope: InvitationEnvelope): WorkspaceJoinInvitation {
+  const workspaceId = params.get("workspaceId") ?? ""
+  const role = params.get("role")
+  if (!workspaceId || (role !== "editor" && role !== "visitor")) {
+    throw new PairingError("Invalid invitation: missing workspace or valid role on workspace-join")
   }
 
-  if (kind === "device-enrollment") {
-    if (params.has("workspaceId") || params.has("role") || params.has("workspaceTitle")) {
-      throw new PairingError("Invalid invitation: wrong-kind fields present on device-enrollment")
-    }
-    return {
-      version: 1,
-      kind: "device-enrollment",
-      invitationId,
-      issuerPersonId,
-      issuerDeviceId,
-      issuerPublicKey,
-      issuerEndpoint: endpoint,
-      createdAt,
-      expiresAt,
-      secret,
-    }
+  const workspaceTitle = params.get("workspaceTitle") || "Workspace"
+  const workspaces = readWorkspaceList(params, workspaceId, workspaceTitle)
+  return {
+    ...envelope,
+    kind: "workspace-join",
+    workspaceId: workspaces[0].id,
+    workspaceTitle: workspaces[0].title,
+    workspaces,
+    role,
+  }
+}
+
+function readWorkspaceList(params: URLSearchParams, primaryId: string, primaryTitle: string): WorkspaceItem[] {
+  if (!params.has("workspaceIds")) {
+    if (params.has("workspaceTitles")) throw new PairingError("Invalid pairing link")
+    return [{ id: primaryId, title: primaryTitle }]
   }
 
-  if (kind === "workspace-join") {
-    const workspaceId = params.get("workspaceId")
-    const workspaceTitle = params.get("workspaceTitle") || "Workspace"
-    const role = params.get("role")
-    if (!workspaceId || (role !== "editor" && role !== "visitor")) {
-      throw new PairingError("Invalid invitation: missing workspace or valid role on workspace-join")
-    }
-
-    const rawIds = params.get("workspaceIds")
-    const rawTitles = params.get("workspaceTitles")
-    let workspaces: WorkspaceItem[] = []
-    if (rawIds) {
-      const ids = rawIds.split(",").map((s) => s.trim()).filter(Boolean)
-      const titles = rawTitles ? rawTitles.split(",").map((t) => decodeURIComponent(t.trim())) : []
-      workspaces = ids.map((id, index) => ({
-        id,
-        title: titles[index] || (id === workspaceId ? workspaceTitle : "Workspace"),
-      }))
-    }
-    if (workspaces.length === 0) {
-      workspaces = [{ id: workspaceId, title: workspaceTitle }]
-    }
-
-    return {
-      version: 1,
-      kind: "workspace-join",
-      invitationId,
-      issuerPersonId,
-      issuerDeviceId,
-      issuerPublicKey,
-      issuerEndpoint: endpoint,
-      workspaceId: workspaces[0].id,
-      workspaceTitle: workspaces[0].title,
-      workspaces,
-      role,
-      createdAt,
-      expiresAt,
-      secret,
-    }
+  const rawIds = params.get("workspaceIds") ?? ""
+  const ids = rawIds.split(",").map(id => id.trim())
+  if (ids.some(id => !id) || ids[0] !== primaryId || new Set(ids).size !== ids.length) {
+    throw new PairingError("Invalid pairing link")
   }
+  const titles = decodeWorkspaceTitles(params.get("workspaceTitles"))
+  if (params.has("workspaceTitles") && titles.length !== ids.length) {
+    throw new PairingError("Invalid pairing link")
+  }
+  const workspaces = ids.map((id, index) => ({
+    id,
+    title: titles[index] || (id === primaryId ? primaryTitle : "Workspace"),
+  }))
+  return workspaces.length ? workspaces : [{ id: primaryId, title: primaryTitle }]
+}
 
-  throw new PairingError("Invalid pairing link")
+function decodeWorkspaceTitles(rawTitles: string | null): string[] {
+  if (!rawTitles) return []
+  try {
+    return rawTitles.split(",").map(title => decodeURIComponent(title.trim()))
+  } catch {
+    throw new PairingError("Invalid pairing link")
+  }
 }
 
 export function encodePairingFrame(type: PairingFrameType, secret: string, bytes: Uint8Array) {
