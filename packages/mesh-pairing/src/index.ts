@@ -150,33 +150,14 @@ export function createWorkspaceJoinInvite(
   endpoint: string,
   secret: string,
   profile: { identity: { personId: string }; device: { deviceId: string; publicKey: string } },
-  workspaceOrWorkspaces: string | WorkspaceItem[] | WorkspaceItem,
-  workspaceTitleOrNow?: string | number,
-  now = Date.now(),
-  role: WorkspaceJoinInvitation["role"] = "visitor"
+  workspaces: WorkspaceItem[],
+  options: { now?: number; role?: WorkspaceJoinInvitation["role"] } = {},
 ): WorkspaceJoinInvitation {
-  let workspaces: WorkspaceItem[] = []
-  let effectiveNow = now
-
-  if (typeof workspaceOrWorkspaces === "string") {
-    const title = typeof workspaceTitleOrNow === "string" ? workspaceTitleOrNow : "Workspace"
-    workspaces = [{ id: workspaceOrWorkspaces, title }]
-  } else if (Array.isArray(workspaceOrWorkspaces)) {
-    workspaces = workspaceOrWorkspaces
-    if (typeof workspaceTitleOrNow === "number") {
-      effectiveNow = workspaceTitleOrNow
-    }
-  } else if (workspaceOrWorkspaces && typeof workspaceOrWorkspaces === "object") {
-    workspaces = [workspaceOrWorkspaces]
-    if (typeof workspaceTitleOrNow === "number") {
-      effectiveNow = workspaceTitleOrNow
-    }
-  }
-
   if (workspaces.length === 0) {
     throw new PairingError("At least one workspace must be selected")
   }
 
+  const effectiveNow = options.now ?? Date.now()
   const primaryWs = workspaces[0]
 
   return {
@@ -190,7 +171,7 @@ export function createWorkspaceJoinInvite(
     workspaceId: primaryWs.id,
     workspaceTitle: primaryWs.title,
     workspaces,
-    role,
+    role: options.role ?? "visitor",
     createdAt: new Date(effectiveNow).toISOString(),
     expiresAt: new Date(effectiveNow + 10 * 60 * 1000).toISOString(),
     secret,

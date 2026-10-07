@@ -129,9 +129,8 @@ describe("pairing protocol", () => {
         "endpoint_test",
         "secret_456",
         mockProfile,
-        "ws_job",
-        "Job search",
-        now
+        [{ id: "ws_job", title: "Job search" }],
+        { now }
       )
       expect(invite.kind).toBe("workspace-join")
       expect(invite.workspaceId).toBe("ws_job")
@@ -148,10 +147,8 @@ describe("pairing protocol", () => {
         "endpoint_test",
         "secret_456",
         mockProfile,
-        "ws_job",
-        "Job search",
-        now,
-        "editor"
+        [{ id: "ws_job", title: "Job search" }],
+        { now, role: "editor" }
       )
 
       expect(invite.role).toBe("editor")
@@ -193,7 +190,7 @@ describe("pairing protocol", () => {
         "secret_456",
         mockProfile,
         workspaces,
-        now
+        { now }
       )
       expect(invite.kind).toBe("workspace-join")
       expect(invite.workspaces).toHaveLength(2)
