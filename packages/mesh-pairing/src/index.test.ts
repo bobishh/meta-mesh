@@ -142,6 +142,22 @@ describe("pairing protocol", () => {
       expect(parsed).toEqual(invite)
     })
 
+    it("allows a scoped workspace invitation to grant editor access explicitly", () => {
+      const now = 1700000000000
+      const invite = createWorkspaceJoinInvite(
+        "endpoint_test",
+        "secret_456",
+        mockProfile,
+        "ws_job",
+        "Job search",
+        now,
+        "editor"
+      )
+
+      expect(invite.role).toBe("editor")
+      expect(parseInvitation(invitationUrl("https://match.test", invite), now)).toEqual(invite)
+    })
+
     it("rejects an expired invitation", () => {
       const past = 1700000000000
       const future = past + 11 * 60 * 1000 // 11 minutes later

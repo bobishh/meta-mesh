@@ -152,7 +152,8 @@ export function createWorkspaceJoinInvite(
   profile: { identity: { personId: string }; device: { deviceId: string; publicKey: string } },
   workspaceOrWorkspaces: string | WorkspaceItem[] | WorkspaceItem,
   workspaceTitleOrNow?: string | number,
-  now = Date.now()
+  now = Date.now(),
+  role: WorkspaceJoinInvitation["role"] = "visitor"
 ): WorkspaceJoinInvitation {
   let workspaces: WorkspaceItem[] = []
   let effectiveNow = now
@@ -189,7 +190,7 @@ export function createWorkspaceJoinInvite(
     workspaceId: primaryWs.id,
     workspaceTitle: primaryWs.title,
     workspaces,
-    role: "visitor",
+    role,
     createdAt: new Date(effectiveNow).toISOString(),
     expiresAt: new Date(effectiveNow + 10 * 60 * 1000).toISOString(),
     secret,
