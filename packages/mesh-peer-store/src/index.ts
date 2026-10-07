@@ -328,13 +328,23 @@ function mergeCredentialSecurity(current: WorkspaceMeshCredential, incoming: Wor
   const left = (current.catalog ?? {}) as Record<string, unknown>
   const right = (incoming.catalog ?? {}) as Record<string, unknown>
   const catalog = { ...(result.catalog as Record<string, unknown> | undefined) }
+  const repairs = [...(Array.isArray(left.revocationBoundaryHistory) ? left.revocationBoundaryHistory : []),
+    ...(Array.isArray(right.revocationBoundaryHistory) ? right.revocationBoundaryHistory : [])]
+  const repairByKey = new Map(repairs.map(value => [canonicalJson(value), value]))
+  const revocationBoundaryHistory = [...repairByKey.values()].slice(-32)
+  const superseded = new Set(revocationBoundaryHistory.flatMap(value => {
+    const removed = (value as { removed?: unknown })?.removed
+    return Array.isArray(removed) ? removed.map(record => canonicalJson(record)) : []
+  }))
   for (const key of ["deviceRevocations", "departures", "revocations"]) {
     if (!Array.isArray(left[key]) && !Array.isArray(right[key])) continue
     const values = [...(Array.isArray(left[key]) ? left[key] : []), ...(Array.isArray(right[key]) ? right[key] : [])]
-    const unique = new Map(values.map(value => [JSON.stringify(value), value]))
+    const unique = new Map(values.filter(value => key !== "revocations" || !superseded.has(canonicalJson(value)))
+      .map(value => [canonicalJson(value), value]))
     if (unique.size > 512) throw new Error("Too many workspace security records")
     catalog[key] = [...unique.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
   }
+  if (revocationBoundaryHistory.length) catalog.revocationBoundaryHistory = revocationBoundaryHistory
   result.catalog = catalog
   type Grant = { payload: { personId: string; accessEpoch?: number } }
   const oldGrant = current.localGrant as Grant | undefined, nextGrant = incoming.localGrant as Grant | undefined
@@ -648,6 +658,63 @@ export class PeerStore {
       }
       await promisifyRequest(store.put({ key, credential: structuredClone(credential) }))
       await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(credential))
+    })
+  }
+
+  /**
+   * Replaces one owner's revocation generation after the caller verifies every
+   * old signature and signs higher-epoch replacements against an admitted doc.
+   * CAS and both credential projections commit in one transaction.
+   */
+  async replaceWorkspaceRevocationGeneration(input: {
+    workspaceId: string
+    personId: string
+    expected: unknown[]
+    replacements: unknown[]
+  }): Promise<WorkspaceMeshCredential> {
+    const { workspaceId, personId, expected, replacements } = input
+    if (!workspaceId || !personId || !expected.length || !replacements.length ||
+      expected.length > 128 || replacements.length > 32) throw new Error("Invalid revocation boundary repair")
+    return this.runTx([STORE_NODE, STORE_AUTHORITY], "readwrite", async tx => {
+      const store = tx.objectStore(STORE_NODE)
+      const key = `${WORKSPACE_CREDENTIAL_PREFIX}${workspaceId}`
+      const entry = await promisifyRequest<{ key: string; credential: WorkspaceMeshCredential } | undefined>(store.get(key))
+      if (!entry) throw new Error("Workspace credential disappeared during revocation boundary repair")
+      const current = entry.credential
+      validateWorkspaceCredential(current)
+      const catalog = (current.catalog ?? {}) as Record<string, unknown>
+      const records = Array.isArray(catalog.revocations) ? catalog.revocations : []
+      const currentTarget = records.filter(value => (value as { payload?: { personId?: unknown } })?.payload?.personId === personId)
+      if (canonicalJson(currentTarget) !== canonicalJson(expected))
+        throw new Error("Workspace revocations changed during boundary repair")
+      const payloadOf = (value: unknown) => (value as { payload?: Record<string, unknown> } | null)?.payload
+      const oldEpochs = expected.map(value => payloadOf(value)?.epoch)
+      if (expected.some(value => {
+        const payload = payloadOf(value)
+        return !payload || payload.workspaceId !== workspaceId || payload.personId !== personId ||
+          payload.ownerPersonId !== current.ownerPersonId || !Number.isSafeInteger(payload.epoch)
+      })) throw new Error("Invalid expected revocation generation")
+      if (replacements.some(value => {
+        const payload = payloadOf(value)
+        return !payload || payload.workspaceId !== workspaceId || payload.personId !== personId ||
+          payload.ownerPersonId !== current.ownerPersonId || !Number.isSafeInteger(payload.epoch) ||
+          (payload.epoch as number) <= Math.max(...oldEpochs as number[])
+      })) throw new Error("Replacement revocation must advance the same generation")
+      const history = Array.isArray(catalog.revocationBoundaryHistory) ? catalog.revocationBoundaryHistory : []
+      const updatedAt = new Date().toISOString()
+      const next: WorkspaceMeshCredential = {
+        ...current,
+        updatedAt,
+        catalog: {
+          ...catalog,
+          revocations: [...records.filter(value => (value as { payload?: { personId?: unknown } })?.payload?.personId !== personId), ...replacements],
+          revocationBoundaryHistory: [...history, { personId, removed: expected, replacements, repairedAt: updatedAt }].slice(-32),
+        },
+      }
+      validateWorkspaceCredential(next)
+      await promisifyRequest(store.put({ key, credential: structuredClone(next) }))
+      await putAuthorityIfNewer(tx.objectStore(STORE_AUTHORITY), authorityFromCredential(next))
+      return structuredClone(next)
     })
   }
 

@@ -568,6 +568,56 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect((await store.getWorkspaceAuthority(base.workspaceId))?.localGrant).toEqual(grant)
     })
 
+    it("atomically replaces only the expected revocation generation and keeps stale tabs from restoring old boundaries", async () => {
+      const store = new PeerStore("match-test-revocation-boundary-repair", mockIdb as any)
+      const base: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_boundary_repair", ownerPersonId: "owner",
+        ownerPublicKey: "public-key", ownerCertificates: [], transportSecret: "secret", epoch: 3,
+        updatedAt: "2026-09-11T00:03:00.000Z" }
+      const old = { payload: { workspaceId: base.workspaceId, ownerPersonId: "owner", personId: "keeper", epoch: 6,
+        workspaceHeads: ["quarantined-head"] }, signature: "old-owner-signature" }
+      const other = { payload: { workspaceId: base.workspaceId, ownerPersonId: "owner", personId: "other", epoch: 4,
+        workspaceHeads: ["admitted-head"] }, signature: "other-signature" }
+      const replacement = { payload: { workspaceId: base.workspaceId, ownerPersonId: "owner", personId: "keeper", epoch: 7,
+        workspaceHeads: ["admitted-head"] }, signature: "new-owner-signature" }
+      await store.putWorkspaceCredential({ ...base, catalog: { revocations: [old, other] } })
+
+      const repaired = await store.replaceWorkspaceRevocationGeneration({ workspaceId: base.workspaceId,
+        personId: "keeper", expected: [old], replacements: [replacement] })
+      expect((repaired.catalog as any).revocations).toEqual([other, replacement])
+      expect((repaired.catalog as any).revocationBoundaryHistory).toEqual([
+        { personId: "keeper", removed: [old], replacements: [replacement], repairedAt: repaired.updatedAt },
+      ])
+
+      await store.putWorkspaceCredential({ ...base, updatedAt: "2026-09-12T00:00:00.000Z", catalog: { revocations: [old] } })
+      await expect(store.getWorkspaceCredential(base.workspaceId)).resolves.toMatchObject({
+        catalog: { revocations: [other, replacement], revocationBoundaryHistory: expect.any(Array) },
+      })
+      await expect(store.getWorkspaceAuthority(base.workspaceId)).resolves.toMatchObject({
+        catalog: { revocations: [other, replacement], revocationBoundaryHistory: expect.any(Array) },
+      })
+    })
+
+    it("rejects stale, foreign-target, or non-advancing revocation boundary repair requests", async () => {
+      const store = new PeerStore("match-test-revocation-boundary-repair-reject", mockIdb as any)
+      const base: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_boundary_repair_reject", ownerPersonId: "owner",
+        ownerPublicKey: "public-key", ownerCertificates: [], transportSecret: "secret", epoch: 3,
+        updatedAt: "2026-09-11T00:03:00.000Z", catalog: { revocations: [
+          { payload: { workspaceId: "ws_boundary_repair_reject", ownerPersonId: "owner", personId: "keeper", epoch: 6 }, signature: "old" },
+        ] } }
+      await store.putWorkspaceCredential(base)
+      const old = (base.catalog as any).revocations[0]
+      const replacement = { payload: { workspaceId: base.workspaceId, ownerPersonId: "owner", personId: "keeper", epoch: 7 }, signature: "new" }
+      await expect(store.replaceWorkspaceRevocationGeneration({ workspaceId: base.workspaceId, personId: "keeper",
+        expected: [{ ...old, signature: "stale" }], replacements: [replacement] })).rejects.toThrow(/changed during/)
+      await expect(store.replaceWorkspaceRevocationGeneration({ workspaceId: base.workspaceId, personId: "keeper",
+        expected: [old], replacements: [{ ...replacement, payload: { ...replacement.payload, personId: "other" } }] }))
+        .rejects.toThrow(/advance the same generation/)
+      await expect(store.replaceWorkspaceRevocationGeneration({ workspaceId: base.workspaceId, personId: "keeper",
+        expected: [old], replacements: [{ ...replacement, payload: { ...replacement.payload, epoch: 6 } }] }))
+        .rejects.toThrow(/advance the same generation/)
+      await expect(store.getWorkspaceCredential(base.workspaceId)).resolves.toMatchObject({ catalog: { revocations: [old] } })
+    })
+
     it("persists a collapsed multi-step ownership chain that returns to its original owner", async () => {
       const store = new PeerStore("match-test-owner-return", mockIdb as any)
       const initial: WorkspaceMeshCredential = { version: 1, workspaceId: "ws_return", ownerPersonId: "owner-a",
