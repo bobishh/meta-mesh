@@ -3,7 +3,7 @@
 use crate::identity::canonicalize_json;
 use automerge::{AutoCommit, ChangeHash};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -16,6 +16,7 @@ pub const MAX_PROOF_REQUEST_HASHES: usize = 1024;
 pub const MAX_PROOF_TRANSFER_RECORDS: usize = 1_000_000;
 pub const MAX_PROOF_TRANSFER_BYTES: usize = 256 * 1024 * 1024;
 const LEGACY_WIRE_BYTES: usize = 64 * 1024;
+const GRANT_VARIANT_IDENTITY_MODE: u8 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +28,9 @@ pub struct AuthorizationManifest {
     pub authority: Value,
     pub records_digest: String,
     pub transfer_id: String,
+    /// Present only when one signature has multiple grant provenance variants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_identity_mode: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +41,9 @@ pub struct AuthorizationPageRequest {
     pub request_id: String,
     pub hashes: Vec<String>,
     pub after: String,
+    /// Omitted for legacy signature-only page identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_identity_mode: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +56,9 @@ pub struct AuthorizationPage {
     pub next: String,
     pub complete: bool,
     pub records: Vec<Value>,
+    /// Omitted for legacy signature-only page identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_identity_mode: Option<u8>,
 }
 
 fn digest(value: &Value) -> Result<String, String> {
@@ -68,10 +78,12 @@ fn signature(record: &Value) -> Result<&str, String> {
         .ok_or_else(|| "Invalid authorization record identity".into())
 }
 fn manifest_id(manifest: &AuthorizationManifest) -> Result<String, String> {
-    digest(
-        &json!({"workspaceId": manifest.workspace_id, "heads": manifest.heads,
-                  "authority": manifest.authority, "recordsDigest": manifest.records_digest, "version": 2}),
-    )
+    let mut payload = json!({"workspaceId": manifest.workspace_id, "heads": manifest.heads,
+        "authority": manifest.authority, "recordsDigest": manifest.records_digest, "version": 2});
+    if let Some(mode) = manifest.record_identity_mode {
+        payload["recordIdentityMode"] = json!(mode);
+    }
+    digest(&payload)
 }
 fn validate_manifest(manifest: &AuthorizationManifest) -> Result<(), String> {
     if manifest.version != 2
@@ -81,6 +93,9 @@ fn validate_manifest(manifest: &AuthorizationManifest) -> Result<(), String> {
         || manifest.heads.len() > 256
         || !manifest.authority.is_object()
         || manifest.records_digest.len() != 64
+        || manifest
+            .record_identity_mode
+            .is_some_and(|mode| mode != GRANT_VARIANT_IDENTITY_MODE)
         || manifest_id(manifest)? != manifest.transfer_id
         || bytes(manifest)? > MAX_PROOF_PAGE_BYTES
     {
@@ -181,15 +196,73 @@ fn stored_records(bundle: &Value) -> Result<Vec<Value>, String> {
     normalize_stored_records(records)
 }
 
+fn grant_variant_key(record: &Value) -> Result<String, String> {
+    let grant = record.get("grant").cloned().unwrap_or(Value::Null);
+    Ok(format!("{}:{}", signature(record)?, digest(&grant)?))
+}
+
+fn record_identity_key(record: &Value, mode: Option<u8>) -> Result<String, String> {
+    match mode {
+        None => Ok(signature(record)?.to_owned()),
+        Some(GRANT_VARIANT_IDENTITY_MODE) => grant_variant_key(record),
+        Some(_) => Err("Unsupported authorization record identity mode".into()),
+    }
+}
+
+fn has_grant_variants(records: &[Value]) -> Result<bool, String> {
+    let mut grants = BTreeMap::<String, String>::new();
+    for record in records {
+        let sig = signature(record)?.to_owned();
+        let grant = canonicalize_json(&record.get("grant").cloned().unwrap_or(Value::Null))?;
+        if grants
+            .insert(sig, grant.clone())
+            .is_some_and(|previous| previous != grant)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Multiple durable replicas can retain the same signed authorization with
-/// different unsigned certificate sidecars. Collapse those variants to one
-/// deterministic record before paging, while rejecting any change to the
-/// signed envelope or other identity fields.
+/// different unsigned certificate sidecars and grant provenance. Collapse
+/// certificate variants per (signature, grant), while rejecting changes to
+/// the signed envelope, signer, or owner identity across every grant variant.
 fn normalize_stored_records(records: Vec<Value>) -> Result<Vec<Value>, String> {
     let mut normalized = BTreeMap::<String, Value>::new();
+    let mut signature_identity = BTreeMap::<String, Value>::new();
+    let mut owner_keys = BTreeMap::<String, Value>::new();
     for record in records {
         let record = normalize_stored_record(record)?;
-        let identity = signature(&record)?.to_owned();
+        let sig = signature(&record)?.to_owned();
+        let mut base_identity = record.clone();
+        let base_object = base_identity
+            .as_object_mut()
+            .ok_or("Invalid stored authorization record")?;
+        for field in [
+            "certificates",
+            "ownerCertificates",
+            "ownerPublicKey",
+            "grant",
+        ] {
+            base_object.remove(field);
+        }
+        if signature_identity
+            .insert(sig.clone(), base_identity.clone())
+            .is_some_and(|previous| previous != base_identity)
+        {
+            return Err("Conflicting stored authorization identity".into());
+        }
+        if let Some(owner_key) = record.get("ownerPublicKey") {
+            if owner_keys
+                .insert(sig.clone(), owner_key.clone())
+                .is_some_and(|previous| previous != *owner_key)
+            {
+                return Err("Conflicting stored authorization identity".into());
+            }
+        }
+
+        let identity = grant_variant_key(&record)?;
         let Some(previous) = normalized.get_mut(&identity) else {
             normalized.insert(identity, record);
             continue;
@@ -207,6 +280,7 @@ fn normalize_stored_records(records: Vec<Value>) -> Result<Vec<Value>, String> {
             object.remove("certificates");
             object.remove("ownerCertificates");
             object.remove("ownerPublicKey");
+            object.remove("grant");
         }
         if previous_identity != incoming_identity {
             return Err("Conflicting stored authorization identity".into());
@@ -218,6 +292,13 @@ fn normalize_stored_records(records: Vec<Value>) -> Result<Vec<Value>, String> {
         let incoming_object = record
             .as_object()
             .ok_or("Invalid stored authorization record")?;
+        if previous_object.get("grant").is_none_or(Value::is_null)
+            && incoming_object.get("grant").is_none_or(Value::is_null)
+        {
+            if previous_object.get("grant").is_some() || incoming_object.get("grant").is_some() {
+                previous_object.insert("grant".into(), Value::Null);
+            }
+        }
         if let (Some(previous_key), Some(incoming_key)) = (
             previous_object.get("ownerPublicKey"),
             incoming_object.get("ownerPublicKey"),
@@ -235,6 +316,14 @@ fn normalize_stored_records(records: Vec<Value>) -> Result<Vec<Value>, String> {
                 continue;
             };
             previous_object.insert(field.into(), merged);
+        }
+    }
+    for record in normalized.values_mut() {
+        let sig = signature(record)?.to_owned();
+        if record.get("ownerPublicKey").is_none() {
+            if let Some(owner_key) = owner_keys.get(&sig) {
+                record["ownerPublicKey"] = owner_key.clone();
+            }
         }
     }
     Ok(normalized.into_values().collect())
@@ -288,7 +377,9 @@ fn merge_certificate_variants(
 
 pub fn authorization_export(document: &[u8], bundle: &Value) -> Result<Value, String> {
     let records = stored_records(bundle)?;
-    if records.len() <= 20_000
+    let identity_mode = has_grant_variants(&records)?.then_some(GRANT_VARIANT_IDENTITY_MODE);
+    if identity_mode.is_none()
+        && records.len() <= 20_000
         && bytes(bundle)? <= LEGACY_WIRE_BYTES
         && bundle.get("version").and_then(Value::as_u64) == Some(1)
     {
@@ -323,8 +414,9 @@ pub fn authorization_export(document: &[u8], bundle: &Value) -> Result<Value, St
             .get("authority")
             .cloned()
             .ok_or("Missing workspace authority")?,
-        records_digest: records_digest(&records)?,
+        records_digest: records_digest(&records, identity_mode)?,
         transfer_id: String::new(),
+        record_identity_mode: identity_mode,
     };
     manifest.transfer_id = manifest_id(&manifest)?;
     validate_manifest(&manifest)?;
@@ -335,10 +427,10 @@ fn request_id(manifest: &AuthorizationManifest, hashes: &[String]) -> Result<Str
     digest(&json!({"transferId": manifest.transfer_id, "hashes": hashes}))
 }
 
-fn records_digest(records: &[Value]) -> Result<String, String> {
+fn records_digest(records: &[Value], mode: Option<u8>) -> Result<String, String> {
     let mut identities = BTreeMap::new();
     for record in records {
-        let key = signature(record)?;
+        let key = record_identity_key(record, mode)?;
         let value = digest(record)?;
         if identities
             .insert(key, value.clone())
@@ -401,11 +493,11 @@ impl PreparedAuthorizationSource {
         let mut records = BTreeMap::new();
         let mut by_hash: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let stored = stored_records(bundle)?;
-        if records_digest(&stored)? != manifest.records_digest {
+        if records_digest(&stored, manifest.record_identity_mode)? != manifest.records_digest {
             return Err("Authorization records changed; restart document sync".into());
         }
         for record in stored {
-            let key = signature(&record)?.to_string();
+            let key = grant_variant_key(&record)?;
             if let Some(hashes) = record
                 .pointer("/signed/payload/hashes")
                 .and_then(Value::as_array)
@@ -452,6 +544,17 @@ impl PreparedAuthorizationSource {
         if request.manifest.transfer_id != self.transfer_id {
             return Err("Wrong frozen proof source".into());
         }
+        if request.record_identity_mode != request.manifest.record_identity_mode {
+            if request.record_identity_mode.is_none()
+                && request.manifest.record_identity_mode.is_some()
+            {
+                return Err(
+                    "Peer must upgrade authorization page identity mode for grant provenance variants"
+                        .into(),
+                );
+            }
+            return Err("Authorization record identity mode changed; restart document sync".into());
+        }
         if request
             .hashes
             .iter()
@@ -459,10 +562,24 @@ impl PreparedAuthorizationSource {
         {
             return Err("Requested authorization hash absent from actual source history".into());
         }
-        let mut selected = BTreeSet::new();
+        if request.record_identity_mode.is_none()
+            && has_grant_variants(&self.records.values().cloned().collect::<Vec<_>>())?
+        {
+            return Err(
+                "Peer must upgrade authorization page identity mode for grant provenance variants"
+                    .into(),
+            );
+        }
+        let mut selected = BTreeMap::new();
         for hash in &request.hashes {
             if let Some(keys) = self.by_hash.get(hash) {
-                selected.extend(keys.iter().filter(|k| *k > &request.after).cloned());
+                for key in keys {
+                    let record = self.records.get(key).expect("indexed record");
+                    let cursor = record_identity_key(record, request.record_identity_mode)?;
+                    if cursor > request.after {
+                        selected.insert(cursor, key.clone());
+                    }
+                }
             }
         }
         let mut page = AuthorizationPage {
@@ -473,13 +590,16 @@ impl PreparedAuthorizationSource {
             next: request.after,
             complete: true,
             records: vec![],
+            record_identity_mode: request.record_identity_mode,
         };
         let mut page_bytes = bytes(&page)?;
-        for key in selected {
+        for (cursor, key) in selected {
             let record = self.records.get(&key).expect("indexed record").clone();
-            let next_bytes =
-                page_bytes + bytes(&record)? + usize::from(!page.records.is_empty()) + bytes(&key)?
-                    - bytes(&page.next)?;
+            let next_bytes = page_bytes
+                + bytes(&record)?
+                + usize::from(!page.records.is_empty())
+                + bytes(&cursor)?
+                - bytes(&page.next)?;
             // complete:false is one byte longer than complete:true.
             if page.records.len() == 20_000 || next_bytes + 1 > MAX_PROOF_PAGE_BYTES {
                 if page.records.is_empty() {
@@ -492,7 +612,7 @@ impl PreparedAuthorizationSource {
                 break;
             }
             page.records.push(record);
-            page.next = key;
+            page.next = cursor;
             page_bytes = next_bytes;
         }
         Ok(page)
@@ -508,6 +628,7 @@ pub struct AuthorizationPageReceiver {
     record_count: usize,
     byte_count: usize,
     seen: BTreeMap<(String, String), String>,
+    received_grant_identity: BTreeMap<String, String>,
 }
 
 impl AuthorizationPageReceiver {
@@ -549,6 +670,7 @@ impl AuthorizationPageReceiver {
             record_count: 0,
             byte_count: 0,
             seen: BTreeMap::new(),
+            received_grant_identity: BTreeMap::new(),
         })
     }
     pub fn request(&self) -> Result<Option<AuthorizationPageRequest>, String> {
@@ -564,6 +686,7 @@ impl AuthorizationPageReceiver {
                 request_id: request_id(&self.manifest, &hashes)?,
                 hashes,
                 after: self.after.clone(),
+                record_identity_mode: self.manifest.record_identity_mode,
             })
         };
         let request = make(available)?;
@@ -592,14 +715,33 @@ impl AuthorizationPageReceiver {
             || page.after != request.after
             || bytes(&page)? > MAX_PROOF_PAGE_BYTES
             || page.records.len() > 20_000
+            || page.record_identity_mode != request.record_identity_mode
         {
             return Err("Authorization page does not match pending request".into());
         }
         let mut cursor = page.after.clone();
+        let mut page_grant_identity = BTreeMap::new();
         for record in &page.records {
-            let key = signature(record)?;
-            if key <= cursor.as_str() {
+            let sig = signature(record)?.to_owned();
+            let key = record_identity_key(record, page.record_identity_mode)?;
+            if key.as_str() <= cursor.as_str() {
                 return Err("Authorization page cursor did not advance".into());
+            }
+            if page.record_identity_mode.is_none() {
+                let grant_key = grant_variant_key(record)?;
+                if self
+                    .received_grant_identity
+                    .get(&sig)
+                    .is_some_and(|previous| previous != &grant_key)
+                    || page_grant_identity
+                        .insert(sig, grant_key.clone())
+                        .is_some_and(|previous| previous != grant_key)
+                {
+                    return Err(
+                        "Peer must upgrade authorization page identity mode for grant provenance variants"
+                            .into(),
+                    );
+                }
             }
             cursor = key.into();
         }
@@ -611,6 +753,7 @@ impl AuthorizationPageReceiver {
         if record_count > MAX_PROOF_TRANSFER_RECORDS || byte_count > MAX_PROOF_TRANSFER_BYTES {
             return Err("Proof transfer exceeds aggregate resource limit".into());
         }
+        self.received_grant_identity.extend(page_grant_identity);
         self.record_count = record_count;
         self.byte_count = byte_count;
         self.seen.insert(
@@ -650,7 +793,7 @@ impl AuthorizationPageReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use automerge::{ROOT, transaction::Transactable};
+    use automerge::{transaction::Transactable, ROOT};
 
     fn signed_sidecar_fixture() -> (
         Vec<u8>,
@@ -660,8 +803,8 @@ mod tests {
         Vec<crate::ChangeAdmissionChange>,
     ) {
         use crate::{
-            DEFAULT_SIGNATURE_DOMAIN, DeviceCertificatePayload, WorkspaceAuthority,
             public_key_from_seed, public_key_id, sign_device_certificate, sign_json_envelope,
+            DeviceCertificatePayload, WorkspaceAuthority, DEFAULT_SIGNATURE_DOMAIN,
         };
 
         let root_seed = [51u8; 32];
@@ -769,11 +912,39 @@ mod tests {
             authorization_export(&document, &single_enriched).unwrap()
         );
 
-        let manifest: AuthorizationManifest = serde_json::from_value(exported).unwrap();
+        let manifest: AuthorizationManifest = serde_json::from_value(exported.clone()).unwrap();
+        assert_eq!(manifest.record_identity_mode, None);
+        assert_eq!(serde_json::to_value(&manifest).unwrap(), exported);
+        assert!(serde_json::to_value(&manifest)
+            .unwrap()
+            .get("recordIdentityMode")
+            .is_none());
+        assert_eq!(
+            manifest.transfer_id,
+            digest(&json!({
+                "workspaceId": manifest.workspace_id,
+                "heads": manifest.heads,
+                "authority": manifest.authority,
+                "recordsDigest": manifest.records_digest,
+                "version": 2,
+            }))
+            .unwrap()
+        );
         let source = PreparedAuthorizationSource::new(&document, &proof, &manifest).unwrap();
         let mut receiver = AuthorizationPageReceiver::new(manifest, &document, &empty).unwrap();
         while let Some(request) = receiver.request().unwrap() {
-            receiver.accept(source.page(request).unwrap()).unwrap();
+            assert_eq!(request.record_identity_mode, None);
+            assert!(serde_json::to_value(&request)
+                .unwrap()
+                .get("recordIdentityMode")
+                .is_none());
+            let page = source.page(request).unwrap();
+            assert_eq!(page.record_identity_mode, None);
+            let old_wire_page = serde_json::to_value(&page).unwrap();
+            assert!(old_wire_page.get("recordIdentityMode").is_none());
+            receiver
+                .accept(serde_json::from_value(old_wire_page).unwrap())
+                .unwrap();
         }
         let transferred = receiver.bundle().unwrap();
         let pages = authorization_record_pages(&transferred).unwrap();
@@ -808,29 +979,23 @@ mod tests {
         let mut conflicting_signed = proof.clone();
         conflicting_signed["records"][1]["signed"]["payload"]["workspaceId"] =
             json!("another-board");
-        assert!(
-            authorization_export(&document, &conflicting_signed)
-                .unwrap_err()
-                .contains("Conflicting stored authorization identity")
-        );
+        assert!(authorization_export(&document, &conflicting_signed)
+            .unwrap_err()
+            .contains("Conflicting stored authorization identity"));
 
         let mut conflicting_owner = proof.clone();
         conflicting_owner["records"][0]["ownerPublicKey"] = json!("first-owner");
         conflicting_owner["records"][1]["ownerPublicKey"] = json!("different-owner");
-        assert!(
-            authorization_export(&document, &conflicting_owner)
-                .unwrap_err()
-                .contains("Conflicting stored authorization identity")
-        );
+        assert!(authorization_export(&document, &conflicting_owner)
+            .unwrap_err()
+            .contains("Conflicting stored authorization identity"));
 
         let mut conflicting_certificate = proof.clone();
         conflicting_certificate["records"][1]["certificates"][1]["payload"]["deviceId"] =
             json!("different-device");
-        assert!(
-            authorization_export(&document, &conflicting_certificate)
-                .unwrap_err()
-                .contains("Conflicting stored authorization certificate identity")
-        );
+        assert!(authorization_export(&document, &conflicting_certificate)
+            .unwrap_err()
+            .contains("Conflicting stored authorization certificate identity"));
 
         let mut malformed_singleton = proof;
         malformed_singleton["records"]
@@ -841,11 +1006,236 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("signature");
-        assert!(
-            authorization_export(&document, &malformed_singleton)
-                .unwrap_err()
-                .contains("Invalid stored authorization certificate identity")
+        assert!(authorization_export(&document, &malformed_singleton)
+            .unwrap_err()
+            .contains("Invalid stored authorization certificate identity"));
+    }
+
+    #[test]
+    fn rejected_legacy_page_does_not_poison_retry_identity_state() {
+        let (document, empty, proof, _, _) = signed_sidecar_fixture();
+        let mut record = proof["records"][0].clone();
+        record["padding"] = json!("x".repeat(70 * 1024));
+        let bundle = json!({
+            "version": 1,
+            "authority": proof["authority"],
+            "records": [record.clone()],
+        });
+        let manifest: AuthorizationManifest =
+            serde_json::from_value(authorization_export(&document, &bundle).unwrap()).unwrap();
+        assert_eq!(manifest.record_identity_mode, None);
+        let mut receiver =
+            AuthorizationPageReceiver::new(manifest.clone(), &document, &empty).unwrap();
+        let request = receiver.request().unwrap().unwrap();
+        let page = AuthorizationPage {
+            version: 1,
+            transfer_id: manifest.transfer_id,
+            request_id: request.request_id,
+            after: request.after,
+            next: signature(&record).unwrap().into(),
+            complete: true,
+            records: vec![record],
+            record_identity_mode: None,
+        };
+
+        let mut malformed = page.clone();
+        malformed.next = "invalid-cursor".into();
+        malformed.records[0]["grant"] = json!({"provenance": "rejected-page"});
+        assert!(receiver.accept(malformed).unwrap_err().contains("progress"));
+        receiver.accept(page).unwrap();
+        assert!(receiver.request().unwrap().is_none());
+    }
+
+    #[test]
+    fn grant_provenance_variants_survive_bounded_proof_roundtrip_and_admission() {
+        use crate::{
+            sign_json_envelope, WorkspaceGrantPayload, WorkspaceRole, DEFAULT_SIGNATURE_DOMAIN,
+        };
+
+        let (document, empty, proof, snapshot, changes) = signed_sidecar_fixture();
+        let owner_person_id = proof["authority"]["genesisOwner"]["personId"]
+            .as_str()
+            .unwrap();
+        let make_grant = |epoch: u64| {
+            let payload = serde_json::to_value(WorkspaceGrantPayload {
+                kind: "workspace-grant".into(),
+                version: 1,
+                grant_id: format!("owner-grant-{epoch}"),
+                workspace_id: "board".into(),
+                person_id: owner_person_id.into(),
+                role: WorkspaceRole::Owner,
+                access_epoch: Some(epoch),
+            })
+            .unwrap();
+            serde_json::to_value(
+                sign_json_envelope(
+                    &[51u8; 32],
+                    payload,
+                    owner_person_id,
+                    DEFAULT_SIGNATURE_DOMAIN,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+
+        let compact_record = json!({
+            "signed": {"signature": "compact-signature", "payload": {"workspaceId": "board"}},
+        });
+        let compact_legacy = json!({
+            "version": 1,
+            "authority": proof["authority"],
+            "records": [compact_record.clone()],
+        });
+        assert!(bytes(&compact_legacy).unwrap() < LEGACY_WIRE_BYTES);
+        assert_eq!(
+            authorization_export(&document, &compact_legacy).unwrap(),
+            compact_legacy
         );
+        let mut explicit_no_grant = compact_record.clone();
+        explicit_no_grant["grant"] = Value::Null;
+        let optional_grant_forms = json!({
+            "version": 1,
+            "authority": proof["authority"],
+            "records": [compact_record.clone(), explicit_no_grant],
+        });
+        assert_eq!(
+            authorization_export(&document, &optional_grant_forms).unwrap(),
+            optional_grant_forms
+        );
+
+        let mut compact_granted = compact_record.clone();
+        compact_granted["grant"] = make_grant(4);
+        let compact_variants = json!({
+            "version": 1,
+            "authority": proof["authority"],
+            "records": [compact_record, compact_granted],
+        });
+        assert!(bytes(&compact_variants).unwrap() < LEGACY_WIRE_BYTES);
+        let compact_manifest: AuthorizationManifest =
+            serde_json::from_value(authorization_export(&document, &compact_variants).unwrap())
+                .unwrap();
+        assert_eq!(
+            compact_manifest.record_identity_mode,
+            Some(GRANT_VARIANT_IDENTITY_MODE)
+        );
+
+        let mut no_grant = proof["records"][0].clone();
+        no_grant.as_object_mut().unwrap().remove("grant");
+        no_grant["padding"] = json!("x".repeat(70 * 1024));
+        no_grant["ownerPublicKey"] = proof["authority"]["genesisOwner"]["publicKey"].clone();
+        let mut older_grant = no_grant.clone();
+        older_grant["grant"] = make_grant(4);
+        let mut current_grant = no_grant.clone();
+        current_grant["grant"] = make_grant(5);
+        let variants = vec![no_grant, older_grant, current_grant];
+        let aggregate = json!({
+            "version": 1,
+            "authority": proof["authority"],
+            "records": variants,
+        });
+
+        // Fails before the fix: same signature is incorrectly treated as one grant identity.
+        let manifest_value = authorization_export(&document, &aggregate).unwrap();
+        let manifest: AuthorizationManifest = serde_json::from_value(manifest_value).unwrap();
+        assert_eq!(
+            manifest.record_identity_mode,
+            Some(GRANT_VARIANT_IDENTITY_MODE)
+        );
+        let mut legacy_manifest = manifest.clone();
+        legacy_manifest.record_identity_mode = None;
+        assert!(validate_manifest(&legacy_manifest).is_err());
+        let source = PreparedAuthorizationSource::new(&document, &aggregate, &manifest).unwrap();
+        let mut receiver = AuthorizationPageReceiver::new(manifest, &document, &empty).unwrap();
+        while let Some(request) = receiver.request().unwrap() {
+            assert_eq!(
+                request.record_identity_mode,
+                Some(GRANT_VARIANT_IDENTITY_MODE)
+            );
+            let mut legacy_request = request.clone();
+            legacy_request.record_identity_mode = None;
+            assert!(source
+                .page(legacy_request)
+                .unwrap_err()
+                .contains("must upgrade"));
+
+            let page = source.page(request).unwrap();
+            assert_eq!(page.record_identity_mode, Some(GRANT_VARIANT_IDENTITY_MODE));
+            let mut old_wire_page = serde_json::to_value(&page).unwrap();
+            old_wire_page
+                .as_object_mut()
+                .unwrap()
+                .remove("recordIdentityMode");
+            assert!(receiver
+                .accept(serde_json::from_value(old_wire_page).unwrap())
+                .unwrap_err()
+                .contains("does not match pending request"));
+            receiver.accept(page).unwrap();
+        }
+
+        let transferred = receiver.bundle().unwrap();
+        let admission_bundle = authorization_admission_bundle(&transferred).unwrap();
+        let pages = authorization_record_pages(&admission_bundle).unwrap();
+        let records = pages
+            .iter()
+            .flat_map(|page| page.iter().cloned())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 3);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.get("grant").is_none())
+                .count(),
+            1
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record["grant"].is_object())
+                .count(),
+            2
+        );
+        let epochs = records
+            .iter()
+            .filter_map(|record| {
+                record
+                    .pointer("/grant/payload/accessEpoch")
+                    .and_then(Value::as_u64)
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(epochs, BTreeSet::from([4, 5]));
+
+        // Transport preserves provenance, while ordinary signed authorization policy still runs.
+        let plan = crate::plan_change_admission_flow(
+            crate::ChangeAdmissionFlowInput {
+                records: vec![],
+                record_pages: Some(pages.clone()),
+                known_hashes: vec![],
+                changes,
+                snapshot,
+            },
+            0,
+        )
+        .unwrap();
+        assert!(plan.unsigned_error.is_none());
+        assert_eq!(plan.admitted_changes.len(), 3);
+
+        let mut conflicting_signed = aggregate.clone();
+        conflicting_signed["records"][1]["signed"]["payload"]["workspaceId"] =
+            json!("another-board");
+        assert!(authorization_export(&document, &conflicting_signed)
+            .unwrap_err()
+            .contains("Conflicting stored authorization identity"));
+        let mut conflicting_key = aggregate.clone();
+        conflicting_key["records"][1]["publicKey"] = json!("different-signer-key");
+        assert!(authorization_export(&document, &conflicting_key)
+            .unwrap_err()
+            .contains("Conflicting stored authorization identity"));
+        let mut conflicting_owner_key = aggregate;
+        conflicting_owner_key["records"][1]["ownerPublicKey"] = json!("different-owner-key");
+        assert!(authorization_export(&document, &conflicting_owner_key)
+            .unwrap_err()
+            .contains("Conflicting stored authorization identity"));
     }
 
     /// Deterministic full signed-history regression and separate source/crypto timings.
@@ -854,10 +1244,10 @@ mod tests {
     #[ignore = "large deterministic signed-history benchmark"]
     fn signed_initial_and_incremental_history_benchmark() {
         use crate::{
-            ChangeAdmissionChange, ChangeAdmissionFlowInput, DEFAULT_SIGNATURE_DOMAIN,
-            DeviceCertificatePayload, WorkspaceAuthority, WorkspaceWriteAuthorizationSnapshot,
             plan_change_admission_flow, public_key_from_seed, public_key_id,
-            sign_device_certificate, sign_json_envelope,
+            sign_device_certificate, sign_json_envelope, ChangeAdmissionChange,
+            ChangeAdmissionFlowInput, DeviceCertificatePayload, WorkspaceAuthority,
+            WorkspaceWriteAuthorizationSnapshot, DEFAULT_SIGNATURE_DOMAIN,
         };
         use std::time::Instant;
         let root_seed = [41u8; 32];
@@ -1017,19 +1407,17 @@ mod tests {
             assert!(missing.unsigned_error.is_some());
             let mut forged = record;
             forged["signed"]["signature"] = json!("forged");
-            assert!(
-                plan_change_admission_flow(
-                    ChangeAdmissionFlowInput {
-                        records: vec![],
-                        record_pages: Some(vec![vec![forged]]),
-                        known_hashes: vec![],
-                        changes: delta.incoming_changes,
-                        snapshot: delta_snapshot
-                    },
-                    0
-                )
-                .is_err()
-            );
+            assert!(plan_change_admission_flow(
+                ChangeAdmissionFlowInput {
+                    records: vec![],
+                    record_pages: Some(vec![vec![forged]]),
+                    known_hashes: vec![],
+                    changes: delta.incoming_changes,
+                    snapshot: delta_snapshot
+                },
+                0
+            )
+            .is_err());
             eprintln!(
                 "proof_benchmark history={count} proofs={count} aggregate_bytes={wire_bytes} pages={page_count} source_prepare_ms={source_ms} source_pages_ms={pages_ms} full_admission_ms={admission_ms} delta_history={} delta_proofs=1 delta_admission_ms={delta_ms}",
                 count + 1
@@ -1054,11 +1442,9 @@ mod tests {
     #[test]
     fn initial_history_exceeds_legacy_record_limit_but_every_record_travels_in_bounded_pages() {
         let (bytes, empty, proof) = fixture(20_001, 0);
-        assert!(
-            authorization_record_pages(&proof)
-                .unwrap_err()
-                .contains("size limit")
-        );
+        assert!(authorization_record_pages(&proof)
+            .unwrap_err()
+            .contains("size limit"));
         let mut receiver =
             AuthorizationPageReceiver::new(manifest(&bytes, &proof), &bytes, &empty).unwrap();
         let mut pages = 0;
@@ -1092,11 +1478,9 @@ mod tests {
         );
         let (_, _, mut proof) = fixture(1, 70_000);
         proof["authority"]["overflow"] = json!("x".repeat(MAX_PROOF_PAGE_BYTES));
-        assert!(
-            authorization_export(&bytes, &proof)
-                .unwrap_err()
-                .contains("oversized")
-        );
+        assert!(authorization_export(&bytes, &proof)
+            .unwrap_err()
+            .contains("oversized"));
     }
     #[test]
     fn request_is_derived_from_actual_candidate_and_source_rejects_claimed_unknown_hash() {
@@ -1106,11 +1490,9 @@ mod tests {
         let mut request = receiver.request().unwrap().unwrap();
         request.hashes = vec!["0".repeat(64)];
         request.request_id = request_id(&request.manifest, &request.hashes).unwrap();
-        assert!(
-            authorization_page(&bytes, &proof, request)
-                .unwrap_err()
-                .contains("actual source history")
-        );
+        assert!(authorization_page(&bytes, &proof, request)
+            .unwrap_err()
+            .contains("actual source history"));
     }
     #[test]
     fn restart_reuses_stable_request_and_revalidates_saved_page_before_continuing() {
@@ -1160,11 +1542,9 @@ mod tests {
         assert!(receiver.accept(page).is_err());
         assert_eq!(receiver.request().unwrap().unwrap().after, "");
         proof["authority"]["currentEpoch"] = json!(2);
-        assert!(
-            authorization_page(&bytes, &proof, request)
-                .unwrap_err()
-                .contains("authority changed")
-        );
+        assert!(authorization_page(&bytes, &proof, request)
+            .unwrap_err()
+            .contains("authority changed"));
     }
     #[test]
     fn frozen_source_avoids_reloading_and_proof_only_additions_change_identity() {
@@ -1173,12 +1553,10 @@ mod tests {
         let receiver = AuthorizationPageReceiver::new(initial.clone(), &document, &empty).unwrap();
         let request = serde_json::to_vec(&receiver.request().unwrap().unwrap()).unwrap();
         let mut runtime = crate::MeshScopeRuntime::new("board", "secret").unwrap();
-        assert!(
-            runtime
-                .provide_cached_proof_page(&request)
-                .unwrap()
-                .is_none()
-        );
+        assert!(runtime
+            .provide_cached_proof_page(&request)
+            .unwrap()
+            .is_none());
         let frame = runtime
             .provide_proof_page(&request, &document, proof.clone())
             .unwrap();
@@ -1193,17 +1571,13 @@ mod tests {
         assert_ne!(initial.transfer_id, changed.transfer_id);
         let receiver = AuthorizationPageReceiver::new(changed, &document, &empty).unwrap();
         let request = serde_json::to_vec(&receiver.request().unwrap().unwrap()).unwrap();
-        assert!(
-            runtime
-                .provide_cached_proof_page(&request)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            runtime
-                .provide_proof_page(&request, &document, proof)
-                .is_ok()
-        );
+        assert!(runtime
+            .provide_cached_proof_page(&request)
+            .unwrap()
+            .is_none());
+        assert!(runtime
+            .provide_proof_page(&request, &document, proof)
+            .is_ok());
     }
     #[test]
     fn standalone_transfer_cannot_complete_or_publish_before_last_page() {
@@ -1220,22 +1594,18 @@ mod tests {
             effect,
             crate::MeshScopeFrameEffect::ProofRequest { .. }
         ));
-        assert!(
-            runtime
-                .complete_document_receive(true)
-                .unwrap_err()
-                .contains("incomplete")
-        );
+        assert!(runtime
+            .complete_document_receive(true)
+            .unwrap_err()
+            .contains("incomplete"));
         runtime.reject_document_receive().unwrap();
-        assert!(
-            runtime
-                .begin_authorization_transfer(
-                    &document,
-                    &empty,
-                    serde_json::to_value(manifest(&document, &proof)).unwrap()
-                )
-                .is_ok()
-        );
+        assert!(runtime
+            .begin_authorization_transfer(
+                &document,
+                &empty,
+                serde_json::to_value(manifest(&document, &proof)).unwrap()
+            )
+            .is_ok());
     }
     #[test]
     fn request_hash_batch_shrinks_to_include_large_authority_evidence() {
