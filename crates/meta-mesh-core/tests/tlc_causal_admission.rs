@@ -88,6 +88,8 @@ fn signed_grant(
         person_id: editor.person_id.clone(),
         role: WorkspaceRole::Editor,
         access_epoch: Some(epoch),
+
+        automation: None,
     };
     let signed = sign_json_envelope(
         owner_seed,

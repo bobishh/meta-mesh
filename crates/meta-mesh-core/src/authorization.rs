@@ -12,6 +12,53 @@ pub enum WorkspaceRole {
     Owner,
     Editor,
     Visitor,
+    Automation,
+}
+
+/// Bounded authority for an automation integration on one existing board.
+/// `expires_at` is a Unix timestamp in milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationGrantScope {
+    pub version: u8,
+    pub board_id: String,
+    pub columns: AutomationGrantColumns,
+    pub field_ids: Vec<String>,
+    pub expires_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutomationGrantColumns {
+    pub lead: String,
+    pub interview: String,
+    pub rejected: String,
+}
+
+impl AutomationGrantScope {
+    fn validate(&self) -> Result<(), String> {
+        let columns = [
+            &self.columns.lead,
+            &self.columns.interview,
+            &self.columns.rejected,
+        ];
+        if self.version != 1
+            || self.board_id.is_empty()
+            || columns.iter().any(|id| id.is_empty())
+            || columns[0] == columns[1]
+            || columns[0] == columns[2]
+            || columns[1] == columns[2]
+            || self.field_ids.len() > 128
+            || self.field_ids.iter().any(String::is_empty)
+        {
+            return Err("Invalid automation grant scope".to_string());
+        }
+        let mut fields = std::collections::HashSet::new();
+        if self.field_ids.iter().any(|field| !fields.insert(field)) {
+            return Err("Invalid automation grant scope".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +74,8 @@ pub struct WorkspaceGrantPayload {
     // effective value before signature verification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access_epoch: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation: Option<AutomationGrantScope>,
 }
 
 impl WorkspaceGrantPayload {
@@ -236,6 +285,8 @@ pub(crate) fn admit_with_needed_for_causal(
 pub(crate) struct ValidatedWorkspaceWriteAuthorizationContext {
     pub(crate) workspace_id: String,
     pub(crate) current_owner: WorkspaceAuthority,
+    now_ms: i128,
+    enforce_automation_expiry: bool,
     pub(crate) historical_owners: Vec<WorkspaceAuthority>,
     pub(crate) historical_hashes:
         std::collections::HashMap<String, std::collections::HashSet<String>>,
@@ -251,14 +302,14 @@ struct RevocationBoundary {
 }
 
 impl ValidatedWorkspaceWriteAuthorizationContext {
-    /// Verify signed causal authority without making a receiver wall clock part
-    /// of the permission result. Authority timestamps still pass the legacy
-    /// RFC3339 shape check in their record verifiers; this sentinel only removes
-    /// their future-skew comparison for this explicit causal-admission path.
+    /// Reclassify retained history without trusting author timestamps as a
+    /// chronology proof. Automation expiry is checked at access/execution time.
     pub(crate) fn from_snapshot_causal(
         raw: &WorkspaceWriteAuthorizationSnapshot,
     ) -> Result<Self, String> {
-        Self::from_snapshot(raw, i128::MAX / 2)
+        let mut context = Self::from_snapshot(raw, i128::MAX / 2)?;
+        context.enforce_automation_expiry = false;
+        Ok(context)
     }
 
     pub(crate) fn from_snapshot(
@@ -329,6 +380,8 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         Ok(Self {
             workspace_id: raw.workspace_id.clone(),
             current_owner,
+            now_ms,
+            enforce_automation_expiry: true,
             historical_owners,
             historical_hashes,
             revoked_devices,
@@ -365,8 +418,34 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
                 .ok()?;
                 Some((role, grant.payload.effective_access_epoch()))
             });
-        if let Some((role @ (WorkspaceRole::Editor | WorkspaceRole::Visitor), epoch)) = verified_grant {
+        if let Some((role @ (WorkspaceRole::Editor | WorkspaceRole::Visitor), epoch)) =
+            verified_grant
+        {
             Ok((role, Some(epoch)))
+        } else if let Some((WorkspaceRole::Automation, epoch)) = verified_grant {
+            let current_owner_identity = PublicIdentity {
+                person_id: self.current_owner.person_id.clone(),
+                public_key: self.current_owner.public_key.clone(),
+                display_name: String::new(),
+            };
+            if verify_workspace_grant(
+                grant.ok_or_else(|| "Invalid automation grant".to_string())?,
+                &self.workspace_id,
+                person_id,
+                &current_owner_identity,
+                &self.current_owner.certificates,
+            )? != WorkspaceRole::Automation
+            {
+                return Err("Invalid automation grant signer".to_string());
+            }
+            let scope = grant
+                .and_then(|grant| grant.payload.automation.as_ref())
+                .ok_or_else(|| "Invalid automation grant scope".to_string())?;
+            scope.validate()?;
+            if self.enforce_automation_expiry && i128::from(scope.expires_at) <= self.now_ms {
+                return Err("Automation grant has expired".to_string());
+            }
+            Ok((WorkspaceRole::Automation, Some(epoch)))
         } else if self.historical_hashes.contains_key(person_id) {
             Ok((WorkspaceRole::Owner, None))
         } else {
@@ -729,6 +808,13 @@ pub fn verify_workspace_grant(
     {
         return Err("Invalid workspace grant".to_string());
     }
+    match (payload.role, payload.automation.as_ref()) {
+        (WorkspaceRole::Automation, Some(scope)) => scope.validate()?,
+        (WorkspaceRole::Automation, None) | (_, Some(_)) => {
+            return Err("Invalid workspace grant role and scope".to_string());
+        }
+        (_, None) => {}
+    }
     if owner.person_id != public_key_id(&owner.public_key)? {
         return Err("Invalid workspace owner".to_string());
     }
@@ -879,6 +965,8 @@ mod tests {
             person_id: next.person_id.clone(),
             role: WorkspaceRole::Owner,
             access_epoch: Some(2),
+
+            automation: None,
         };
         let former_owner = WorkspaceGrantPayload {
             kind: "workspace-grant".into(),
@@ -888,6 +976,8 @@ mod tests {
             person_id: owner.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(2),
+
+            automation: None,
         };
         let to_owner_grant = signed_grant(owner_seed, &owner.person_id, &to_owner);
         let former_owner_grant = signed_grant(owner_seed, &owner.person_id, &former_owner);
@@ -1111,6 +1201,8 @@ mod tests {
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let mut incoming = change_authorization(
             &editor,
@@ -1160,6 +1252,8 @@ mod tests {
                 person_id: editor.person_id.clone(),
                 role: WorkspaceRole::Editor,
                 access_epoch: Some(access_epoch),
+
+                automation: None,
             };
             let mut incoming = change_authorization(
                 &editor,
@@ -1247,6 +1341,8 @@ mod tests {
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let mut incoming = change_authorization(
             &editor,
@@ -1297,6 +1393,8 @@ mod tests {
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let mut incoming = change_authorization(
             &editor,
@@ -1343,6 +1441,8 @@ mod tests {
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let mut incoming =
             change_authorization(&editor, &device_seed, &device_id, certificates, vec![&hash]);
@@ -1374,6 +1474,8 @@ mod tests {
             person_id: visitor.person_id.clone(),
             role: WorkspaceRole::Visitor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let mut incoming = change_authorization(
             &visitor,
@@ -1719,6 +1821,8 @@ mod tests {
             person_id: "member-1".to_string(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
 
         let root_grant = signed_grant(&owner_seed, &owner_person_id, &payload);
@@ -1765,6 +1869,8 @@ mod tests {
             person_id: "member".into(),
             role: WorkspaceRole::Editor,
             access_epoch: None,
+
+            automation: None,
         };
         let grant = signed_grant(&seed, &person_id, &payload);
         let raw = serde_json::to_value(&grant).unwrap();
@@ -1802,12 +1908,156 @@ mod tests {
             person_id: "member".into(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let raw = serde_json::to_value(&payload).unwrap();
         assert_eq!(raw["accessEpoch"], 1);
         let decoded: WorkspaceGrantPayload = serde_json::from_value(raw).unwrap();
         assert_eq!(decoded.access_epoch, Some(1));
         assert_eq!(serde_json::to_value(decoded).unwrap()["accessEpoch"], 1);
+    }
+
+    #[test]
+    fn automation_grants_require_exact_bounded_scope_and_preserve_legacy_shape() {
+        let (owner, _owner_device_seed, owner_device_id, owner_certificates) =
+            authority([91; 32], [92; 32]);
+        let scope = AutomationGrantScope {
+            version: 1,
+            board_id: "job-board".into(),
+            columns: AutomationGrantColumns {
+                lead: "lead".into(),
+                interview: "interview".into(),
+                rejected: "rejected".into(),
+            },
+            field_ids: vec!["source".into(), "decision".into()],
+            expires_at: 1_800_000_000_000,
+        };
+        let payload = WorkspaceGrantPayload {
+            kind: "workspace-grant".into(),
+            version: 1,
+            grant_id: "automation-1".into(),
+            workspace_id: "workspace".into(),
+            person_id: "automation-person".into(),
+            role: WorkspaceRole::Automation,
+            access_epoch: Some(4),
+            automation: Some(scope.clone()),
+        };
+        let grant = signed_grant(&[91; 32], &owner.person_id, &payload);
+        assert_eq!(
+            verify_workspace_grant(
+                &grant,
+                "workspace",
+                "automation-person",
+                &PublicIdentity {
+                    person_id: owner.person_id.clone(),
+                    public_key: owner.public_key.clone(),
+                    display_name: "Owner".into(),
+                },
+                &owner_certificates,
+            )
+            .unwrap(),
+            WorkspaceRole::Automation
+        );
+        assert_eq!(grant.payload.automation.as_ref(), Some(&scope));
+        assert!(!owner_device_id.is_empty());
+
+        let mut editor_payload = payload.clone();
+        editor_payload.role = WorkspaceRole::Editor;
+        let editor_with_scope = signed_grant(&[91; 32], &owner.person_id, &editor_payload);
+        assert!(
+            verify_workspace_grant(
+                &editor_with_scope,
+                "workspace",
+                "automation-person",
+                &PublicIdentity {
+                    person_id: owner.person_id.clone(),
+                    public_key: owner.public_key.clone(),
+                    display_name: "Owner".into(),
+                },
+                &owner_certificates,
+            )
+            .is_err()
+        );
+
+        let mut invalid_scope = scope;
+        invalid_scope.columns.interview = invalid_scope.columns.lead.clone();
+        let invalid_payload = WorkspaceGrantPayload {
+            automation: Some(invalid_scope),
+            ..payload
+        };
+        let invalid_grant = signed_grant(&[91; 32], &owner.person_id, &invalid_payload);
+        assert!(
+            verify_workspace_grant(
+                &invalid_grant,
+                "workspace",
+                "automation-person",
+                &PublicIdentity {
+                    person_id: owner.person_id,
+                    public_key: owner.public_key,
+                    display_name: "Owner".into(),
+                },
+                &owner_certificates,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn automation_candidate_uses_scope_expiry_and_existing_epoch_identity_checks() {
+        let (owner, _, _, _) = authority([93; 32], [94; 32]);
+        let (automation, _, device_id, _) = authority([95; 32], [96; 32]);
+        let payload = WorkspaceGrantPayload {
+            kind: "workspace-grant".into(),
+            version: 1,
+            grant_id: "automation-current".into(),
+            workspace_id: "workspace".into(),
+            person_id: automation.person_id.clone(),
+            role: WorkspaceRole::Automation,
+            access_epoch: Some(7),
+            automation: Some(AutomationGrantScope {
+                version: 1,
+                board_id: "board".into(),
+                columns: AutomationGrantColumns {
+                    lead: "lead".into(),
+                    interview: "interview".into(),
+                    rejected: "rejected".into(),
+                },
+                field_ids: vec![],
+                expires_at: 101,
+            }),
+        };
+        let grant = signed_grant(&[93; 32], &owner.person_id, &payload);
+        let context =
+            ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(&snapshot(owner), 100)
+                .unwrap();
+        assert_eq!(
+            context
+                .role_for(&automation.person_id, &device_id, Some(&grant))
+                .unwrap(),
+            (WorkspaceRole::Automation, Some(7))
+        );
+        let expired = ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(
+            &snapshot(authority([93; 32], [94; 32]).0),
+            101,
+        )
+        .unwrap();
+        assert!(
+            expired
+                .role_for(&automation.person_id, &device_id, Some(&grant))
+                .is_err()
+        );
+        let historical = ValidatedWorkspaceWriteAuthorizationContext::from_snapshot_causal(
+            &snapshot(authority([93; 32], [94; 32]).0),
+        )
+        .unwrap();
+        assert_eq!(
+            historical
+                .role_for(&automation.person_id, &device_id, Some(&grant))
+                .unwrap(),
+            (WorkspaceRole::Automation, Some(7)),
+            "receiver re-admission keeps historically signed scope valid; access/authoring enforce expiry"
+        );
     }
 
     #[test]

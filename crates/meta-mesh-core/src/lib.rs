@@ -65,7 +65,8 @@ pub use authority_flow::{
     OwnershipAuthorityFlowInput, OwnershipAuthorityFlowPlan, plan_ownership_authority_flow,
 };
 pub use authorization::{
-    AuthorizedWorkspaceChange, IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
+    AuthorizedWorkspaceChange, AutomationGrantColumns, AutomationGrantScope,
+    IncomingWorkspaceChangeAuthorization, WorkspaceChangeAuthorization,
     WorkspaceChangeAuthorizationPayload, WorkspaceDeviceRevocationEvidence, WorkspaceGrant,
     WorkspaceGrantPayload, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
     admit_workspace_change_authorization, admit_workspace_change_authorizations,

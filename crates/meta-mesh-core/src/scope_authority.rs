@@ -816,6 +816,8 @@ mod tests {
                 person_id: candidate.person_id.clone(),
                 role: WorkspaceRole::Editor,
                 access_epoch: Some(epoch),
+
+                automation: None,
             },
         );
         let former_owner_grant = signed_grant(
@@ -829,6 +831,8 @@ mod tests {
                 person_id: owner.person_id.clone(),
                 role: WorkspaceRole::Editor,
                 access_epoch: Some(epoch + 1),
+
+                automation: None,
             },
         );
         let mut eligible = vec![candidate.person_id.clone()];
@@ -892,6 +896,8 @@ mod tests {
                         person_id: voter.person_id.clone(),
                         role: WorkspaceRole::Editor,
                         access_epoch: Some(epoch),
+
+                        automation: None,
                     },
                 );
                 WorkspaceSuccessionVote {

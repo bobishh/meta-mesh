@@ -300,6 +300,8 @@ mod tests {
             person_id: editor.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(1),
+
+            automation: None,
         };
         let signed_grant = sign_json_envelope(
             &[2; 32],

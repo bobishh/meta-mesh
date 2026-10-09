@@ -267,6 +267,8 @@ impl AuthorityHarness {
             person_id: self.member.authority.person_id.clone(),
             role: WorkspaceRole::Editor,
             access_epoch: Some(runtime_epoch(model_epoch)),
+
+            automation: None,
         };
         let grant = signed(&owner.root_seed, &owner.authority.person_id, payload);
         let plan = plan_member_grant(MemberGrantInput::PersistLocal {
@@ -478,6 +480,8 @@ impl AuthorityHarness {
                 person_id: to.authority.person_id.clone(),
                 role: WorkspaceRole::Owner,
                 access_epoch: Some(epoch),
+
+                automation: None,
             },
         );
         let former_owner_grant = signed(
@@ -491,6 +495,8 @@ impl AuthorityHarness {
                 person_id: from.authority.person_id.clone(),
                 role: WorkspaceRole::Editor,
                 access_epoch: Some(epoch),
+
+                automation: None,
             },
         );
         let payload = WorkspaceOwnershipTransferPayload {

@@ -1,9 +1,9 @@
 use super::*;
 
 use crate::{
-    DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload, WorkspaceAuthority,
-    WorkspaceChangeAuthorization, WorkspaceChangeAuthorizationPayload, WorkspaceGrant,
-    WorkspaceGrantPayload, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
+    AutomationGrantScope, DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
+    WorkspaceAuthority, WorkspaceChangeAuthorization, WorkspaceChangeAuthorizationPayload,
+    WorkspaceGrant, WorkspaceGrantPayload, WorkspaceRole, WorkspaceWriteAuthorizationSnapshot,
     public_key_from_seed, public_key_id, sign_device_certificate, sign_json_envelope,
 };
 use automerge::{
@@ -60,6 +60,8 @@ fn grant(
         person_id: editor.person_id.clone(),
         role: WorkspaceRole::Editor,
         access_epoch: Some(epoch),
+
+        automation: None,
     };
     let signed = sign_json_envelope(
         owner_seed,
@@ -81,14 +83,28 @@ fn visitor_grant(
     visitor: &WorkspaceAuthority,
 ) -> WorkspaceGrant {
     let payload = WorkspaceGrantPayload {
-        kind: "workspace-grant".into(), version: 1,
-        grant_id: "visitor-profile".into(), workspace_id: "workspace".into(),
-        person_id: visitor.person_id.clone(), role: WorkspaceRole::Visitor,
+        kind: "workspace-grant".into(),
+        version: 1,
+        grant_id: "visitor-profile".into(),
+        workspace_id: "workspace".into(),
+        person_id: visitor.person_id.clone(),
+        role: WorkspaceRole::Visitor,
         access_epoch: Some(1),
+
+        automation: None,
     };
-    let signed = sign_json_envelope(owner_seed, serde_json::to_value(&payload).unwrap(),
-        &owner.person_id, DEFAULT_SIGNATURE_DOMAIN).unwrap();
-    WorkspaceGrant { payload, signer_key_id: signed.signer_key_id, signature: signed.signature }
+    let signed = sign_json_envelope(
+        owner_seed,
+        serde_json::to_value(&payload).unwrap(),
+        &owner.person_id,
+        DEFAULT_SIGNATURE_DOMAIN,
+    )
+    .unwrap();
+    WorkspaceGrant {
+        payload,
+        signer_key_id: signed.signer_key_id,
+        signature: signed.signature,
+    }
 }
 
 fn grant_hash(grant: &WorkspaceGrant) -> String {
@@ -192,18 +208,28 @@ fn write_avatar(doc: &mut AutoCommit, person_id: &str, avatar: Option<&str>) {
             put_js_text(doc, &profile, "id", &format!("member-profile:{person_id}"));
             put_js_text(doc, &profile, "kind", "member_profile");
             put_js_text(doc, &profile, "personId", person_id);
-            put_js_text(doc, &profile, "data", &serde_json::json!({
-                "avatarData": avatar, "changedAt": "2026-10-07T10:00:00Z"
-            }).to_string());
+            put_js_text(
+                doc,
+                &profile,
+                "data",
+                &serde_json::json!({
+                    "avatarData": avatar, "changedAt": "2026-10-07T10:00:00Z"
+                })
+                .to_string(),
+            );
             put_js_text(doc, &profile, "title", "Member profile");
-            doc.put(&profile, "archivedAt", automerge::ScalarValue::Null).unwrap();
+            doc.put(&profile, "archivedAt", automerge::ScalarValue::Null)
+                .unwrap();
             put_js_text(doc, &profile, "createdAt", "2026-10-07T10:00:00Z");
             put_js_text(doc, &profile, "updatedAt", "2026-10-07T10:00:00Z");
             let placement = doc.put_object(&profile, "placement", ObjType::Map).unwrap();
-            doc.put(&placement, "parentId", automerge::ScalarValue::Null).unwrap();
+            doc.put(&placement, "parentId", automerge::ScalarValue::Null)
+                .unwrap();
             put_js_text(doc, &placement, "rank", "0/1");
         }
-        None => { doc.delete(entities, profile_id).unwrap(); }
+        None => {
+            doc.delete(entities, profile_id).unwrap();
+        }
     }
 }
 
@@ -212,65 +238,452 @@ fn put_js_text(doc: &mut AutoCommit, parent: &automerge::ObjId, key: &str, value
     doc.splice_text(&text, 0, 0, value).unwrap();
 }
 
-fn visitor_avatar_document(mixed_root: bool, foreign_profile: bool, remove_avatar: bool) -> (WorkspaceAuthority, AutoCommit,
-    Vec<IncomingWorkspaceChangeAuthorization>, String) {
+fn automation_board() -> AutoCommit {
+    let mut doc = AutoCommit::new();
+    let entities = doc.put_object(ROOT, "entities", ObjType::Map).unwrap();
+    let board = doc.put_object(&entities, "board", ObjType::Map).unwrap();
+    put_js_text(&mut doc, &board, "id", "board");
+    put_js_text(&mut doc, &board, "kind", "board");
+    doc.put(&board, "archivedAt", automerge::ScalarValue::Null)
+        .unwrap();
+    doc.put(&board, "archiveColumnId", automerge::ScalarValue::Null)
+        .unwrap();
+    for id in ["lead", "interview", "rejected", "other"] {
+        let column = doc.put_object(&entities, id, ObjType::Map).unwrap();
+        put_js_text(&mut doc, &column, "id", id);
+        put_js_text(&mut doc, &column, "kind", "column");
+        doc.put(&column, "archivedAt", automerge::ScalarValue::Null)
+            .unwrap();
+        let placement = doc.put_object(&column, "placement", ObjType::Map).unwrap();
+        put_js_text(&mut doc, &placement, "parentId", "board");
+        put_js_text(&mut doc, &placement, "rank", "0/1");
+    }
+    let field = doc.put_object(&entities, "source", ObjType::Map).unwrap();
+    put_js_text(&mut doc, &field, "id", "source");
+    put_js_text(&mut doc, &field, "kind", "field");
+    let field_placement = doc.put_object(&field, "placement", ObjType::Map).unwrap();
+    put_js_text(&mut doc, &field_placement, "parentId", "board");
+    put_js_text(&mut doc, &field_placement, "rank", "0/1");
+    doc.commit();
+    doc
+}
+
+fn write_automation_item(doc: &mut AutoCommit, id: &str, parent_id: &str, change_root: bool) {
+    write_automation_item_with_message(doc, id, parent_id, change_root, None);
+}
+
+fn write_automation_item_with_message(
+    doc: &mut AutoCommit,
+    id: &str,
+    parent_id: &str,
+    change_root: bool,
+    message: Option<String>,
+) {
+    let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
+    let item = doc.put_object(entities, id, ObjType::Map).unwrap();
+    put_js_text(doc, &item, "id", id);
+    put_js_text(doc, &item, "title", "Company");
+    put_js_text(doc, &item, "body", "Job description");
+    doc.put(&item, "archivedAt", automerge::ScalarValue::Null)
+        .unwrap();
+    let values = doc.put_object(&item, "values", ObjType::Map).unwrap();
+    put_js_text(doc, &values, "source", "website");
+    let placement = doc.put_object(&item, "placement", ObjType::Map).unwrap();
+    put_js_text(doc, &placement, "parentId", parent_id);
+    put_js_text(doc, &placement, "rank", "0/1");
+    if change_root {
+        put_js_text(doc, &ROOT, "title", "tampered workspace");
+    }
+    match message {
+        Some(message) => {
+            doc.commit_with(CommitOptions::default().with_message(message));
+        }
+        None => {
+            doc.commit();
+        }
+    }
+}
+
+fn automation_scope() -> AutomationGrantScope {
+    AutomationGrantScope {
+        version: 1,
+        board_id: "board".into(),
+        columns: crate::AutomationGrantColumns {
+            lead: "lead".into(),
+            interview: "interview".into(),
+            rejected: "rejected".into(),
+        },
+        field_ids: vec!["source".into()],
+        expires_at: 1_900_000_000_000,
+    }
+}
+
+#[test]
+fn automation_semantics_allow_lead_creation_and_reject_root_mutation() {
+    for (change_root, expected) in [(false, true), (true, false)] {
+        let mut doc = automation_board();
+        let dependencies = doc.get_heads();
+        write_automation_item(&mut doc, "new-card", "lead", change_root);
+        let change = doc.get_changes(&[]).last().unwrap().clone();
+        let node = ChangeNode {
+            hash: change.hash().to_string(),
+            dependencies: change.deps().iter().map(ToString::to_string).collect(),
+            authority: None,
+            change,
+        };
+        assert_eq!(
+            automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+            expected,
+            "base heads {dependencies:?}"
+        );
+    }
+}
+
+#[test]
+fn automation_semantics_allow_status_move_and_reject_narrative_edit() {
+    for (edit_title, expected) in [(false, true), (true, false)] {
+        let mut doc = automation_board();
+        write_automation_item(&mut doc, "existing-card", "other", false);
+        let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
+        let item = doc.get(entities, "existing-card").unwrap().unwrap().1;
+        let placement = doc.get(&item, "placement").unwrap().unwrap().1;
+        doc.put(&placement, "parentId", "interview").unwrap();
+        if edit_title {
+            doc.put(&item, "title", "changed narrative").unwrap();
+        }
+        doc.commit();
+        let change = doc.get_changes(&[]).last().unwrap().clone();
+        let node = ChangeNode {
+            hash: change.hash().to_string(),
+            dependencies: change.deps().iter().map(ToString::to_string).collect(),
+            authority: None,
+            change,
+        };
+        assert_eq!(
+            automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn automation_semantics_accept_json_encoded_workflow_from_domain_commands() {
+    let mut doc = automation_board();
+    write_automation_item(&mut doc, "existing-card", "other", false);
+    let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
+    let item = doc.get(entities, "existing-card").unwrap().unwrap().1;
+    let placement = doc.get(&item, "placement").unwrap().unwrap().1;
+    doc.put(&placement, "parentId", "interview").unwrap();
+    doc.put(
+        &item,
+        "workflow",
+        r#"{"columnId":"interview","changedAt":"2026-10-08T12:00:00.000Z"}"#,
+    )
+    .unwrap();
+    doc.commit();
+    let change = doc.get_changes(&[]).last().unwrap().clone();
+    let node = ChangeNode {
+        hash: change.hash().to_string(),
+        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+        authority: None,
+        change,
+    };
+
+    assert!(
+        automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+        "canonical JSON-string workflow written by setItemWorkflow must validate"
+    );
+}
+
+#[test]
+fn concurrent_human_move_wins_over_automation_move_in_causal_projection() {
+    let (owner, owner_device_seed, owner_device_id, owner_certs) = authority([101; 32], [102; 32]);
+    let (automation, automation_device_seed, automation_device_id, automation_certs) =
+        authority([103; 32], [104; 32]);
+    let mut base = automation_board();
+    let owner_metadata = serde_json::json!({
+        "kind": "workspace-change-metadata", "version": 1,
+        "transactionId": "seed-card", "action": "createItem", "entityIds": ["card"],
+        "personId": owner.person_id, "deviceId": owner_device_id,
+    })
+    .to_string();
+    write_automation_item_with_message(&mut base, "card", "other", false, Some(owner_metadata));
+    let base_heads = base.get_heads();
+    let automation_grant_payload = WorkspaceGrantPayload {
+        kind: "workspace-grant".into(),
+        version: 1,
+        grant_id: "automation-current".into(),
+        workspace_id: "workspace".into(),
+        person_id: automation.person_id.clone(),
+        role: WorkspaceRole::Automation,
+        access_epoch: Some(1),
+        automation: Some(automation_scope()),
+    };
+    let automation_grant = {
+        let signed = sign_json_envelope(
+            &[101; 32],
+            serde_json::to_value(&automation_grant_payload).unwrap(),
+            &owner.person_id,
+            DEFAULT_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        WorkspaceGrant {
+            payload: automation_grant_payload,
+            signer_key_id: signed.signer_key_id,
+            signature: signed.signature,
+        }
+    };
+
+    let mut human_branch = base.fork();
+    let entities = human_branch.get(ROOT, "entities").unwrap().unwrap().1;
+    let item = human_branch.get(entities, "card").unwrap().unwrap().1;
+    let placement = human_branch.get(&item, "placement").unwrap().unwrap().1;
+    human_branch
+        .put(&placement, "parentId", "rejected")
+        .unwrap();
+    let human_metadata = serde_json::json!({
+        "kind": "workspace-change-metadata", "version": 1,
+        "transactionId": "human-move", "action": "moveEntity", "entityIds": ["card"],
+        "personId": owner.person_id, "deviceId": owner_device_id,
+    })
+    .to_string();
+    human_branch.commit_with(CommitOptions::default().with_message(human_metadata));
+    let human_change = human_branch.get_changes(&base_heads).remove(0);
+
+    let mut automation_branch = base.fork();
+    let entities = automation_branch.get(ROOT, "entities").unwrap().unwrap().1;
+    let item = automation_branch.get(entities, "card").unwrap().unwrap().1;
+    let placement = automation_branch
+        .get(&item, "placement")
+        .unwrap()
+        .unwrap()
+        .1;
+    automation_branch
+        .put(&placement, "parentId", "interview")
+        .unwrap();
+    let automation_metadata = serde_json::json!({
+        "kind": "workspace-change-metadata", "version": 1,
+        "transactionId": "automation-move", "action": "moveEntity", "entityIds": ["card"],
+        "personId": automation.person_id, "deviceId": automation_device_id,
+        "authorityGrantHash": grant_hash(&automation_grant),
+    })
+    .to_string();
+    automation_branch.commit_with(CommitOptions::default().with_message(automation_metadata));
+    let automation_change = automation_branch.get_changes(&base_heads).remove(0);
+
+    let mut raw_union = base.fork();
+    raw_union
+        .apply_changes(vec![human_change.clone(), automation_change.clone()])
+        .unwrap();
+    let all_base_hashes = base
+        .get_changes(&[])
+        .iter()
+        .map(|change| change.hash().to_string())
+        .collect::<Vec<_>>();
+    let human_hash = human_change.hash().to_string();
+    let automation_hash = automation_change.hash().to_string();
+    let result = evaluate_causal_admission(CausalAdmissionInput {
+        records: vec![
+            change_proof(
+                &owner,
+                &owner_device_seed,
+                &owner_device_id,
+                &owner_certs,
+                &all_base_hashes,
+                None,
+            ),
+            change_proof(
+                &owner,
+                &owner_device_seed,
+                &owner_device_id,
+                &owner_certs,
+                std::slice::from_ref(&human_hash),
+                None,
+            ),
+            change_proof(
+                &automation,
+                &automation_device_seed,
+                &automation_device_id,
+                &automation_certs,
+                std::slice::from_ref(&automation_hash),
+                Some(automation_grant),
+            ),
+        ],
+        snapshot: snapshot(owner, raw_union.save()),
+        pending_change_bytes: vec![],
+        now_ms: 100,
+    })
+    .unwrap();
+    assert!(matches!(
+        result
+            .decisions
+            .iter()
+            .find(|decision| decision.hash == human_hash)
+            .unwrap()
+            .status,
+        CausalAdmissionStatus::Admitted {
+            role: WorkspaceRole::Owner
+        }
+    ));
+    assert!(
+        matches!(
+            result
+                .decisions
+                .iter()
+                .find(|decision| decision.hash == automation_hash)
+                .unwrap()
+                .status,
+            CausalAdmissionStatus::Quarantined { .. }
+        ),
+        "concurrent human move must quarantine stale automation proposal"
+    );
+    let projected = AutoCommit::load(&result.authorized_document).unwrap();
+    let entities = projected.get(ROOT, "entities").unwrap().unwrap().1;
+    let item = projected.get(entities, "card").unwrap().unwrap().1;
+    let placement = projected.get(&item, "placement").unwrap().unwrap().1;
+    let parent_value = projected.get(&placement, "parentId").unwrap().unwrap().0;
+    assert_eq!(
+        serde_json::from_str::<String>(&parent_value.to_string()).unwrap(),
+        "rejected"
+    );
+}
+
+fn visitor_avatar_document(
+    mixed_root: bool,
+    foreign_profile: bool,
+    remove_avatar: bool,
+) -> (
+    WorkspaceAuthority,
+    AutoCommit,
+    Vec<IncomingWorkspaceChangeAuthorization>,
+    String,
+) {
     let (owner, owner_seed, owner_device_id, owner_certs) = authority([81; 32], [82; 32]);
-    let (visitor, visitor_device_seed, visitor_device_id, visitor_certs) = authority([83; 32], [84; 32]);
+    let (visitor, visitor_device_seed, visitor_device_id, visitor_certs) =
+        authority([83; 32], [84; 32]);
     let grant = visitor_grant(&owner, &[81; 32], &visitor);
     let mut doc = AutoCommit::new();
     doc.put_object(ROOT, "entities", ObjType::Map).unwrap();
     doc.put(ROOT, "title", "Workspace").unwrap();
     doc.commit();
-    let genesis = doc.get_changes(&[]).into_iter().next().unwrap().hash().to_string();
-    let genesis_record = change_proof(&owner, &owner_seed, &owner_device_id, &owner_certs, &[genesis.clone()], None);
-    write_avatar(&mut doc, &visitor.person_id, Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA"));
-    if mixed_root { doc.put(ROOT, "title", "Injected title").unwrap(); }
-    if foreign_profile { write_avatar(&mut doc, &owner.person_id, Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA")); }
-    let visitor_metadata = || serde_json::json!({
+    let genesis = doc
+        .get_changes(&[])
+        .into_iter()
+        .next()
+        .unwrap()
+        .hash()
+        .to_string();
+    let genesis_record = change_proof(
+        &owner,
+        &owner_seed,
+        &owner_device_id,
+        &owner_certs,
+        &[genesis.clone()],
+        None,
+    );
+    write_avatar(
+        &mut doc,
+        &visitor.person_id,
+        Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA"),
+    );
+    if mixed_root {
+        doc.put(ROOT, "title", "Injected title").unwrap();
+    }
+    if foreign_profile {
+        write_avatar(
+            &mut doc,
+            &owner.person_id,
+            Some("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA"),
+        );
+    }
+    let visitor_metadata = || {
+        serde_json::json!({
         "kind": "workspace-change-metadata", "version": 1,
         "personId": visitor.person_id, "deviceId": visitor_device_id,
         "action": "setMemberAvatar", "entityIds": [format!("member-profile:{}", visitor.person_id)]
-    }).to_string();
+    }).to_string()
+    };
     doc.commit_with(CommitOptions::default().with_message(visitor_metadata()));
     if remove_avatar {
         write_avatar(&mut doc, &visitor.person_id, None);
         doc.commit_with(CommitOptions::default().with_message(visitor_metadata()));
     }
-    let visitor_changes = doc.get_changes(&[]).into_iter().map(|change| change.hash().to_string())
-        .filter(|hash| hash != &genesis).collect::<Vec<_>>();
-    let visitor_record = change_proof(&visitor, &visitor_device_seed, &visitor_device_id, &visitor_certs,
-        &visitor_changes, Some(grant.clone()));
-    (owner, doc, vec![genesis_record, visitor_record], visitor.person_id)
+    let visitor_changes = doc
+        .get_changes(&[])
+        .into_iter()
+        .map(|change| change.hash().to_string())
+        .filter(|hash| hash != &genesis)
+        .collect::<Vec<_>>();
+    let visitor_record = change_proof(
+        &visitor,
+        &visitor_device_seed,
+        &visitor_device_id,
+        &visitor_certs,
+        &visitor_changes,
+        Some(grant.clone()),
+    );
+    (
+        owner,
+        doc,
+        vec![genesis_record, visitor_record],
+        visitor.person_id,
+    )
 }
 
 #[test]
 fn visitor_avatar_change_is_admitted_but_mixed_and_foreign_profile_changes_are_quarantined() {
     for (mixed_root, foreign_profile, remove_avatar, admitted) in [
-        (false, false, false, true), (false, false, true, true),
-        (true, false, false, false), (false, true, false, false),
+        (false, false, false, true),
+        (false, false, true, true),
+        (true, false, false, false),
+        (false, true, false, false),
     ] {
-        let (owner, mut doc, records, _) = visitor_avatar_document(mixed_root, foreign_profile, remove_avatar);
+        let (owner, mut doc, records, _) =
+            visitor_avatar_document(mixed_root, foreign_profile, remove_avatar);
         let plan = evaluate_causal_admission(CausalAdmissionInput {
-            records, snapshot: snapshot(owner, doc.save()), pending_change_bytes: vec![], now_ms: 0,
-        }).unwrap();
-        let visitor_decisions = plan.decisions.iter().filter(|decision| {
-            matches!(decision.status, CausalAdmissionStatus::Admitted { role: WorkspaceRole::Visitor })
-                || matches!(decision.status, CausalAdmissionStatus::Quarantined { .. })
-        }).collect::<Vec<_>>();
+            records,
+            snapshot: snapshot(owner, doc.save()),
+            pending_change_bytes: vec![],
+            now_ms: 0,
+        })
+        .unwrap();
+        let visitor_decisions = plan
+            .decisions
+            .iter()
+            .filter(|decision| {
+                matches!(
+                    decision.status,
+                    CausalAdmissionStatus::Admitted {
+                        role: WorkspaceRole::Visitor
+                    }
+                ) || matches!(decision.status, CausalAdmissionStatus::Quarantined { .. })
+            })
+            .collect::<Vec<_>>();
         assert!(!visitor_decisions.is_empty());
-        assert!(visitor_decisions.iter().all(|decision|
-            matches!(decision.status, CausalAdmissionStatus::Admitted { .. }) == admitted));
-        if remove_avatar { assert_eq!(visitor_decisions.len(), 2); }
+        assert!(visitor_decisions.iter().all(|decision| matches!(
+            decision.status,
+            CausalAdmissionStatus::Admitted { .. }
+        ) == admitted));
+        if remove_avatar {
+            assert_eq!(visitor_decisions.len(), 2);
+        }
     }
 }
 
 #[test]
 fn avatar_payload_requires_bounded_128_pixel_image_headers() {
-    let data = |avatar_data: &str| serde_json::json!({
-        "avatarData": avatar_data, "changedAt": "2026-10-07T10:00:00Z"
-    }).to_string();
-    assert!(valid_avatar_data(&data("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA")));
-    assert!(!valid_avatar_data(&data("data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAPwAAfwAA")));
+    let data = |avatar_data: &str| {
+        serde_json::json!({
+            "avatarData": avatar_data, "changedAt": "2026-10-07T10:00:00Z"
+        })
+        .to_string()
+    };
+    assert!(valid_avatar_data(&data(
+        "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA"
+    )));
+    assert!(!valid_avatar_data(&data(
+        "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAPwAAfwAA"
+    )));
     assert!(!valid_avatar_data(&data("data:image/webp;base64,AA==")));
 }
 
@@ -723,7 +1136,10 @@ fn admitted_order_matches_layer_scan_for_dags_and_rejects_cycles() {
         if fixture % 2 == 0 {
             nodes.reverse();
         }
-        let included = nodes.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+        let included = nodes
+            .iter()
+            .map(|(hash, _)| hash.clone())
+            .collect::<HashSet<_>>();
         let expected = old_layer_scan(&nodes, &included).unwrap();
         let actual = ordered_admitted_hashes(
             nodes
@@ -732,14 +1148,20 @@ fn admitted_order_matches_layer_scan_for_dags_and_rejects_cycles() {
             &included,
         )
         .unwrap();
-        assert_eq!(actual, expected, "frontier ordering differs for fixture {fixture}");
+        assert_eq!(
+            actual, expected,
+            "frontier ordering differs for fixture {fixture}"
+        );
     }
 
     let cyclic = vec![
         ("a".to_string(), vec!["b".to_string()]),
         ("b".to_string(), vec!["a".to_string()]),
     ];
-    let included = cyclic.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+    let included = cyclic
+        .iter()
+        .map(|(hash, _)| hash.clone())
+        .collect::<HashSet<_>>();
     assert!(old_layer_scan(&cyclic, &included).is_err());
     assert_eq!(
         ordered_admitted_hashes(
@@ -764,7 +1186,10 @@ fn admitted_order_handles_twenty_thousand_change_chain() {
             (hash, dependencies)
         })
         .collect::<Vec<_>>();
-    let included = nodes.iter().map(|(hash, _)| hash.clone()).collect::<HashSet<_>>();
+    let included = nodes
+        .iter()
+        .map(|(hash, _)| hash.clone())
+        .collect::<HashSet<_>>();
     let ordered = ordered_admitted_hashes(
         nodes
             .iter()
@@ -775,4 +1200,11 @@ fn admitted_order_handles_twenty_thousand_change_chain() {
     assert_eq!(ordered.first().map(String::as_str), Some("hash-00000"));
     assert_eq!(ordered.last().map(String::as_str), Some("hash-19999"));
     assert_eq!(ordered.len(), nodes.len());
+}
+
+#[test]
+fn identity_photo_removal_accepts_a_timestamped_null_avatar_but_not_other_payloads() {
+    assert!(valid_avatar_data(r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z"}"#));
+    assert!(!valid_avatar_data(r#"{"avatarData":null,"changedAt":"invalid"}"#));
+    assert!(!valid_avatar_data(r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z","owner":true}"#));
 }

@@ -65,3 +65,42 @@ describe("MeshHandshakeCodec", () => {
     })
   })
 })
+
+function rustReplacesSession(
+  previous: { remoteIssuedAt: string; remoteRouteSequence?: number; direction: "incoming" | "outgoing" },
+  candidate: { remoteIssuedAt: string; remoteRouteSequence?: number; direction: "incoming" | "outgoing" },
+  preferred: "incoming" | "outgoing",
+) {
+  const runtime = createMeshRuntime()
+  const key = { workspaceId: "comparison", deviceId: "comparison", instanceId: "comparison" }
+  try {
+    runtime.admitSession({ key, connectionId: "previous", ...previous }, previous.direction)
+    return runtime.admitSession({ key, connectionId: "candidate", ...candidate }, preferred).decision === "accepted"
+  } finally { runtime.free?.() }
+}
+
+describe("Canonical session replacement policy", () => {
+  it("Given simultaneous dials converge, when the same session arrives again, then only the preferred direction replaces its duplicate", () => {
+    const current = { remoteIssuedAt: "2026-09-14T12:00:00.000Z", direction: "incoming" as const }
+
+    expect(rustReplacesSession(current, { ...current }, "incoming")).toBe(false)
+    expect(rustReplacesSession(current, { ...current, direction: "outgoing" }, "incoming")).toBe(false)
+    expect(rustReplacesSession({ ...current, direction: "outgoing" }, current, "incoming")).toBe(true)
+  })
+
+  it("Given a renewed route for one instance, when both sessions arrive, then route sequence beats wall-clock skew", () => {
+    const current = { remoteIssuedAt: "2026-09-14T12:05:00.000Z", remoteRouteSequence: 4, direction: "incoming" as const }
+    const renewed = { remoteIssuedAt: "2026-09-14T12:00:00.000Z", remoteRouteSequence: 5, direction: "incoming" as const }
+
+    expect(rustReplacesSession(current, renewed, "incoming")).toBe(true)
+    expect(rustReplacesSession(renewed, current, "incoming")).toBe(false)
+  })
+
+  it("Given equal route sequence with skewed clocks, when duplicate sessions arrive, then time cannot replace the preferred direction", () => {
+    const current = { remoteIssuedAt: "2026-09-14T12:00:00.000Z", remoteRouteSequence: 4, direction: "incoming" as const }
+    const future = { ...current, remoteIssuedAt: "2099-09-14T12:00:00.000Z", direction: "outgoing" as const }
+
+    expect(rustReplacesSession(current, future, "incoming")).toBe(false)
+  })
+
+})

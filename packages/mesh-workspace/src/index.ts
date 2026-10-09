@@ -13,7 +13,7 @@ import { WasmIdentityCrypto } from "@meta-uber/mesh-transport/wasm"
 
 export * from "./coownership"
 
-export type WorkspaceRole = "owner" | "editor" | "visitor"
+export type WorkspaceRole = "owner" | "editor" | "visitor" | "automation"
 export type WorkspaceGrant = SignedEnvelope<{
   kind: "workspace-grant"
   version: 1
@@ -22,6 +22,13 @@ export type WorkspaceGrant = SignedEnvelope<{
   personId: string
   role: WorkspaceRole
   accessEpoch?: number
+  automation?: {
+    version: 1
+    boardId: string
+    columns: { lead: string; interview: string; rejected: string }
+    fieldIds: string[]
+    expiresAt: number
+  }
 }>
 
 export async function certHashDefault(cert: DeviceCertificate): Promise<string> {
@@ -51,9 +58,12 @@ export async function createWorkspaceGrant(
   profile: LocalProfile,
   workspaceId: string,
   personId: string,
-  role: WorkspaceRole,
+  role: "owner" | "editor" | "visitor",
   accessEpoch = 1,
 ): Promise<WorkspaceGrant> {
+  if (role !== "owner" && role !== "editor" && role !== "visitor") {
+    throw new TypeError("Use an explicit scoped automation grant for automation access")
+  }
   return await signEnvelope(profile.privateKeys.devicePrivateKey, {
     kind: "workspace-grant" as const,
     version: 1 as const,
