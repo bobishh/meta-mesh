@@ -25,6 +25,15 @@ before execution, and fails if Java/TLC is unavailable. It uses `JAVA_HOME` or
 `java` on `PATH`; on Homebrew macOS it also discovers `openjdk@21` and `openjdk`.
 TLC metadata and counterexample traces are created under temporary directories.
 
+`GrantProvenanceTransfer` models staged manifest/request negotiation, two-page
+delivery, cursor advancement, replay, and receiver completion. Its upgrade case
+transfers absent, grant-A, and grant-B provenance variants for one signed
+identity. Legacy mode accepts a unique proof and explicitly rejects ambiguous
+provenance; mode mismatch and conflicting signed identities reject before
+transfer. The drop-variant and early-completion mutants must violate safety.
+Replay is set-idempotent. Labels stand for already parsed values: this model
+does not model or establish cryptographic validity or runtime conformance.
+
 ## Executable implementation conformance
 
 `check.sh` exports TLC DOT graphs with action labels, converts their values to
@@ -126,6 +135,7 @@ GitHub release asset digest; a changed upstream asset fails closed.
 | `AuthorityEpochs` | two replicas, two people, epochs 0 through 2 | 663,553 generated / 36,864 distinct states, depth 17; passed |
 | `AuthorityConformance` | three owners, one member, epochs 0 through 2 | 300 model states; 3,774 concrete Rust states / 21,250 enabled edges through signed Rust APIs |
 | `SessionGenerations` | two browser instances on one device, generations 1 through 3 | 71 generated / 45 distinct states, depth 6; passed |
+| `GrantProvenanceTransfer` | three provenance variants, two delivery pages, replay, legacy/upgraded modes | upgraded and unique-legacy: 9 generated / 6 distinct; rejection cases: 4 / 3; passed |
 | `SessionImplementationStates` | two instances on one device, three global generations, callback clocks before and at stability | 525,891 generated / 28,849 distinct model states, depth 14; 14,425 concrete Rust states / 262,946 enabled edges explored |
 | `DeliveryImplementationStates` | two routes, one retry, old/current/future callbacks and invalid route index | 234 model states; 62 concrete Rust states / 1,551 enabled edges |
 | `DeliveryImplementationStates` recovery configuration | start after failed first round; one retry available; eventually handled successful routes | 23 states; eventual completion passed under weak fairness |
@@ -140,6 +150,8 @@ Every negative control must fail `Safety`; an unexpected pass fails the script:
 | a genesis snapshot replaces newer authority history | accept owner `bob` at epoch 1, then merge the epoch-0 genesis snapshot | 746 generated / 451 distinct states |
 | cleanup of an older generation closes the current session | register tab A generations 1 and 2, then clean up generation 1 | 41 generated / 41 distinct states |
 | same-device tabs collapse to one stored session key | register tab B generation 1 while storage aliases it to tab A | 15 generated / 10 distinct states |
+| a transport drops an absent/grant provenance variant | negotiate upgraded mode, deliver both pages, then falsely complete with a subset | expected `Safety` counterexample |
+| receiver completes before all pages arrive | negotiate upgraded mode, deliver page one, then falsely signal completion | expected `Safety` counterexample |
 | a nonempty partial ACK completes a batch | persist `h1`, then ACK only `{h1}` | 25 generated / 14 distinct states |
 | an empty ACK completes a batch | ACK `{}` in the initial state | 9 generated / 8 distinct states |
 

@@ -116,6 +116,15 @@ run_expected_failure AuthorityEpochs AuthorityEpochs_snapshot_reset "stale autho
 run_pass SessionGenerations
 run_expected_failure SessionGenerations SessionGenerations_stale_cleanup "stale cleanup closes current session"
 run_expected_failure SessionGenerations SessionGenerations_collapsed_tabs "same-device tabs collapse to one session key"
+
+run_pass GrantProvenanceTransfer GrantProvenanceUpgrade
+run_pass GrantProvenanceTransfer GrantProvenanceLegacyUnique
+run_pass GrantProvenanceTransfer GrantProvenanceLegacyAmbiguous
+run_pass GrantProvenanceTransfer GrantProvenanceIdentityConflict
+run_pass GrantProvenanceTransfer GrantProvenanceModeMismatch
+run_expected_failure GrantProvenanceTransfer GrantProvenanceDropVariant "provenance variant dropped during upgraded transfer"
+run_expected_failure GrantProvenanceTransfer GrantProvenanceEarlyCompletion "transfer completes before all variants arrive"
+
 run_pass SessionImplementationStates
 
 run_pass DurableDelivery
