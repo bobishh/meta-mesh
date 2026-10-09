@@ -1061,6 +1061,7 @@ mod tests {
                 kind: "workspace-grant".into(),
                 version: 1,
                 grant_id: format!("owner-grant-{epoch}"),
+                automation: None,
                 workspace_id: "board".into(),
                 person_id: owner_person_id.into(),
                 role: WorkspaceRole::Owner,
