@@ -328,8 +328,14 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         }
         validate_authority(&raw.genesis_owner)?;
         validate_authority(&raw.expected_current_owner)?;
-        let (current_owner, historical_owners, _) =
-            verified_ownership_chain(raw, now_ms, &std::collections::HashSet::new(), true)?;
+        let by_hash = document_hashes(&raw.document)?;
+        let (current_owner, historical_owners, _) = verified_ownership_chain_with_graph(
+            raw,
+            now_ms,
+            &std::collections::HashSet::new(),
+            true,
+            &by_hash,
+        )?;
         if current_owner.person_id != raw.expected_current_owner.person_id
             || current_owner.public_key != raw.expected_current_owner.public_key
         {
@@ -337,18 +343,18 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         }
         let mut authorities = historical_owners.clone();
         authorities.push(current_owner.clone());
-        let revocation_boundaries = verified_revocation_boundaries(raw, &authorities, now_ms)?;
+        let revocation_boundaries =
+            verified_revocation_boundaries(raw, &authorities, now_ms, &by_hash)?;
         let revoked_people = revocation_boundaries
             .keys()
             .cloned()
             .collect::<std::collections::HashSet<_>>();
         let (current_owner, historical_owners, historical_hashes) =
-            verified_ownership_chain(raw, now_ms, &revoked_people, true)?;
+            verified_ownership_chain_with_graph(raw, now_ms, &revoked_people, true, &by_hash)?;
         let mut revoked_devices = std::collections::HashMap::<
             (String, String),
             Vec<std::collections::HashSet<String>>,
         >::new();
-        let by_hash = document_hashes(&raw.document)?;
         for evidence in &raw.device_revocations {
             validate_authority(&evidence.signer)?;
             let signed_by_owner = crate::authority::verify_workspace_device_revocation(
@@ -376,7 +382,7 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
             let key = (payload.person_id.clone(), payload.device_id.clone());
             revoked_devices.entry(key).or_default().push(hashes);
         }
-        let departure_boundaries = verified_departure_boundaries(raw, now_ms)?;
+        let departure_boundaries = verified_departure_boundaries(raw, now_ms, &by_hash)?;
         Ok(Self {
             workspace_id: raw.workspace_id.clone(),
             current_owner,
@@ -604,6 +610,31 @@ pub(crate) fn verified_ownership_chain(
     } else {
         std::collections::HashMap::new()
     };
+    verified_ownership_chain_with_graph(
+        raw,
+        now_ms,
+        revoked_people,
+        require_document_heads,
+        &by_hash,
+    )
+}
+
+type DocumentGraph = std::collections::HashMap<String, Vec<String>>;
+
+fn verified_ownership_chain_with_graph(
+    raw: &WorkspaceWriteAuthorizationSnapshot,
+    now_ms: i128,
+    revoked_people: &std::collections::HashSet<String>,
+    require_document_heads: bool,
+    by_hash: &DocumentGraph,
+) -> Result<
+    (
+        WorkspaceAuthority,
+        Vec<WorkspaceAuthority>,
+        std::collections::HashMap<String, std::collections::HashSet<String>>,
+    ),
+    String,
+> {
     let mut transitions = raw
         .ownership_transfers
         .iter()
@@ -697,9 +728,16 @@ fn ancestry(
     Ok(allowed)
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static DOCUMENT_GRAPH_LOADS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn document_hashes(
     document_bytes: &[u8],
 ) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    #[cfg(test)]
+    DOCUMENT_GRAPH_LOADS.with(|loads| loads.set(loads.get() + 1));
     let mut document = automerge::AutoCommit::load(document_bytes)
         .map_err(|_| "Invalid workspace authority document".to_string())?;
     Ok(document
@@ -718,8 +756,8 @@ fn verified_revocation_boundaries(
     raw: &WorkspaceWriteAuthorizationSnapshot,
     authorities: &[WorkspaceAuthority],
     now_ms: i128,
+    by_hash: &DocumentGraph,
 ) -> Result<std::collections::HashMap<String, Vec<RevocationBoundary>>, String> {
-    let by_hash = document_hashes(&raw.document)?;
     let mut boundaries = std::collections::HashMap::<String, Vec<RevocationBoundary>>::new();
     for record in &raw.revocations {
         let authority = authorities
@@ -747,8 +785,8 @@ fn verified_revocation_boundaries(
 fn verified_departure_boundaries(
     raw: &WorkspaceWriteAuthorizationSnapshot,
     now_ms: i128,
+    by_hash: &DocumentGraph,
 ) -> Result<std::collections::HashMap<String, Vec<RevocationBoundary>>, String> {
-    let by_hash = document_hashes(&raw.document)?;
     let mut boundaries = std::collections::HashMap::<String, Vec<RevocationBoundary>>::new();
     for evidence in &raw.departures {
         validate_authority(&evidence.authority)?;
@@ -946,6 +984,25 @@ mod tests {
             device_revocations: vec![],
             departures: vec![],
         }
+    }
+
+    #[test]
+    fn given_workspace_access_when_validating_authority_then_loads_document_graph_once() {
+        let (owner, _, device_id, _) = authority([121; 32], [122; 32]);
+        let input = crate::WorkspaceAccessDecisionInput {
+            snapshot: snapshot(owner.clone()),
+            identity: owner,
+            device_id,
+            grant: None,
+            departures: vec![],
+            legacy_authority_evidence: vec![],
+        };
+        DOCUMENT_GRAPH_LOADS.with(|loads| loads.set(0));
+        assert_eq!(
+            crate::decide_workspace_access(&input, 100).unwrap(),
+            WorkspaceRole::Owner
+        );
+        DOCUMENT_GRAPH_LOADS.with(|loads| assert_eq!(loads.get(), 1));
     }
 
     fn transfer(
