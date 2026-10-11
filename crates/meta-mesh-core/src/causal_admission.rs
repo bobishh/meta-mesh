@@ -124,10 +124,15 @@ pub fn evaluate_causal_admission(
     let mut raw = AutoCommit::load(&input.snapshot.document)
         .map_err(|_| "Invalid workspace authority document".to_string())?;
     let mut changes = raw.get_changes(&[]);
+    // Loaded history is large even when its serialized snapshot is tiny.
+    // Release it before authority verification loads the same snapshot.
+    drop(raw);
+    let mut raw = None;
     let mut seen = changes
         .iter()
         .map(|change| change.hash().to_string())
         .collect::<HashSet<_>>();
+    let has_pending_bytes = !input.pending_change_bytes.is_empty();
     for bytes in input.pending_change_bytes {
         let change = Change::from_bytes(bytes)
             .map_err(|_| "Invalid pending Automerge change".to_string())?;
@@ -222,9 +227,11 @@ pub fn evaluate_causal_admission(
                 continue;
             }
             if proof.role == WorkspaceRole::Visitor {
-                if let Err(reason) =
-                    visitor_profile_change_only(&mut raw, node, &record.signed.payload.person_id)
-                {
+                if let Err(reason) = visitor_profile_change_only(
+                    admission_document(&mut raw, &input.snapshot.document)?,
+                    node,
+                    &record.signed.payload.person_id,
+                ) {
                     provenance_errors.insert(
                         proof.hash,
                         format!("Visitors may change only their own avatar profile ({reason})"),
@@ -334,7 +341,11 @@ pub fn evaluate_causal_admission(
                         }
                     } else if role == WorkspaceRole::Automation {
                         match automation_scopes.get(&node.hash) {
-                            Some(scope) => match automation_change_allowed(&mut raw, node, scope) {
+                            Some(scope) => match automation_change_allowed(
+                                admission_document(&mut raw, &input.snapshot.document)?,
+                                node,
+                                scope,
+                            ) {
                                 Ok(effect) => {
                                     automation_effects.insert(node.hash.clone(), effect);
                                     CausalAdmissionStatus::Admitted { role }
@@ -379,7 +390,33 @@ pub fn evaluate_causal_admission(
         }
     }
 
-    let mut authorized = build_authorized_projection(&nodes, &statuses)?;
+    // Scoped checks need history, but projection construction does not.
+    drop(raw);
+    // A verified snapshot already contains the exact authorized projection.
+    // Replay is required only for excluded/pending changes or move conflicts.
+    if !has_pending_bytes
+        && statuses
+            .values()
+            .all(|status| matches!(status, CausalAdmissionStatus::Admitted { .. }))
+        && automation_effects.values().all(|effect| !effect.moved)
+    {
+        return Ok(admission_plan(
+            &nodes,
+            statuses,
+            verified_authorizations,
+            input.snapshot.document,
+        ));
+    }
+    let mut authorized = if !has_pending_bytes
+        && statuses
+            .values()
+            .all(|status| matches!(status, CausalAdmissionStatus::Admitted { .. }))
+    {
+        AutoCommit::load(&input.snapshot.document)
+            .map_err(|_| "Invalid workspace authority document".to_string())?
+    } else {
+        build_authorized_projection(&nodes, &statuses)?
+    };
     let conflicting_automation = automation_effects
         .iter()
         .filter_map(|(hash, effect)| {
@@ -440,7 +477,21 @@ pub fn evaluate_causal_admission(
         authorized = build_authorized_projection(&nodes, &statuses)?;
     }
 
-    Ok(CausalAdmissionPlan {
+    Ok(admission_plan(
+        &nodes,
+        statuses,
+        verified_authorizations,
+        authorized.save(),
+    ))
+}
+
+fn admission_plan(
+    nodes: &[ChangeNode],
+    mut statuses: HashMap<String, CausalAdmissionStatus>,
+    verified_authorizations: Vec<IncomingWorkspaceChangeAuthorization>,
+    authorized_document: Vec<u8>,
+) -> CausalAdmissionPlan {
+    CausalAdmissionPlan {
         decisions: {
             let mut decisions = nodes
                 .iter()
@@ -455,8 +506,8 @@ pub fn evaluate_causal_admission(
             decisions
         },
         verified_authorizations,
-        authorized_document: authorized.save(),
-    })
+        authorized_document,
+    }
 }
 
 /// Orders admitted changes in deterministic dependency layers. Building each
@@ -563,26 +614,59 @@ fn projected_item_has_parent_conflict(doc: &mut AutoCommit, item_id: &str) -> bo
         .any(|(key, value)| key == "parentId" && value.conflict)
 }
 
+fn admission_document<'a>(
+    document: &'a mut Option<AutoCommit>,
+    bytes: &[u8],
+) -> Result<&'a mut AutoCommit, String> {
+    if document.is_none() {
+        *document = Some(
+            AutoCommit::load(bytes)
+                .map_err(|_| "Invalid workspace authority document".to_string())?,
+        );
+    }
+    Ok(document.as_mut().expect("loaded admission document"))
+}
+
+/// Read causal views without cloning the full operation history for each scope check.
+fn change_root_views(
+    raw: &mut AutoCommit,
+    node: &ChangeNode,
+) -> Result<(HydratedValue, HydratedValue), &'static str> {
+    if node
+        .change
+        .deps()
+        .iter()
+        .any(|hash| raw.get_change_by_hash(hash).is_none())
+    {
+        return Err("dependency view unavailable");
+    }
+    let before = raw
+        .hydrate(&ROOT, Some(node.change.deps()))
+        .map_err(|_| "dependency root unavailable")?;
+    let after = if raw.get_change_by_hash(&node.change.hash()).is_some() {
+        raw.hydrate(&ROOT, Some(&[node.change.hash()]))
+            .map_err(|_| "result root unavailable")?
+    } else {
+        // Pending change bytes have no historical view in the retained snapshot.
+        let mut after = raw
+            .fork_at(node.change.deps())
+            .map_err(|_| "dependency view unavailable")?;
+        after
+            .apply_changes(vec![node.change.clone()])
+            .map_err(|_| "change could not be replayed")?;
+        after
+            .hydrate(&ROOT, None)
+            .map_err(|_| "result root unavailable")?
+    };
+    Ok((before, after))
+}
+
 fn visitor_profile_change_only(
     raw: &mut AutoCommit,
     node: &ChangeNode,
     person_id: &str,
 ) -> Result<(), &'static str> {
-    let Ok(mut before) = raw.fork_at(node.change.deps()) else {
-        return Err("dependency view unavailable");
-    };
-    let before_value = match before.hydrate(&ROOT, None) {
-        Ok(value) => value,
-        Err(_) => return Err("dependency root unavailable"),
-    };
-    let mut after = before.fork();
-    if after.apply_changes(vec![node.change.clone()]).is_err() {
-        return Err("change could not be replayed");
-    }
-    let after_value = match after.hydrate(&ROOT, None) {
-        Ok(value) => value,
-        Err(_) => return Err("result root unavailable"),
-    };
+    let (before_value, after_value) = change_root_views(raw, node)?;
     let (HydratedValue::Map(mut before_root), HydratedValue::Map(mut after_root)) =
         (before_value, after_value)
     else {
@@ -620,19 +704,8 @@ fn automation_change_allowed(
     node: &ChangeNode,
     scope: &AutomationGrantScope,
 ) -> Result<AutomationEffect, &'static str> {
-    let mut before = raw
-        .fork_at(node.change.deps())
-        .map_err(|_| "Automation base is unavailable")?;
-    let before_value = before
-        .hydrate(&ROOT, None)
-        .map_err(|_| "Automation base root is invalid")?;
-    let mut after = before.fork();
-    after
-        .apply_changes(vec![node.change.clone()])
-        .map_err(|_| "Automation result is invalid")?;
-    let after_value = after
-        .hydrate(&ROOT, None)
-        .map_err(|_| "Automation result root is invalid")?;
+    let (before_value, after_value) =
+        change_root_views(raw, node).map_err(|_| "Automation change views are unavailable")?;
     let (HydratedValue::Map(mut left_root), HydratedValue::Map(mut right_root)) =
         (before_value, after_value)
     else {
@@ -1126,7 +1199,10 @@ fn valid_avatar_data(value: &str) -> bool {
     {
         return false;
     }
-    if object.get("avatarData").is_some_and(serde_json::Value::is_null) {
+    if object
+        .get("avatarData")
+        .is_some_and(serde_json::Value::is_null)
+    {
         return true;
     }
     let Some(avatar) = object.get("avatarData").and_then(serde_json::Value::as_str) else {
