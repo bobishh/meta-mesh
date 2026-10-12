@@ -85,6 +85,12 @@ export class BrowserMeshScopeSync {
       } finally { this.reportTiming("receive", "queue-run", queueStartedAt, operationId, frame.byteLength) }
     })
     this.queue = queued.catch(async error => {
+      // A second sync frame must not discard the candidate awaiting proofs.
+      // Closing without an ACK leaves the sender to reconcile after completion.
+      if (error instanceof Error && error.message === "Mesh document receive is pending persistence") {
+        await stream.closeSend()
+        return
+      }
       this.clearProofTimer()
       try { await this.runtime.rejectDocumentReceive() } catch { /* no candidate remains pending */ }
       throw error
@@ -95,7 +101,7 @@ export class BrowserMeshScopeSync {
       const startedAt = now()
       try { await this.apply(stream, frame, effect) }
       finally { this.reportTiming("receive", "out-of-queue-callback", startedAt, operationId, frame.byteLength) }
-    })
+    }, () => guarded as Promise<void>)
   }
 
   async publish(sendFrame: MeshScopeSendFrame): Promise<boolean> {

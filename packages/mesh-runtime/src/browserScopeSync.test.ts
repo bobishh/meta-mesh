@@ -3,6 +3,31 @@ import type { RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import { BrowserMeshScopeSync, type MeshScopeExecutor } from "./browserScopeSync"
 
 describe("asynchronous scope computation", () => {
+  it("Given authorization pages pending, when another document arrives, then current candidate survives until proof validation", async () => {
+    const runtime = {
+      receiveFrame: vi.fn()
+        .mockResolvedValueOnce({ kind: "proofRequest", cacheKey: "transfer", frame: new Uint8Array([9]) })
+        .mockRejectedValueOnce(new Error("Mesh document receive is pending persistence"))
+        .mockResolvedValueOnce({ kind: "documentReceive", document: new Uint8Array([1]), shouldPersist: true, acceptedChanges: 1 }),
+      rejectDocumentReceive: vi.fn(async () => {}),
+      completeDocumentReceive: vi.fn(async () => ({ closeSend: true })),
+      free: vi.fn(async () => {}),
+    } as unknown as MeshScopeExecutor
+    const host = { readDocument: vi.fn(), persistDocument: vi.fn(async () => true) }
+    const scope = new BrowserMeshScopeSync(runtime, host)
+    const stream = { send: vi.fn(async () => {}), read: vi.fn(), closeSend: vi.fn(async () => {}) }
+    await scope.receive(stream, new Uint8Array([2]))
+    const duplicate = { ...stream, send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
+    await expect(scope.receive(duplicate, new Uint8Array([3]))).resolves.toBeUndefined()
+    expect(runtime.rejectDocumentReceive).not.toHaveBeenCalled()
+    expect(host.persistDocument).not.toHaveBeenCalled()
+    expect(duplicate.send).not.toHaveBeenCalled()
+    expect(duplicate.closeSend).toHaveBeenCalledOnce()
+    await scope.receive(stream, new Uint8Array([4]))
+    expect(host.persistDocument).toHaveBeenCalledOnce()
+    await scope.close()
+  })
+
   it("awaits worker persistence decision and completion before freeing its scope", async () => {
     let finishPersistence!: (saved: boolean) => void
     let finishCompletion!: () => void
