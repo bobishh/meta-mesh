@@ -730,11 +730,14 @@ fn automation_change_allowed(
         return Err("Automation board is invalid");
     }
     let archive_id = scalar_string(board_map.get("archiveColumnId"));
-    let approved_columns = [
+    let mut approved_columns = vec![
         scope.columns.lead.as_str(),
         scope.columns.interview.as_str(),
         scope.columns.rejected.as_str(),
     ];
+    if let Some(applied) = &scope.columns.applied {
+        approved_columns.push(applied.as_str());
+    }
     let mut board_columns = std::collections::HashSet::new();
     for (id, entity) in right_entities.iter() {
         let Some(map) = map_value(&entity.value) else {
@@ -839,8 +842,9 @@ fn automation_change_allowed(
         if old_parent != after_parent
             && after_parent != scope.columns.interview
             && after_parent != scope.columns.rejected
+            && scope.columns.applied.as_deref() != Some(after_parent.as_str())
         {
-            return Err("Automation can move cards only to Interview or Rejected");
+            return Err("Automation can move cards only to approved application columns");
         }
         check_item_delta(before_map, after_map, &scope.field_ids)?;
         if old_parent == after_parent && before_map.get("values") == after_map.get("values") {
@@ -860,8 +864,12 @@ fn automation_change_allowed(
         }
         source_parent = old_parent;
     } else {
-        if after_parent != scope.columns.lead {
-            return Err("Automation can create cards only in Lead");
+        if after_parent != scope.columns.lead
+            && scope.columns.applied.as_deref() != Some(after_parent.as_str())
+        {
+            return Err(
+                "Automation can create cards only in Lead or an explicitly approved Applied column",
+            );
         }
         if is_archived(after_map.get("archivedAt")) {
             return Err("Automation can create only active cards");

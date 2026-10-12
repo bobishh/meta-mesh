@@ -25,7 +25,7 @@ export type WorkspaceGrant = SignedEnvelope<{
   automation?: {
     version: 1
     boardId: string
-    columns: { lead: string; interview: string; rejected: string }
+    columns: { lead: string; applied?: string; interview: string; rejected: string }
     fieldIds: string[]
     expiresAt: number
   }

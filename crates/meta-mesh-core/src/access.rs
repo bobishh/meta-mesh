@@ -168,6 +168,7 @@ mod tests {
             version: 1,
             board_id: "board".into(),
             columns: AutomationGrantColumns {
+                applied: None,
                 lead: "lead".into(),
                 interview: "interview".into(),
                 rejected: "rejected".into(),

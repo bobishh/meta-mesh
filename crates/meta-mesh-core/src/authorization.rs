@@ -31,18 +31,29 @@ pub struct AutomationGrantScope {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AutomationGrantColumns {
     pub lead: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied: Option<String>,
     pub interview: String,
     pub rejected: String,
 }
 
 impl AutomationGrantScope {
     fn validate(&self) -> Result<(), String> {
-        let columns = [
+        let mut columns = vec![
             &self.columns.lead,
             &self.columns.interview,
             &self.columns.rejected,
         ];
-        if self.version != 1
+        if let Some(applied) = &self.columns.applied {
+            columns.push(applied);
+        }
+        let distinct = columns
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            == columns.len();
+        if !distinct
+            || self.version != 1
             || self.board_id.is_empty()
             || columns.iter().any(|id| id.is_empty())
             || columns[0] == columns[1]
@@ -1983,6 +1994,7 @@ mod tests {
             version: 1,
             board_id: "job-board".into(),
             columns: AutomationGrantColumns {
+                applied: None,
                 lead: "lead".into(),
                 interview: "interview".into(),
                 rejected: "rejected".into(),
@@ -2076,6 +2088,7 @@ mod tests {
                 version: 1,
                 board_id: "board".into(),
                 columns: AutomationGrantColumns {
+                    applied: None,
                     lead: "lead".into(),
                     interview: "interview".into(),
                     rejected: "rejected".into(),
@@ -2130,5 +2143,22 @@ mod tests {
                 .get("accessEpoch")
                 .is_none()
         );
+    }
+}
+
+#[cfg(test)]
+mod applied_grant_tests {
+    #[test]
+    fn optional_applied_column_is_a_distinct_signed_binding() {
+        let value = serde_json::json!({ "version": 1, "boardId": "board",
+            "columns": { "lead": "lead", "applied": "applied", "interview": "interview", "rejected": "rejected" },
+            "fieldIds": ["source"], "expiresAt": 1900000000000_u64 });
+        let scope: super::AutomationGrantScope =
+            serde_json::from_value(value.clone()).expect("Applied binding must deserialize");
+        assert!(scope.validate().is_ok());
+        let mut invalid = value;
+        invalid["columns"]["applied"] = serde_json::json!("lead");
+        let scope: super::AutomationGrantScope = serde_json::from_value(invalid).unwrap();
+        assert!(scope.validate().is_err());
     }
 }

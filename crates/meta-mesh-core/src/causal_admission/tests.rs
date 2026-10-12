@@ -309,6 +309,7 @@ fn automation_scope() -> AutomationGrantScope {
         version: 1,
         board_id: "board".into(),
         columns: crate::AutomationGrantColumns {
+            applied: None,
             lead: "lead".into(),
             interview: "interview".into(),
             rejected: "rejected".into(),
@@ -1204,7 +1205,13 @@ fn admitted_order_handles_twenty_thousand_change_chain() {
 
 #[test]
 fn identity_photo_removal_accepts_a_timestamped_null_avatar_but_not_other_payloads() {
-    assert!(valid_avatar_data(r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z"}"#));
-    assert!(!valid_avatar_data(r#"{"avatarData":null,"changedAt":"invalid"}"#));
-    assert!(!valid_avatar_data(r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z","owner":true}"#));
+    assert!(valid_avatar_data(
+        r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z"}"#
+    ));
+    assert!(!valid_avatar_data(
+        r#"{"avatarData":null,"changedAt":"invalid"}"#
+    ));
+    assert!(!valid_avatar_data(
+        r#"{"avatarData":null,"changedAt":"2026-10-09T14:00:00.000Z","owner":true}"#
+    ));
 }
