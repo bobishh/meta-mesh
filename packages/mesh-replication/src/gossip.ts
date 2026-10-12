@@ -119,10 +119,14 @@ export class BrowserGossipDriver {
     this.timers.clear()
   }
 
-  private enqueue(operation: () => GossipStep): Promise<GossipStep> {
+  private enqueue(operation: () => GossipStep, cancelOnClose = false): Promise<GossipStep> {
     let result!: GossipStep
     const run = this.queue.then(async () => {
-      if (this.closed) throw new Error("Gossip driver is closed")
+      if (this.closed) {
+        if (!cancelOnClose) throw new Error("Gossip driver is closed")
+        result = { sends: [], deliveries: [], timers: [], disconnects: [], neighborsUp: [], neighborsDown: [] }
+        return
+      }
       result = operation()
       await this.drive(result)
     })
@@ -154,7 +158,7 @@ export class BrowserGossipDriver {
     const delay = Math.max(0, Math.min(Number(timer.delayMs), 2_147_483_647))
     const handle = setTimeout(() => {
       this.timers.delete(key)
-      if (!this.closed) void this.enqueue(() => this.state.expireTimer(BigInt(timer.timerId)))
+      if (!this.closed) void this.enqueue(() => this.state.expireTimer(BigInt(timer.timerId)), true)
     }, delay)
     this.timers.set(key, handle)
   }

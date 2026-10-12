@@ -2,6 +2,36 @@ import { describe, expect, it, vi } from "vitest"
 import { BrowserGossipDriver, DEFAULT_GOSSIP_BOUNDS, selectScopedNeighbors, type GossipStateMachine, type GossipStep } from "./gossip"
 
 describe("gossip bridge", () => {
+  it("Given a timer queued behind a running send, When its driver closes before that timer executes, Then timer work is cancelled without an unhandled rejection", async () => {
+    vi.useFakeTimers()
+    let finish!: () => void
+    const pendingSend = new Promise<void>(resolve => { finish = resolve })
+    const empty = (): GossipStep => ({ sends: [], deliveries: [], timers: [], disconnects: [], neighborsUp: [], neighborsDown: [] })
+    const state: GossipStateMachine = {
+      joinTopic: () => ({ ...empty(), topicId: "topic", timers: [{ timerId: 7, delayMs: 25 }] }),
+      leaveTopic: empty,
+      broadcast: () => ({ ...empty(), sends: [{ peer: "remote", packet: new Uint8Array([1]) }] }),
+      handleMessage: empty, expireTimer: vi.fn(empty), peerDisconnected: empty, activeNeighbors: () => [],
+    }
+    const send = vi.fn(() => pendingSend)
+    const unhandled = vi.fn()
+    process.on("unhandledRejection", unhandled)
+    const driver = new BrowserGossipDriver(state, { send })
+    try {
+      await driver.joinTopic("topic", ["remote"])
+      const broadcast = driver.broadcast("topic", new Uint8Array([1]))
+      await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+      vi.advanceTimersByTime(25)
+      driver.close()
+      finish()
+      await broadcast
+      await vi.runAllTimersAsync()
+      expect(state.expireTimer).not.toHaveBeenCalled()
+      expect(unhandled).not.toHaveBeenCalled()
+      await expect(driver.broadcast("topic", new Uint8Array([1]))).rejects.toThrow("Gossip driver is closed")
+    } finally { driver.close(); finish(); process.off("unhandledRejection", unhandled); vi.useRealTimers() }
+  })
+
   it("Given a device has several instance routes, when neighbors are selected, then it occupies one bounded replica slot", () => {
     const neighbors = selectScopedNeighbors({
       localDeviceId: "device-local",
