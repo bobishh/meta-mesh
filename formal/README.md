@@ -25,10 +25,9 @@ before execution, and fails if Java/TLC is unavailable. It uses `JAVA_HOME` or
 `java` on `PATH`; on Homebrew macOS it also discovers `openjdk@21` and `openjdk`.
 TLC metadata and counterexample traces are created under temporary directories.
 
-On 2026-10-15, a clean CI download rejected the previous prerelease checksum.
-The v1.8.0 asset updated on 2026-10-13 now has SHA-256
-`0f56d6a813368c48008dfbecb23a73ab43a4a5e1bf09f026782a674aa9d4b3c9`,
-matching the official [release asset metadata](https://api.github.com/repos/tlaplus/tlaplus/releases/tags/v1.8.0).
+On 2026-10-15, the official v1.8.0 release asset metadata reported SHA-256
+`15d103b7e5617780bcc904c0af12f1ad242e2b345c0301136c5be4588f17edac`,
+matching the CI download.
 All three runners pin this exact digest and still fail closed on any mismatch.
 Fresh CI results must establish conformance for this asset separately from the
 historical measurements below.

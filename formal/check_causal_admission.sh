@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TOOLS_VERSION=1.8.0
-TOOLS_SHA256=0f56d6a813368c48008dfbecb23a73ab43a4a5e1bf09f026782a674aa9d4b3c9
+TOOLS_SHA256=15d103b7e5617780bcc904c0af12f1ad242e2b345c0301136c5be4588f17edac
 CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/meta-mesh-tla-causal-admission
 TOOLS_JAR="$CACHE_DIR/tla2tools-$TOOLS_VERSION.jar"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/meta-mesh-causal-admission.XXXXXX")
