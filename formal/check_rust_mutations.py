@@ -2,9 +2,9 @@
 """Require conformance failures from real Rust mutations, in disposable copies."""
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
+from copy_workspace import copy_workspace
 
 ROOT = Path(__file__).resolve().parent.parent
 # Exact substitutions fail closed when production code changes. These mutate
@@ -57,13 +57,11 @@ def main():
             raise RuntimeError(f'{variable}: fresh TLC graph is required')
     with tempfile.TemporaryDirectory(prefix='meta-mesh-rust-mutants-') as directory:
         root = Path(directory)
-        shutil.copy2(ROOT / 'Cargo.toml', root / 'Cargo.toml')
-        shutil.copytree(ROOT / 'crates/meta-mesh', root / 'crates/meta-mesh')
-        shutil.copytree(ROOT / 'crates/meta-mesh-policy', root / 'crates/meta-mesh-policy')
-        shutil.copytree(ROOT / 'vendor/iroh-webrtc-transport', root / 'vendor/iroh-webrtc-transport')
-        shutil.copy2(ROOT / 'Cargo.lock', root / 'Cargo.lock')
+        copy_workspace(ROOT, root, extra_paths=(
+            'vendor/iroh-webrtc-transport',
+            'packages/mesh-replication/fixtures',
+        ))
         core = root / 'crates/meta-mesh-core'
-        shutil.copytree(ROOT / 'crates/meta-mesh-core', core)
         for name, filename, before, after, test in MUTATIONS:
             source = core / 'src' / filename
             original = source.read_text()

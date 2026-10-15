@@ -2,9 +2,9 @@
 """Check that real Rust co-ownership assertions catch representative mutations."""
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
+from copy_workspace import copy_workspace
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,12 +37,11 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="meta-mesh-coownership-mutants-") as directory:
         root = Path(directory)
-        shutil.copy2(ROOT / "Cargo.toml", root / "Cargo.toml")
-        shutil.copy2(ROOT / "Cargo.lock", root / "Cargo.lock")
-        shutil.copytree(ROOT / "crates/meta-mesh", root / "crates/meta-mesh")
-        shutil.copytree(ROOT / "vendor/iroh-webrtc-transport", root / "vendor/iroh-webrtc-transport")
+        copy_workspace(ROOT, root, extra_paths=(
+            "vendor/iroh-webrtc-transport",
+            "packages/mesh-replication/fixtures",
+        ))
         core = root / "crates/meta-mesh-core"
-        shutil.copytree(ROOT / "crates/meta-mesh-core", core)
         source = core / "src/coownership.rs"
 
         for name, before, after, expected_assertion in MUTATIONS:

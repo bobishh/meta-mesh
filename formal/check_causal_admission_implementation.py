@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
+from copy_workspace import copy_workspace
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -88,11 +88,10 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="meta-mesh-causal-admission-mutants-") as directory:
         workspace = Path(directory)
-        shutil.copy2(ROOT / "Cargo.toml", workspace / "Cargo.toml")
-        shutil.copy2(ROOT / "Cargo.lock", workspace / "Cargo.lock")
-        shutil.copytree(ROOT / "crates/meta-mesh", workspace / "crates/meta-mesh")
-        shutil.copytree(ROOT / "vendor/iroh-webrtc-transport", workspace / "vendor/iroh-webrtc-transport")
-        shutil.copytree(ROOT / "crates/meta-mesh-core", workspace / "crates/meta-mesh-core")
+        copy_workspace(ROOT, workspace, extra_paths=(
+            "vendor/iroh-webrtc-transport",
+            "packages/mesh-replication/fixtures",
+        ))
 
         baseline = run_test(
             workspace,

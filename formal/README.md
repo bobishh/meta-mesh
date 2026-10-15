@@ -33,6 +33,13 @@ All three runners pin this exact digest and still fail closed on any mismatch.
 Fresh CI results must establish conformance for this asset separately from the
 historical measurements below.
 
+Mutation runners copy every Cargo-reported workspace member, the vendored Iroh
+source and shared binary-interop fixtures into a disposable workspace. A missing
+member or fixture must never turn a compiler error into a successful mutant
+check. `python3 -m unittest formal.test_workspace_copy` verifies the copied
+locked workspace and byte-identical fixtures before the full CI run. Mutants
+still require their exact expected Rust assertion failures.
+
 `GrantProvenanceTransfer` models staged manifest/request negotiation, two-page
 delivery, cursor advancement, replay, and receiver completion. Its upgrade case
 transfers absent, grant-A, and grant-B provenance variants for one signed

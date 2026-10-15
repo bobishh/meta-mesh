@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer"
 import { expect, it, vi } from "vitest"
 import { BrowserIdentityStore, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain, verifyEnvelope } from "@meta-uber/mesh-identity"
 import { readArchiveBytes, writeArchiveBytes, MAX_ARCHIVE_PART_BYTES, MAX_ARCHIVE_PAGE_BYTES,
@@ -10,7 +11,7 @@ async function fixture() {
     read: vi.fn(async id => objects.get(id)?.slice()),
     write: vi.fn(async (id, bytes) => {
       const current = objects.get(id)
-      if (current && (current.length !== bytes.length || !current.every((byte, i) => bytes[i] === byte))) throw new Error("Immutable object conflict")
+      if (current && Buffer.compare(current, bytes) !== 0) throw new Error("Immutable object conflict")
       objects.set(id, bytes.slice())
     }),
   }
@@ -37,7 +38,7 @@ it("Given exact original proof bytes and classification observations, when archi
   expect(reference.partCount).toBe(2)
   expect(reference.byteLength).toBe(proof.length)
   const readOnly: ArchiveObjectStore = { read: f.store.read, write: vi.fn(async () => { throw new Error("Read wrote data") }) }
-  expect(await collect(await readArchiveBytes(context, reference, readOnly))).toEqual(proof)
+  expect(Buffer.compare(await collect(await readArchiveBytes(context, reference, readOnly)), proof)).toBe(0)
   expect(readOnly.write).not.toHaveBeenCalled()
   for (const bytes of f.objects.values()) expect(bytes.length).toBeLessThanOrEqual(MAX_ARCHIVE_PART_BYTES)
 })
@@ -50,7 +51,7 @@ it("Given identical bytes at multiple part positions, when reopening through enc
   const reader: ArchiveObjectStore = { write: f.store.write, read: async (id, maximum, binding?: unknown) => {
     calls.push({ id, binding }); return f.store.read(id, maximum)
   } }
-  expect(await collect(await readArchiveBytes(context, reference, reader))).toEqual(original)
+  expect(Buffer.compare(await collect(await readArchiveBytes(context, reference, reader)), original)).toBe(0)
   const parts = calls.filter(call => call.id !== reference.root.objectId)
   expect(parts).toHaveLength(3)
   expect(new Set(parts.map(call => call.id)).size).toBe(1)
@@ -68,7 +69,7 @@ it("Given an actual device-signed original envelope, when restored from archive 
     observation: { status: "pending", reason: "Dependency absent" } }, null, 2))
   const saved = await writeArchiveBytes(context, source(original), f.store)
   const bytes = await collect(await readArchiveBytes(context, saved, f.store))
-  expect(bytes).toEqual(original)
+  expect(Buffer.compare(bytes, original)).toBe(0)
   const retained = JSON.parse(new TextDecoder().decode(bytes))
   const key = await verifyDeviceCertificateChain(retained.identity, retained.signed.signerKeyId, retained.certificates)
   expect(await verifyEnvelope(retained.signed, key)).toBe(true)
@@ -100,7 +101,7 @@ it("Given a binary source fails or storage rejects a write, when preparation abo
   await expect(writeArchiveBytes(context, interrupted(), f.store)).rejects.toThrow("Source unavailable")
   const badStore: ArchiveObjectStore = { read: f.store.read, write: async () => { throw new Error("Quota exhausted") } }
   await expect(writeArchiveBytes(context, source(original), badStore)).rejects.toThrow("Quota exhausted")
-  expect(await collect(await readArchiveBytes(context, saved, f.store))).toEqual(original)
+  expect(Buffer.compare(await collect(await readArchiveBytes(context, saved, f.store)), original)).toBe(0)
 })
 
 it.each(["missing", "corrupt"] as const)("Given a %s evidence part, when fully consumed, then reject without labeling a truncated proof verified", async kind => {
@@ -127,7 +128,7 @@ it("Given empty binary evidence, when retained, then authenticate an empty parts
   const f = await fixture()
   const saved = await writeArchiveBytes(context, [], f.store)
   expect(saved).toMatchObject({ byteLength: 0, partCount: 0, root: { count: 0 } })
-  expect(await collect(await readArchiveBytes(context, saved, f.store))).toEqual(new Uint8Array())
+  expect(Buffer.compare(await collect(await readArchiveBytes(context, saved, f.store)), new Uint8Array())).toBe(0)
   expect(f.objects.get(saved.root.objectId)!.length).toBeLessThan(MAX_ARCHIVE_PAGE_BYTES)
 })
 
@@ -141,7 +142,7 @@ it("Given caller reference changes after opening, when reading, then use its cap
   saved.byteLength = 1
   saved.partCount = 1
   saved.root.first = "other"
-  expect(await collect(reader)).toEqual(bytes)
+  expect(Buffer.compare(await collect(reader), bytes)).toBe(0)
 })
 
 it("Given a source yields an oversized chunk, when writing, then reject before persisting that unbounded input", async () => {
