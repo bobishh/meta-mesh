@@ -882,6 +882,7 @@ fn application_source_change_may_touch(raw: &mut AutoCommit, node: &ChangeNode) 
         return true;
     }
     let expanded = node.change.decode();
+    let safe_created_objects = safe_created_root_path_objects(&expanded);
     let mut checked_objects = HashSet::new();
     for operation in &expanded.operations {
         if matches!(&operation.key, Key::Map(key) if key.starts_with("application-source:"))
@@ -892,6 +893,9 @@ fn application_source_change_may_touch(raw: &mut AutoCommit, node: &ChangeNode) 
         let ObjectId::Id(id) = &operation.obj else {
             continue;
         };
+        if safe_created_objects.contains(&operation.obj) {
+            continue;
+        }
         if !checked_objects.insert(operation.obj.clone()) {
             continue;
         }
@@ -933,6 +937,31 @@ fn application_source_change_may_touch(raw: &mut AutoCommit, node: &ChangeNode) 
         }
     }
     false
+}
+
+fn safe_created_root_path_objects(change: &automerge::ExpandedChange) -> HashSet<automerge::legacy::ObjectId> {
+    use automerge::legacy::{Key, ObjectId, OpId, OpType};
+
+    let mut safe = HashSet::new();
+    for (index, operation) in change.operations.iter().enumerate() {
+        if !matches!(operation.action, OpType::Make(_)) {
+            continue;
+        }
+        let Some(counter) = change.start_op.get().checked_add(index as u64) else {
+            continue;
+        };
+        let safe_parent = match &operation.obj {
+            ObjectId::Root => matches!(&operation.key, Key::Map(key)
+                if key != "entities" && key != "kind" && !key.starts_with("application-source:")),
+            ObjectId::Id(parent) => safe.contains(&ObjectId::Id(parent.clone()))
+                && !matches!(&operation.key, Key::Map(key)
+                    if key == "kind" || key.starts_with("application-source:")),
+        };
+        if safe_parent {
+            safe.insert(ObjectId::Id(OpId::new(counter, &change.actor_id)));
+        }
+    }
+    safe
 }
 
 fn application_source_kind_at(
@@ -980,6 +1009,9 @@ fn application_source_conflicts(raw: &mut AutoCommit) -> BTreeSet<String> {
 }
 
 fn workspace_entities_map_rebound(raw: &mut AutoCommit, node: &ChangeNode) -> Option<ObjId> {
+    if !change_may_rebind_workspace_entities(node) {
+        return None;
+    }
     let Ok(Some((before_value, before_id))) = raw.get_at(ROOT, "entities", node.change.deps())
     else {
         return None;
@@ -1000,6 +1032,20 @@ fn workspace_entities_map_rebound(raw: &mut AutoCommit, node: &ChangeNode) -> Op
         Ok(_) => Some(before_id),
         Err(_) => None,
     }
+}
+
+fn change_may_rebind_workspace_entities(node: &ChangeNode) -> bool {
+    use automerge::legacy::{Key, ObjectId};
+
+    // Small changes can prove that the root binding was untouched from their
+    // operation targets. Large changes retain the conservative frontier check.
+    if node.change.len() > 32_768 {
+        return true;
+    }
+    node.change.decode().operations.iter().any(|operation| {
+        matches!(operation.obj, ObjectId::Root)
+            && matches!(&operation.key, Key::Map(key) if key == "entities")
+    })
 }
 
 fn workspace_entities_object_at_frontier(raw: &mut AutoCommit, heads: &[String]) -> Option<ObjId> {

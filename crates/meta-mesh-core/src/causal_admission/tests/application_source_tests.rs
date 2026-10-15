@@ -425,7 +425,7 @@ fn scope_and_closed_schema_mismatches_are_quarantined() {
 
 #[test]
 fn an_admitted_application_source_cannot_be_edited_deleted_or_disguised() {
-    for action in ["edit", "delete", "disguise"] {
+    for action in ["edit", "delete", "disguise", "mixed title and source edit"] {
         let (mut doc, owner, seed, device, certs, _) = source_base();
         add_valid_source(&mut doc, &owner, &device, "source_1");
         let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
@@ -439,6 +439,12 @@ fn an_admitted_application_source_cannot_be_edited_deleted_or_disguised() {
             "disguise" => {
                 let source = doc.get(entities, id).unwrap().unwrap().1;
                 doc.put(&source, "kind", "note").unwrap();
+            }
+            "mixed title and source edit" => {
+                let title = doc.put_object(ROOT, "title", ObjType::Text).unwrap();
+                doc.splice_text(&title, 0, 0, "Workspace title").unwrap();
+                let source = doc.get(entities, id).unwrap().unwrap().1;
+                doc.put(&source, "title", "edited source").unwrap();
             }
             _ => unreachable!(),
         }
@@ -972,6 +978,55 @@ fn a_scalar_edit_near_long_unchanged_prose_inspects_only_its_own_operation() {
         change,
     };
     assert!(!application_source_change_may_touch(&mut doc, &node));
+}
+
+#[test]
+fn only_root_entities_operations_require_the_rebinding_check() {
+    let (mut doc, owner, _seed, device, _certs, _) = source_base();
+    doc.put(ROOT, "title", "Renamed workspace").unwrap();
+    commit_owner_edit(&mut doc, &owner, &device);
+    let change = doc.get_changes(&[]).last().unwrap().clone();
+    let title_node = ChangeNode {
+        hash: change.hash().to_string(),
+        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+        authority: None,
+        change,
+    };
+    assert!(!change_may_rebind_workspace_entities(&title_node));
+
+    let _replacement = doc.put_object(ROOT, "entities", ObjType::Map).unwrap();
+    commit_owner_edit(&mut doc, &owner, &device);
+    let change = doc.get_changes(&[]).last().unwrap().clone();
+    let rebind_node = ChangeNode {
+        hash: change.hash().to_string(),
+        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+        authority: None,
+        change,
+    };
+    assert!(change_may_rebind_workspace_entities(&rebind_node));
+}
+
+#[test]
+fn source_touch_scan_can_prove_new_root_title_text_is_outside_entities() {
+    use automerge::legacy::{ObjectId, OpId};
+
+    let (mut doc, owner, _seed, device, _certs, _) = source_base();
+    let title = doc.put_object(ROOT, "title", ObjType::Text).unwrap();
+    doc.splice_text(&title, 0, 0, "Workspace title").unwrap();
+    commit_owner_edit(&mut doc, &owner, &device);
+    let change = doc.get_changes(&[]).last().unwrap().clone();
+    let expanded = change.decode();
+    let title_id = ObjectId::Id(OpId::new(expanded.start_op.get(), &expanded.actor_id));
+    assert!(safe_created_root_path_objects(&expanded).contains(&title_id));
+
+    let entities = doc.get(ROOT, "entities").unwrap().unwrap().1;
+    let card_title = doc.put_object(&entities, "card-title", ObjType::Text).unwrap();
+    doc.splice_text(&card_title, 0, 0, "Card title").unwrap();
+    commit_owner_edit(&mut doc, &owner, &device);
+    let change = doc.get_changes(&[]).last().unwrap().clone();
+    let expanded = change.decode();
+    let card_title_id = ObjectId::Id(OpId::new(expanded.start_op.get(), &expanded.actor_id));
+    assert!(!safe_created_root_path_objects(&expanded).contains(&card_title_id));
 }
 
 #[test]

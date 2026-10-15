@@ -358,6 +358,24 @@ function mergeCredentialSecurity(current: WorkspaceMeshCredential, incoming: Wor
   return result
 }
 
+/** Retain signed device evidence, without treating an extra certificate as authorization.
+ * Scope control still comes only from Native; every consumer verifies the used chain and revocations.
+ */
+function controllerCertificateEvidence(controller: { personId: string; publicKey: string; certificates: unknown[] },
+  projections: WorkspaceAuthorityRecord[]): unknown[] {
+  const evidence = [...controller.certificates]
+  for (const projection of projections) {
+    if (projection.ownerPersonId !== controller.personId || projection.ownerPublicKey !== controller.publicKey) continue
+    for (const certificate of projection.ownerCertificates) {
+      const personId = (certificate as { payload?: { personId?: unknown } } | null)?.payload?.personId
+      if (personId === controller.personId) evidence.push(certificate)
+    }
+  }
+  const unique = new Map(evidence.map(value => [canonicalJson(value), value]))
+  if (unique.size > 512) throw new Error("Too many workspace owner certificates")
+  return structuredClone([...unique.values()])
+}
+
 async function putAuthorityIfNewer(store: IDBObjectStore, authority: WorkspaceAuthorityRecord): Promise<void> {
   const current = await promisifyRequest<WorkspaceAuthorityRecord | undefined>(store.get(authority.workspaceId))
   if (current) {
@@ -411,7 +429,7 @@ function mergeWorkspaceAuthority(
     merged.genesisOwnerPersonId = validated.creator.personId
     merged.ownerPersonId = validated.controller.personId
     merged.ownerPublicKey = validated.controller.publicKey
-    merged.ownerCertificates = structuredClone(validated.controller.certificates)
+    merged.ownerCertificates = controllerCertificateEvidence(validated.controller, [current, incoming])
   } else {
     merged.genesisOwnerPersonId = current.genesisOwnerPersonId ?? incoming.genesisOwnerPersonId
   }
