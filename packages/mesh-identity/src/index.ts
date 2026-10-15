@@ -595,6 +595,7 @@ export async function verifyEnvelope<T extends { kind: string }>(
 export class BrowserIdentityStore {
   private profile: LocalProfile | null = null
   private booting: Promise<LocalProfile> | null = null
+  private presentationRefresh: { profile: LocalProfile | null; expectedRaw: string | undefined; result: Promise<LocalProfile> } | null = null
   private readonly memory = new Map<string, string>()
   private readonly domain: string
 
@@ -643,7 +644,17 @@ export class BrowserIdentityStore {
   isCurrentProfile(profile: LocalProfile): boolean { return this.profile === profile }
 
   /** Refresh presentation labels after a trusted app transaction updates durable local metadata. */
-  async refreshPresentation(expectedRaw?: string): Promise<LocalProfile> {
+  refreshPresentation(expectedRaw?: string): Promise<LocalProfile> {
+    const running = this.presentationRefresh
+    if (running?.profile === this.profile && running.expectedRaw === expectedRaw) return running.result
+    const result = this.refreshPresentationSnapshot(expectedRaw)
+    this.presentationRefresh = { profile: this.profile, expectedRaw, result }
+    const settled = () => { if (this.presentationRefresh?.result === result) this.presentationRefresh = null }
+    void result.then(settled, settled)
+    return result
+  }
+
+  private async refreshPresentationSnapshot(expectedRaw?: string): Promise<LocalProfile> {
     const current = this.profile
     if (!current) throw new Error("Identity must be bootstrapped before presentation refresh")
     const active = current
@@ -688,6 +699,9 @@ export class BrowserIdentityStore {
     if (canonicalizeJson(saved) !== canonicalizeJson(expected)) {
       throw new Error("Durable identity changed outside presentation metadata")
     }
+
+    ensureCurrent()
+    if (saved.identity.displayName === baseline.identity.displayName && saved.device.displayName === baseline.device.displayName) return active
 
     const refreshed: LocalProfile = {
       identity: { ...baseline.identity, displayName: saved.identity.displayName },

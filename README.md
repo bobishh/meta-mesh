@@ -21,6 +21,13 @@ Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recove
 
 Workspace authority is durable application state, separate from live transport. `mesh-peer-store` keeps owner history, grants, revocations, transfer records, and succession records in its `authority` store. Route cleanup and leaving an active mesh remove peers and transport credentials while preserving that signed authority. Full local-data reset may remove both.
 
+`BrowserIdentityStore.refreshPresentation()` verifies durable metadata against
+the current identity, certificate and private keys. Unchanged labels retain the
+active profile object, preserving in-flight signing guards. Overlapping requests
+for the same cached profile and exact expected bytes share one validated read;
+different expected snapshots never share success. Real identity/key/certificate
+replacement and stale captured bytes still reject without overwriting storage.
+
 No direct-derived identity compatibility or migration path exists. Applications discard pre-envelope sessions. Application-specific passphrases can encrypt a separate envelope around the same random-root model; they never derive identity keys.
 
 ## Native history capture

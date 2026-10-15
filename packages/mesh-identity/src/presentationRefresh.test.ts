@@ -16,6 +16,57 @@ type SavedProfileParts = {
   privateKeys: Record<string, unknown>
 }
 
+it("Given unchanged durable presentation, when concurrent refreshes run, then retain the active profile and signing identity", async () => {
+  const values = new Map<string, string>()
+  const store = storeFor(values)
+  const active = await store.bootstrap("Unchanged")
+  const before = values.get("identity")
+
+  const results = await Promise.all([store.refreshPresentation(), store.refreshPresentation()])
+
+  expect(results[0]).toBe(active)
+  expect(results[1]).toBe(active)
+  expect(store.isCurrentProfile(active)).toBe(true)
+  expect(values.get("identity")).toBe(before)
+})
+
+it("Given one durable presentation update, when matching refreshes overlap, then both receive the same validated current profile", async () => {
+  const values = new Map<string, string>()
+  let reads = 0
+  const store = storeFor(values, async key => { reads++; return values.get(key) ?? null })
+  const active = await store.bootstrap("Before")
+  const saved = JSON.parse(values.get("identity")!)
+  saved.identity.displayName = "After"
+  const raw = JSON.stringify(saved)
+  values.set("identity", raw)
+  reads = 0
+
+  const results = await Promise.all([store.refreshPresentation(raw), store.refreshPresentation(raw)])
+
+  expect(reads).toBe(1)
+  expect(results[0]).toBe(results[1])
+  expect(results[0]!.identity.displayName).toBe("After")
+  expect(results[0]!.privateKeys.devicePrivateKey).toBe(active.privateKeys.devicePrivateKey)
+  expect(store.isCurrentProfile(results[0]!)).toBe(true)
+})
+
+it("Given different captured bytes, when refreshes overlap, then never share the successful refresh with a stale caller", async () => {
+  const values = new Map<string, string>()
+  const store = storeFor(values)
+  await store.bootstrap("Before")
+  const stale = values.get("identity")!
+  const saved = JSON.parse(stale)
+  saved.identity.displayName = "After"
+  const raw = JSON.stringify(saved)
+  values.set("identity", raw)
+
+  const results = await Promise.allSettled([store.refreshPresentation(stale), store.refreshPresentation(raw)])
+
+  expect(results[0]).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringMatching(/changed|stale/i) }) })
+  expect(results[1]).toMatchObject({ status: "fulfilled", value: { identity: { displayName: "After" } } })
+  expect(values.get("identity")).toBe(raw)
+})
+
 it("Given only presentation names changed durably, when refreshing, then adopt labels and retain cached key objects", async () => {
   const values = new Map<string, string>()
   const store = storeFor(values)
