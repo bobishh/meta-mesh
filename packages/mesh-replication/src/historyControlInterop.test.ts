@@ -10,8 +10,9 @@ const cases = fixture.cases as Array<{
   allowed: boolean
 }>
 
-it("Given compiled policy WASM, when identifying admission rules, then report the exact Native fixture policy", () => {
-  expect(meshRustRuntime().state.causalAdmissionPolicyId()).toBe(fixture.policy)
+it("Given original v2 control observations, when a v3 reader loads them, then retain original policy metadata and report the current compiled rules separately", () => {
+  expect(fixture.policy).toBe("mesh-causal-admission@2")
+  expect(meshRustRuntime().state.causalAdmissionPolicyId()).toBe("mesh-causal-admission@3")
 })
 
 it.each(cases)("Given Native history control vector $name, when packaged policy WASM validates it, then match Native authorization", vector => {

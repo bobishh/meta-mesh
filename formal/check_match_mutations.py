@@ -10,6 +10,7 @@ import tempfile
 
 FORMAL_ROOT = Path(__file__).resolve().parent
 TEST_FILE = "src/sync/workspaceSet.test.ts"
+SOURCE_FILE = "src/sync/workspaceSetLive.ts"
 TARGET = """        const task = handleLiveWorkspaceStream(stream, incomingContext)
         frameHandlers.add(task)
 """
@@ -46,6 +47,7 @@ def prepare_copy(match_root: Path, root: Path) -> None:
     shutil.copytree(match_root / "src", root / "src")
     for name in ("package.json", "vitest.config.ts", "tsconfig.app.json"):
         shutil.copy2(match_root / name, root / name)
+    shutil.copytree(match_root / "release", root / "release")
     (root / "node_modules").symlink_to(match_root / "node_modules")
     (root / "vendor").mkdir()
     (root / "vendor" / "meta-mesh").symlink_to(match_root / "vendor" / "meta-mesh")
@@ -63,7 +65,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="match-receive-mutant-") as directory:
         root = Path(directory)
         prepare_copy(match_root, root)
-        source = root / "src/sync/workspaceSet.ts"
+        source = root / SOURCE_FILE
         original = source.read_text()
         if original.count(TARGET) != 1:
             raise RuntimeError("receive scheduler mutation target changed; review it, do not skip")

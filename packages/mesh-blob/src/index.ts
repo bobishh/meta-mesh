@@ -54,6 +54,11 @@ export type BlobRequestPayload = {
 }
 
 export type BlobRequest = SignedEnvelope<BlobRequestPayload>
+export type BlobRequestSigner = {
+  readonly personId: string
+  readonly deviceId: string
+  sign(payload: BlobRequestPayload): Promise<BlobRequest>
+}
 
 export type BlobResponse = {
   kind: "blob-response"
@@ -66,6 +71,8 @@ export type BlobResponse = {
 }
 
 export type RequestBlobOptions = {
+  /** Verified application signer; detached SDK callers retain the legacy key-based constructor. */
+  signing?: BlobRequestSigner
   /** Abort pending stream I/O without closing the owning mesh connection. */
   signal?: AbortSignal
   /** Revalidate caller-owned authority at each chunk boundary and after pending I/O. */
@@ -129,16 +136,25 @@ export async function createBlobRequest(
   offset: number,
   length = BLOB_CHUNK_BYTES,
   now = Date.now(),
+  signing?: BlobRequestSigner,
 ): Promise<BlobRequest> {
   if (!conversationId || !isValidBlobId(blobId) ||
     !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 1 || length > BLOB_CHUNK_BYTES) {
     throw new Error("Invalid blob request")
   }
-  return signEnvelope(profile.privateKeys.devicePrivateKey, {
+  const captured = structuredClone(profile)
+  const payload: BlobRequestPayload = {
     kind: "blob-request", version: 1, requestId: crypto.randomUUID(), conversationId, blobId,
-    requesterPersonId: profile.identity.personId, requesterDeviceId: profile.device.deviceId,
+    requesterPersonId: captured.identity.personId, requesterDeviceId: captured.device.deviceId,
     offset, length, createdAt: new Date(now).toISOString(),
-  }, profile.device.deviceId, BLOB_SIGNATURE_DOMAIN)
+  }
+  if (signing) {
+    if (signing.personId !== captured.identity.personId || signing.deviceId !== captured.device.deviceId) {
+      throw new Error("Blob signer device does not match its profile")
+    }
+    return signing.sign(payload)
+  }
+  return signEnvelope(captured.privateKeys.devicePrivateKey, payload, captured.device.deviceId, BLOB_SIGNATURE_DOMAIN)
 }
 
 export async function verifyBlobRequest(
@@ -207,6 +223,8 @@ export async function requestBlob(
     signal: options.signal,
     ensureCurrent: options.ensureCurrent,
     deadlineAt: options.deadlineAt,
+    signing: options.signing ? { personId: options.signing.personId, deviceId: options.signing.deviceId,
+      sign: options.signing.sign.bind(options.signing) } : undefined,
   }
   validateBlobDescriptor(captured.descriptor)
   if (captured.deadlineAt !== undefined && (!Number.isSafeInteger(captured.deadlineAt) || captured.deadlineAt < 0)) {
@@ -216,7 +234,7 @@ export async function requestBlob(
   for (let offset = 0; offset < captured.descriptor.size; offset += BLOB_CHUNK_BYTES) {
     await ensureBlobCurrent(captured)
     const request = await awaitBlobOperation(() =>
-      createBlobRequest(captured.profile, captured.scopeId, captured.descriptor.blobId, offset), captured)
+      createBlobRequest(captured.profile, captured.scopeId, captured.descriptor.blobId, offset, BLOB_CHUNK_BYTES, Date.now(), captured.signing), captured)
     await ensureBlobCurrent(captured)
     let stream: MeshStream | undefined
     let sendClosed = false

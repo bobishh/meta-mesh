@@ -549,3 +549,77 @@ fn given_compressed_pending_change_when_exporting_then_keep_exact_compressed_ori
         CausalAdmissionStatus::Pending { .. }
     ));
 }
+
+#[test]
+fn given_signed_entity_metadata_when_capturing_then_index_original_versions_newest_first_without_granting_metadata_authority() {
+    use automerge::transaction::CommitOptions;
+    let mut f = fixture();
+    let mut document = AutoCommit::load(&f.source.snapshot.document).unwrap();
+    let mut expected = Vec::new();
+    for (time, title) in [(10, "first"), (20, "second")] {
+        document.put(ROOT, "title", title).unwrap();
+        document.commit_with(CommitOptions::default().with_time(time).with_message(serde_json::json!({
+            "kind": "workspace-change-metadata", "version": 1, "action": "editItem", "entityIds": ["card/with-unicode-ёж", "card/with-unicode-ёж"],
+            "personId": f.signer.person_id, "deviceId": f.signer.device_id
+        }).to_string()));
+        expected.push(document.get_heads()[0].to_string());
+    }
+    f.source.snapshot.document = document.save();
+    f.source.records.push(proof(&f.source.snapshot.genesis_owner, &f.signer, &f.device_seed, expected.clone()));
+    let original = originals(&f.source);
+    let capture = capture_workspace_history(prepare_workspace_history(f.source.clone(), f.signer).unwrap(), 4, original).unwrap();
+    let mut store = Store::default();
+    let catalogue = capture.write_catalogue(&mut store).unwrap();
+    let roots = entries(&store, &catalogue.context, &catalogue.root).into_iter().collect::<BTreeMap<_, _>>();
+    let key = format!("entity/{}", crate::history_capture::history_entity_index_id("card/with-unicode-ёж").unwrap());
+    let entity: crate::history_capture::HistoryCapturedEntityIndex = serde_json::from_slice(&store.objects[&roots[&key]]).unwrap();
+    assert_eq!(entity.entity_id, "card/with-unicode-ёж");
+    let versions = entries(&store, &entity.context, &entity.root);
+    assert_eq!(versions.len(), 2);
+    assert!(versions[0].0.ends_with(&expected[1]));
+    assert!(versions[1].0.ends_with(&expected[0]));
+    for (_, id) in versions {
+        let change: HistoryCapturedChange = serde_json::from_slice(&store.objects[&id]).unwrap();
+        assert_eq!(change.metadata.unwrap().action, "editItem");
+        assert!(matches!(change.observation, CausalAdmissionStatus::Admitted { .. }));
+    }
+}
+
+#[test]
+fn given_imported_changes_without_metadata_when_capturing_then_index_actual_entity_creation_edit_and_deletion_as_imported() {
+    use automerge::{ObjType, ReadDoc, transaction::CommitOptions};
+    let mut f = fixture();
+    let mut document = AutoCommit::load(&f.source.snapshot.document).unwrap();
+    let entities = document.put_object(ROOT, "entities", ObjType::Map).unwrap();
+    let item = document.put_object(&entities, "legacy-item", ObjType::Map).unwrap();
+    document.put(&item, "title", "Imported first title").unwrap();
+    document.commit_with(CommitOptions::default().with_time(10));
+    let created = document.get_heads()[0].to_string();
+    let item = document.get(&entities, "legacy-item").unwrap().unwrap().1;
+    document.put(&item, "title", "Imported second title").unwrap();
+    document.commit_with(CommitOptions::default().with_time(20).with_message("Unstructured legacy message"));
+    let edited = document.get_heads()[0].to_string();
+    document.delete(&entities, "legacy-item").unwrap();
+    document.commit_with(CommitOptions::default().with_time(30));
+    let deleted = document.get_heads()[0].to_string();
+    f.source.snapshot.document = document.save();
+    f.source.records.push(proof(&f.source.snapshot.genesis_owner, &f.signer, &f.device_seed, vec![created.clone(), edited.clone(), deleted.clone()]));
+    let original = originals(&f.source);
+    let capture = capture_workspace_history(prepare_workspace_history(f.source, f.signer).unwrap(), 1, original).unwrap();
+    let mut store = Store::default();
+    let catalogue = capture.write_catalogue(&mut store).unwrap();
+    let roots = entries(&store, &catalogue.context, &catalogue.root).into_iter().collect::<BTreeMap<_, _>>();
+    let entity_key = format!("entity/{}", crate::history_capture::history_entity_index_id("legacy-item").unwrap());
+    let entity: crate::history_capture::HistoryCapturedEntityIndex = serde_json::from_slice(&store.objects[&roots[&entity_key]]).unwrap();
+    let versions = entries(&store, &entity.context, &entity.root);
+    assert_eq!(versions.len(), 3);
+    for ((_, id), hash) in versions.into_iter().zip([deleted, edited, created]) {
+        let captured: HistoryCapturedChange = serde_json::from_slice(&store.objects[&id]).unwrap();
+        assert_eq!(captured.hash, hash);
+        let metadata = captured.metadata.unwrap();
+        assert!(metadata.imported);
+        assert_eq!(metadata.entity_ids, vec!["legacy-item"]);
+        assert!(metadata.person_id.is_none());
+        assert!(metadata.device_id.is_none());
+    }
+}

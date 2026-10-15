@@ -46,6 +46,8 @@ export interface WorkspacePeerRecord {
 
 export interface WorkspaceMeshCredential {
   version: 1
+  genesisOwnerPersonId?: string
+  scopeAuthoritySnapshot?: WorkspaceAuthorityRecord["scopeAuthoritySnapshot"]
   workspaceId: string
   ownerPersonId: string
   ownerPublicKey: string
@@ -352,7 +354,7 @@ function mergeCredentialSecurity(current: WorkspaceMeshCredential, incoming: Wor
     result.localGrant = (oldGrant.payload.accessEpoch ?? 1) > (nextGrant.payload.accessEpoch ?? 1) ? current.localGrant : incoming.localGrant
   }
   result.ownerCertificates = [...new Map([...current.ownerCertificates, ...incoming.ownerCertificates]
-    .map(value => [JSON.stringify(value), value])).values()]
+    .map(value => [canonicalJson(value), value])).values()]
   return result
 }
 
@@ -377,16 +379,85 @@ function mergeWorkspaceAuthority(
   // snapshot must never be silently accepted as a harmless no-op.
   validateWorkspaceAuthority(incoming)
   validateWorkspaceAuthority(current)
-  if (current.scopeAuthoritySnapshot && incoming.scopeAuthoritySnapshot &&
-    JSON.stringify(current.scopeAuthoritySnapshot.genesis) !== JSON.stringify(incoming.scopeAuthoritySnapshot.genesis)) {
-    throw new Error("Workspace scope genesis cannot change")
-  }
-  if (incoming.epoch < current.epoch ||
-    (incoming.epoch === current.epoch && incoming.updatedAt < current.updatedAt)) return current
+  const currentSnapshot = current.scopeAuthoritySnapshot
+  const incomingSnapshot = incoming.scopeAuthoritySnapshot
+  const snapshot = currentSnapshot && incomingSnapshot
+    ? meshRustRuntime().state.mergeScopeAuthoritySnapshots(currentSnapshot, incomingSnapshot, Date.now()) as WorkspaceAuthorityRecord["scopeAuthoritySnapshot"]
+    : currentSnapshot ?? incomingSnapshot
+  const validated = snapshot
+    ? meshRustRuntime().state.validateScopeAuthority(snapshot, Date.now()) as {
+      creator: { personId: string; publicKey: string; certificates: unknown[] }
+      controller: { personId: string; publicKey: string; certificates: unknown[] }
+      controlEpoch: number
+    }
+    : undefined
 
-  const merged = incoming.scopeAuthoritySnapshot ? incoming : {
-    ...incoming, scopeAuthoritySnapshot: current.scopeAuthoritySnapshot,
+  const sameController = current.ownerPersonId === incoming.ownerPersonId && current.ownerPublicKey === incoming.ownerPublicKey
+  if (!validated && !sameController && current.epoch === incoming.epoch) {
+    throw new Error("Conflicting workspace authority at the same epoch")
   }
+  const byEpoch = incoming.epoch > current.epoch ? incoming : current
+  const sameControllerProjection = incoming.epoch > current.epoch || (sameController && Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt))
+    ? incoming : current
+  const preferred = validated
+    ? [sameControllerProjection, sameControllerProjection === current ? incoming : current].find(item => item.ownerPersonId === validated.controller.personId &&
+      item.ownerPublicKey === validated.controller.publicKey) ?? byEpoch
+    : sameControllerProjection
+  const merged: WorkspaceAuthorityRecord = { ...structuredClone(preferred), epoch: Math.max(current.epoch, incoming.epoch),
+    updatedAt: Date.parse(incoming.updatedAt) > Date.parse(current.updatedAt) ? incoming.updatedAt : current.updatedAt,
+    scopeAuthoritySnapshot: snapshot }
+
+  if (validated) {
+    merged.genesisOwnerPersonId = validated.creator.personId
+    merged.ownerPersonId = validated.controller.personId
+    merged.ownerPublicKey = validated.controller.publicKey
+    merged.ownerCertificates = structuredClone(validated.controller.certificates)
+  } else {
+    merged.genesisOwnerPersonId = current.genesisOwnerPersonId ?? incoming.genesisOwnerPersonId
+  }
+
+  const histories = [
+    ...(current.ownerHistory ?? []),
+    { personId: current.ownerPersonId, publicKey: current.ownerPublicKey, certificates: current.ownerCertificates },
+    ...(incoming.ownerHistory ?? []),
+    { personId: incoming.ownerPersonId, publicKey: incoming.ownerPublicKey, certificates: incoming.ownerCertificates },
+    ...(validated ? [validated.creator, validated.controller] : []),
+  ].filter(owner => owner.personId !== merged.ownerPersonId || owner.publicKey !== merged.ownerPublicKey)
+  const ownerHistory = [...new Map(histories.map(owner => [`${owner.personId}\u0000${owner.publicKey}`, structuredClone(owner)])).values()]
+  if (ownerHistory.length > 32) throw new Error("Too much workspace owner history")
+  if (ownerHistory.length) merged.ownerHistory = ownerHistory
+  else delete merged.ownerHistory
+
+  const leftCatalog = (current.catalog ?? {}) as Record<string, unknown>
+  const rightCatalog = (incoming.catalog ?? {}) as Record<string, unknown>
+  const catalog = { ...((preferred.catalog ?? {}) as Record<string, unknown>) }
+  const repairedHistory = [...(Array.isArray(leftCatalog.revocationBoundaryHistory) ? leftCatalog.revocationBoundaryHistory : []),
+    ...(Array.isArray(rightCatalog.revocationBoundaryHistory) ? rightCatalog.revocationBoundaryHistory : [])]
+  const uniqueRepairs = [...new Map(repairedHistory.map(value => [canonicalJson(value), value])).values()].slice(-32)
+  const superseded = new Set(uniqueRepairs.flatMap(value => {
+    const removed = (value as { removed?: unknown })?.removed
+    return Array.isArray(removed) ? removed.map(record => canonicalJson(record)) : []
+  }))
+  const catalogArrayKeys = new Set([...Object.keys(leftCatalog), ...Object.keys(rightCatalog)].filter(key =>
+    Array.isArray(leftCatalog[key]) || Array.isArray(rightCatalog[key])))
+  for (const key of catalogArrayKeys) {
+    const values = [...(Array.isArray(leftCatalog[key]) ? leftCatalog[key] as unknown[] : []),
+      ...(Array.isArray(rightCatalog[key]) ? rightCatalog[key] as unknown[] : [])]
+    const unique = new Map(values.filter(value => key !== "revocations" || !superseded.has(canonicalJson(value)))
+      .map(value => [canonicalJson(value), value]))
+    if (unique.size > 512) throw new Error("Too many workspace security records")
+    catalog[key] = [...unique.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
+  }
+  if (uniqueRepairs.length) catalog.revocationBoundaryHistory = uniqueRepairs
+  if (Object.keys(catalog).length) merged.catalog = catalog
+  else delete merged.catalog
+
+  type Grant = { payload?: { personId?: string; accessEpoch?: number } }
+  const oldGrant = current.localGrant as Grant | undefined
+  const nextGrant = incoming.localGrant as Grant | undefined
+  if (oldGrant && !nextGrant) merged.localGrant = current.localGrant
+  else if (oldGrant?.payload?.personId && oldGrant.payload.personId === nextGrant?.payload?.personId &&
+      (oldGrant.payload.accessEpoch ?? 1) > (nextGrant?.payload.accessEpoch ?? 1)) merged.localGrant = current.localGrant
   return merged
 }
 

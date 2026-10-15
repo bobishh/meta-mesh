@@ -42,37 +42,45 @@ records, source document/control, proofs and pending originals through a sink.
 Objects carry the same page/part binding as the browser archive codec; records and
 pages are at most 64 KiB, parts 256 KiB, and index fanout at most 64. A failed sink
 leaves the source unchanged. Native admission observations carry the explicit
-`mesh-causal-admission@2` policy ID; semantic policy changes require a new ID.
+`mesh-causal-admission@3` policy ID; semantic policy changes require a new ID.
 Version 2 preserves valid historical Owner device removals and rejects historical
-Owner person removals beyond their outgoing ownership frontier. The preparation
-revision includes this exact policy ID. Older `@1` observations remain original
-versioned evidence and are not relabeled by a new verifier.
+Owner person removals beyond their outgoing ownership frontier. Current version 3
+also admits exact application-source v2 records with immutable original message
+and ATS references. The preparation revision includes this exact policy ID.
+Older `@1` and `@2` observations remain original versioned evidence and are not
+relabeled by a new verifier.
 `WasmStateCore.causalAdmissionPolicyId()` reports the compiled rule ID. The shared
 Native/WASM control vectors check the actual packaged policy, not a source label;
 the two historical-control defects first reproduced in that WASM artifact too.
 
 The catalogue is content, not Owner baseline authorization. Its source-derived
 classifications do not make an unsigned serialized catalogue trusted by a receiver.
-WASM capture handles, normal host scheduling, per-entity history indexes, network
-Owner-transition admission, activation, bounded active history and restore remain open.
-The preparation and change/proof maps still scale with source history even though
-the index writer buffers bounded pages.
+The WASM adapter exposes opaque preparation, capture, rebase, storage, coverage
+and received-baseline handles. Native catalogue indexes support change-hash lookup
+and paged chronological entity history, including imported changes without command
+metadata. Lookup metadata is not author authorization. Preparation and its
+change/proof maps still scale with the captured source history; index pages and
+parts are bounded.
 
 `VerifiedHistoryPreparation::rebase` copies only admitted current state into one
 deterministic, explicitly marked Automerge basis change. A typed binary state
 digest preserves scalar types, Unicode text, tables and current counter values
 without JSON-number coercion. Real signed histories of 1k, 10k and 100k edits to
 the same state produce one basis change under 2 KiB. Preparation still reads full
-history; this does not establish bounded ordinary writes or active-tail admission.
+history. A verified received baseline separately admits the active tail against
+its exact compact root and current signed control evidence.
 Conflicting current values, marked/block text and future scalar types currently
 reject without replacing the source, rather than flattening unsupported content.
 Their lossless support remains required by the complete baseline contract.
 
-Reproduce the shared public test vector from this directory:
+Generate a current-policy test vector from this directory into a separate file:
 
 ```sh
-cargo run -p meta-mesh-core --example history_capture_fixture > packages/mesh-replication/fixtures/history-capture-v1.json
+cargo run --locked -p meta-mesh-core --example history_capture_fixture > /tmp/history-capture-current.json
 ```
+
+Keep the committed historical fixture unchanged: its original policy ID and bytes
+exercise old archive readability.
 
 `historyCaptureInterop.test.ts` checks lazy original reads, retained signatures,
 actual WASM reclassification and exact encrypted-journal resume. The example and
@@ -93,8 +101,8 @@ the addressed ciphertext and compares exact bytes. Its private, non-deserializab
 storage-evidence token retains the Native catalogue, locator root, scope/key digest
 and exact sorted data/directory ciphertext sets. This is content correspondence,
 not a storage receipt, signed Owner transition or activation authority. Verification
-scales with captured history and runs only during preparation. Ordinary WASM/host
-producer integration and the full baseline lifecycle remain open.
+scales with captured history and runs only during preparation. WASM capture
+handles expose the same verification to the application producer.
 
 `VerifiedHistoryArchiveStorage::verify_coverage` derives exact data and directory
 coverage trees from those private expected sets. It verifies both strict bounded
@@ -111,7 +119,8 @@ preparation ID and preparing Owner/device/full signer chain. It borrows immutabl
 tokens and retains the full verified control evidence and source frontier. Equal
 current content from another source or preparing device cannot substitute for
 that preparation. The joined token is not a signed Owner transition, cold-receiver
-control proof or activation authority; those integrations remain open.
+control proof or activation authority. Those require the separate Owner
+attestation, receiver verification and application activation transaction.
 
 `VerifiedHistoryBasisArchive::propose_baseline` prepares the exact bounded
 `workspace-history-baseline@1` Owner payload under `MESH-HISTORY/1`. It binds
@@ -121,9 +130,39 @@ one; successors require a private verified parent, consecutive epoch, admitted
 parent basis and preservation of known signed control evidence. `confirm` rejects
 source drift, changed payloads, wrong domains/keys and lossy JSON normalization,
 then retains the exact signed envelope and basis in a private attestation token.
-This is local preparation/signature verification. It does not implement a cold
-receiver's control/frontier proof, active-pointer transaction, capability rollout
-or ordinary browser/Worker producer.
+This legacy version-1 proposal remains available for original historical evidence.
+Confirmation alone does not activate a baseline.
+
+The current `propose_owner_attested_baseline` format is version 2 with
+`workspace-history-baseline@2` capabilities. Its bounded signed envelope binds the
+current Owner attestation, signed scope ledger, current control, compact document
+digest and original archive roots. The compact document has its own 256-MiB
+content bound, separate from the 256-KiB attestation bound. A cold receiver checks
+an independently admitted signed scope genesis, the Owner/device chain and control
+continuity. `VerifiedReceivedHistoryBaseline::admit_tail` accepts only descendants
+of that exact compact root and applies normal Native authorization to tail changes.
+
+Tincanban connects these WASM handles to durable encrypted preparation, Rusty
+coverage, Worker freeze/drain/activation and a compare-and-swap workspace journal.
+Original changes, proofs, pending/quarantined observations and prior baselines stay
+archived while the active document uses the compact basis and new tail. Earlier
+entity versions are loaded explicitly through bounded index paths. Native verifies
+the selected original evidence; restoring a version creates a fresh command under
+the current author's permissions and retains the original classification/provenance.
+
+Authorized direct peers can relay bounded plaintext archive objects over their
+authenticated encrypted device channel without transferring Rusty tokens or keys.
+The same Native Owner/control verifier checks the signed baseline and
+content-addressed proof paths. This establishes baseline authority, not ciphertext
+correspondence to Rusty storage. Saved proof bytes are reverified after restart.
+
+The consumer's Chromium and WebKit acceptance covers an archived Owner baseline,
+a credential-free Editor's lazy original-version read, complete private export,
+honest incomplete coverage after both sources close, fresh identity/workspace
+recovery, and an offline historical restore as a new signed command. Native HTTP
+acceptance also exercises the live WASM capture sink and exact original bytes.
+These are local acceptance results. Production activation is established separately
+by the coordinated CI cohort's exact frontend, Worker, Rusty and SDK artifacts.
 
 Build `cargo build -p meta-mesh-core --example history_archive_verify` for the
 application's opt-in Native HTTP acceptance. This stdin adapter has a 32-MiB input
@@ -208,6 +247,8 @@ Run generated Swift and Kotlin clients against the native runtime, including den
 
 `scripts/build-wasm.sh` omits the WebAssembly debugging `name` section from
 the shipped browser artifact. This keeps Rust symbol names out of the download;
-exports and executable sections are preserved. For symbolized local debugging,
+exports and executable sections are preserved. Its browser-only Cargo invocations
+use size optimization, thin LTO and one code generation unit to deduplicate
+protocol code. Native consumers retain their own release profiles. For symbolized local debugging,
 run `wasm-bindgen` on `target/wasm32-unknown-unknown/release/meta_mesh.wasm`
 without `--remove-name-section` into a separate local output directory.

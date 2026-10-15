@@ -259,7 +259,7 @@ fn push(
         node = branch(root, &bucket)?;
     }
 }
-fn verify_receipt(
+pub(crate) fn verify_receipt(
     bytes: &[u8],
     authority: &HistoryArchiveCoverageAuthority,
     root: &str,

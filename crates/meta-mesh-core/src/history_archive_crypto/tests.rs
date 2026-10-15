@@ -148,3 +148,19 @@ fn given_invalid_bindings_or_unknown_fields_when_native_decodes_then_reject_unsu
     raw["unknown"] = json!(true);
     assert!(serde_json::from_value::<HistoryArchiveEncryptionBinding>(raw).is_err());
 }
+
+#[test]
+fn given_a_native_catalogue_object_when_the_bounded_sink_seals_it_then_only_bound_ciphertext_is_emitted() {
+    let (scope, mut binding, _, _, _) = fixture();
+    let plaintext = b"native archive sink payload";
+    binding.object_id = history_archive_object_id(plaintext);
+    let nonce = [73u8; 12];
+    let (ciphertext_id, encrypted) = seal_history_archive_object(&scope, &binding, &nonce, plaintext).unwrap();
+    assert_ne!(ciphertext_id, binding.object_id);
+    assert_eq!(open_history_archive_object(&scope, &binding, &ciphertext_id, &encrypted).unwrap(), plaintext);
+    let mut changed = binding.clone();
+    changed.index_id.push_str("-other");
+    assert!(open_history_archive_object(&scope, &changed, &ciphertext_id, &encrypted).is_err());
+    assert!(seal_history_archive_object(&scope, &binding, &[0u8; 11], plaintext).is_err());
+    assert!(seal_history_archive_object(&scope, &binding, &nonce, b"substituted bytes").is_err());
+}

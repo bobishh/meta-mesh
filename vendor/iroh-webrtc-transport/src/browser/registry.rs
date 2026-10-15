@@ -15,6 +15,20 @@ struct BrowserRtcSession {
     _data_channel_handler: Closure<dyn FnMut(RtcDataChannelEvent)>,
 }
 
+impl Drop for BrowserRtcSession {
+    fn drop(&mut self) {
+        // Browser event targets outlive the Rust closures unless detached first.
+        self.peer.set_onicecandidate(None);
+        self.peer.set_ondatachannel(None);
+        self.local_ice.close();
+        self.incoming_data_channel_waiters.borrow_mut().clear();
+        for channel in self.incoming_data_channels.borrow_mut().drain(..) {
+            channel.close();
+        }
+        self.peer.close();
+    }
+}
+
 impl BrowserRtcRegistry {
     pub(super) fn new() -> Self {
         Self {
@@ -197,6 +211,17 @@ impl BrowserRtcRegistry {
         self.try_close_peer_connection(session_key)
     }
 
+    pub(crate) fn close_all_peer_connections(&self) {
+        // Pending tasks retain registry clones; shutdown must not wait for them.
+        let sessions = self
+            .sessions
+            .borrow_mut()
+            .drain()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        drop(sessions);
+    }
+
     fn try_take_next_data_channel(&self, session_key: &str) -> Result<Option<RtcDataChannel>> {
         let incoming = self.incoming_data_channels_for(session_key)?;
         let channel = incoming.borrow_mut().pop_front();
@@ -218,10 +243,9 @@ impl BrowserRtcRegistry {
 
     fn try_close_peer_connection(&self, session_key: &str) -> Result<()> {
         validate_session_key(session_key)?;
-        if let Some(session) = self.sessions.borrow_mut().remove(session_key) {
-            session.peer.close();
-            session.local_ice.close();
-        }
+        // Release the registry borrow before closing JS resources and waking waiters.
+        let session = self.sessions.borrow_mut().remove(session_key);
+        drop(session);
         Ok(())
     }
 

@@ -16,6 +16,11 @@ pub struct WorkspaceSetEntry {
     pub chat: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh: Option<Value>,
+    /// Public owner-attested compact-history descriptor. Archive records travel
+    /// separately over bounded authenticated peer streams; this never contains
+    /// Rusty credentials or content keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_baseline: Option<Value>,
 }
 
 pub fn encode_workspace_set(entries: &[WorkspaceSetEntry]) -> Result<Vec<u8>, String> {
@@ -67,5 +72,18 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn workspace_set_preserves_optional_public_history_bootstrap_and_legacy_rows() {
+        let allowed = vec!["board".into()];
+        let entries = br#"[{"id":"board","bytes":"AA","historyBaseline":{"version":1,"signedJson":"owner-attestation"}}]"#;
+        let decoded = decode_workspace_set(entries, &allowed).unwrap();
+        assert_eq!(decoded[0].history_baseline, Some(serde_json::json!({
+            "version": 1, "signedJson": "owner-attestation"
+        })));
+
+        let legacy = decode_workspace_set(br#"[{"id":"board","bytes":"AA"}]"#, &allowed).unwrap();
+        assert_eq!(legacy[0].history_baseline, None);
     }
 }

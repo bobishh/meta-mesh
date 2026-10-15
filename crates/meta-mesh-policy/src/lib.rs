@@ -34,7 +34,10 @@ pub use runtime::{
 };
 pub use session_lifecycle::WasmMeshSessionLifecycle;
 #[cfg(target_family = "wasm")]
-pub use state::{WasmDeviceRouteCatalog, WasmMeshAuthenticatedSessions, WasmStateCore};
+pub use state::{
+    WasmDeviceRouteCatalog, WasmMeshAuthenticatedSessions, WasmStateCore,
+    WasmVerifiedReceivedHistoryBaseline,
+};
 
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn mesh_version() -> String {

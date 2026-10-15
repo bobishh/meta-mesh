@@ -36,7 +36,7 @@ pub struct CausalAdmissionInput {
 
 /// Retained archive observations name these rules explicitly. Changes to causal
 /// admission semantics require a new policy ID and reader compatibility review.
-pub const CAUSAL_ADMISSION_POLICY_ID: &str = "mesh-causal-admission@2";
+pub const CAUSAL_ADMISSION_POLICY_ID: &str = "mesh-causal-admission@3";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -105,6 +105,26 @@ const MAX_CAUSAL_ADMISSION_BYTES: usize = 256 * 1024 * 1024;
 /// Every change is reclassified, including hashes a caller already knew.
 pub fn evaluate_causal_admission(
     input: CausalAdmissionInput,
+) -> Result<CausalAdmissionPlan, String> {
+    evaluate_causal_admission_inner(input, None)
+}
+
+/// Admit only changes causally descended from a Native-verified compact
+/// history basis. The basis hash is supplied only by the opaque receiver
+/// handle; ordinary callers must use full-history admission.
+pub(crate) fn evaluate_causal_admission_from_history_basis(
+    input: CausalAdmissionInput,
+    trusted_basis_hash: &str,
+) -> Result<CausalAdmissionPlan, String> {
+    if trusted_basis_hash.is_empty() {
+        return Err("History basis admission requires a verified basis hash".into());
+    }
+    evaluate_causal_admission_inner(input, Some(trusted_basis_hash))
+}
+
+fn evaluate_causal_admission_inner(
+    input: CausalAdmissionInput,
+    trusted_basis_hash: Option<&str>,
 ) -> Result<CausalAdmissionPlan, String> {
     if input.records.len() > 20_000 {
         return Err("Too many workspace change authorizations".into());
@@ -176,7 +196,7 @@ pub fn evaluate_causal_admission(
         crate::authorization::ValidatedWorkspaceWriteAuthorizationContext::from_snapshot_causal(
             &input.snapshot,
         )?;
-    let needed = all_hashes.iter().collect::<HashSet<_>>();
+    let needed = all_hashes.iter().filter(|hash| Some(hash.as_str()) != trusted_basis_hash).collect::<HashSet<_>>();
     let mut roles = HashMap::<String, WorkspaceRole>::new();
     let mut automation_scopes = HashMap::<String, AutomationGrantScope>::new();
     let mut automation_effects = HashMap::<String, AutomationEffect>::new();
@@ -189,7 +209,7 @@ pub fn evaluate_causal_admission(
             .payload
             .hashes
             .iter()
-            .filter(|hash| by_hash.contains_key(hash.as_str()))
+            .filter(|hash| by_hash.contains_key(hash.as_str()) && Some(hash.as_str()) != trusted_basis_hash)
             .cloned()
             .collect::<Vec<_>>();
         if covered.is_empty() {
@@ -272,14 +292,21 @@ pub fn evaluate_causal_admission(
         }
     }
 
+    if let Some(basis_hash) = trusted_basis_hash {
+        let basis = nodes.iter().find(|node| node.hash == basis_hash)
+            .ok_or("Verified history basis is absent from the admitted document")?;
+        if !basis.dependencies.is_empty() || nodes.iter().filter(|node| node.dependencies.is_empty()).count() != 1 {
+            return Err("History basis must be the single root of the compact active history".into());
+        }
+    }
     let mut statuses = nodes
         .iter()
         .map(|node| {
             (
                 node.hash.clone(),
-                CausalAdmissionStatus::Pending {
-                    reason: "Change dependencies are unresolved".into(),
-                },
+                if Some(node.hash.as_str()) == trusted_basis_hash {
+                    CausalAdmissionStatus::Admitted { role: WorkspaceRole::Owner }
+                } else { CausalAdmissionStatus::Pending { reason: "Change dependencies are unresolved".into() } },
             )
         })
         .collect::<HashMap<_, _>>();
@@ -1064,20 +1091,63 @@ fn validate_application_source_entity(
     let object = parsed
         .as_object()
         .ok_or("Application source data must be a JSON object")?;
-    if !exact_keys(
-        object,
-        &[
-            "kind",
-            "version",
-            "recordId",
-            "workspaceId",
-            "cardId",
-            "applicationId",
-            "observation",
-        ],
-    ) || object.get("kind").and_then(serde_json::Value::as_str)
+    const REQUIRED_SOURCE_FIELDS: &[&str] = &[
+        "kind",
+        "version",
+        "recordId",
+        "workspaceId",
+        "cardId",
+        "applicationId",
+        "observation",
+    ];
+    const ALLOWED_SOURCE_FIELDS: &[&str] = &[
+        "kind",
+        "version",
+        "recordId",
+        "workspaceId",
+        "cardId",
+        "applicationId",
+        "messageIds",
+        "atsId",
+        "observation",
+    ];
+    let version = object.get("version").and_then(serde_json::Value::as_u64);
+    let refs_valid = match version {
+        Some(1) => !object.contains_key("messageIds") && !object.contains_key("atsId"),
+        Some(2) => {
+            let message_ids_valid = object.get("messageIds").is_none_or(|value| {
+                value.as_array().is_some_and(|ids| {
+                    !ids.is_empty()
+                        && ids.len() <= 40
+                        && ids.iter().all(|id| {
+                            id.as_str().is_some_and(|text| {
+                                !text.trim().is_empty() && js_units(text) <= 500
+                            })
+                        })
+                })
+            });
+            let ats_id_valid = object.get("atsId").is_none_or(|value| {
+                value.as_str().is_some_and(|text| {
+                    !text.trim().is_empty() && js_units(text) <= 256
+                })
+            });
+            let has_reference = object
+                .get("messageIds")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|ids| !ids.is_empty())
+                || object
+                    .get("atsId")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|text| !text.trim().is_empty());
+            message_ids_valid && ats_id_valid && has_reference
+        }
+        _ => false,
+    };
+    if REQUIRED_SOURCE_FIELDS.iter().any(|key| !object.contains_key(*key))
+        || object.keys().any(|key| !ALLOWED_SOURCE_FIELDS.contains(&key.as_str()))
+        || !refs_valid
+        || object.get("kind").and_then(serde_json::Value::as_str)
         != Some("application-source-observation")
-        || object.get("version").and_then(serde_json::Value::as_u64) != Some(1)
         || object.get("recordId").and_then(serde_json::Value::as_str) != Some(record_id)
         || object
             .get("workspaceId")

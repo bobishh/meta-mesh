@@ -76,7 +76,7 @@ export type RustStateCore = {
   }
   encodeWorkspaceSet(entries: unknown[]): Uint8Array
   decodeWorkspaceSet(bytes: Uint8Array, allowedIds: string[]): Array<{
-    id: string; bytes: string; authorization?: unknown; chat?: unknown; mesh?: unknown
+    id: string; bytes: string; authorization?: unknown; chat?: unknown; mesh?: unknown; historyBaseline?: unknown
   }>
   planAuthorityCommand(input: unknown): Array<
     "createRevocation" | "mergeRevocation" | "refreshSuccessionPolicy" | "publish" | "reloadCredential" |

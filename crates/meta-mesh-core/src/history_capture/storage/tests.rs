@@ -48,7 +48,7 @@ fn canonical(value: &Value) -> Vec<u8> {
 }
 
 fn captured_fixture() -> (VerifiedHistoryArchiveCapture, Value) {
-    let fixture: Value = serde_json::from_slice(&std::fs::read(FIXTURE).unwrap()).unwrap();
+    let mut fixture: Value = serde_json::from_slice(&std::fs::read(FIXTURE).unwrap()).unwrap();
     let control_bytes = decode(&fixture["originals"]["control"]);
     let mut control: Value = serde_json::from_slice(&control_bytes).unwrap();
     let document = decode(&fixture["originals"]["document"]);
@@ -104,6 +104,20 @@ fn captured_fixture() -> (VerifiedHistoryArchiveCapture, Value) {
         },
     )
     .unwrap();
+    // The frozen vector retains its original @2 observations. Current-producer
+    // storage tests need current policy roots without rewriting that old evidence.
+    #[derive(Default)]
+    struct CurrentObjects(BTreeMap<String, Value>);
+    impl crate::history_capture::HistoryArchiveWriter for CurrentObjects {
+        fn write(&mut self, id: &str, bytes: &[u8], binding: &HistoryArchiveObjectBinding) -> Result<(), String> {
+            let key = crate::canonicalize_json(&json!({"objectId":id,"binding":binding}))?;
+            self.0.insert(key, json!({"objectId":id,"bytes":URL_SAFE_NO_PAD.encode(bytes),"binding":binding}));
+            Ok(())
+        }
+    }
+    let mut objects = CurrentObjects::default();
+    fixture["catalogue"] = serde_json::to_value(capture.write_catalogue(&mut objects).unwrap()).unwrap();
+    fixture["objects"] = json!(objects.0.into_values().collect::<Vec<_>>());
     (capture, fixture)
 }
 

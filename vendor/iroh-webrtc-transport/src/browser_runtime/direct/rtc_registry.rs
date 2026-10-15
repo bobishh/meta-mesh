@@ -19,6 +19,32 @@ struct RtcDataChannelHandlers {
     _close_handler: Closure<dyn FnMut(Event)>,
 }
 
+impl RtcDataChannelHandlers {
+    fn detach(&self) {
+        self._channel.set_onopen(None);
+        self._channel.set_onmessage(None);
+        self._channel.set_onerror(None);
+        self._channel.set_onclose(None);
+    }
+}
+
+impl Drop for RtcDataChannelHandlers {
+    fn drop(&mut self) {
+        self.detach();
+        self._channel.close();
+    }
+}
+
+impl Drop for BrowserRtcControl {
+    fn drop(&mut self) {
+        // Detach channel callbacks before either resource can emit a close event.
+        for handlers in self.channel_handlers.borrow().iter() {
+            handlers.detach();
+        }
+        self.registry.close_all_peer_connections();
+    }
+}
+
 impl BrowserRtcControl {
     pub(super) fn new(registry: crate::browser::BrowserRtcRegistry) -> Self {
         Self {
@@ -52,18 +78,16 @@ pub(super) fn retain_data_channel_handlers(
     error_handler: Closure<dyn FnMut(Event)>,
     close_handler: Closure<dyn FnMut(Event)>,
 ) {
+    let handlers = RtcDataChannelHandlers {
+        _channel: channel,
+        _open_handler: open_handler,
+        _message_handler: message_handler,
+        _error_handler: error_handler,
+        _close_handler: close_handler,
+    };
     let control = rtc_control.borrow();
     if let Some(binding) = control.as_ref() {
-        binding
-            .channel_handlers
-            .borrow_mut()
-            .push(RtcDataChannelHandlers {
-                _channel: channel,
-                _open_handler: open_handler,
-                _message_handler: message_handler,
-                _error_handler: error_handler,
-                _close_handler: close_handler,
-            });
+        binding.channel_handlers.borrow_mut().push(handlers);
     }
 }
 

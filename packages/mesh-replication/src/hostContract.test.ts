@@ -45,9 +45,13 @@ function fixture(options: {
     commits: [] as Array<{ expected: number; next: State }>,
     verifies: [] as Array<{ object: string; requestId: string }>,
     guards: 0,
+    revisions: 0,
+    inventories: 0,
   }
   let lostReceiptOnce = false
   let commitAttempt = 0
+  let activeReceiptError = options.receiptError
+  let activeCommitError = options.commitError
 
   const ports = {
     repository: {
@@ -56,13 +60,13 @@ function fixture(options: {
         commitAttempt += 1
         calls.commits.push({ expected: expectedGeneration, next: structuredClone(next) })
         await options.beforeCommit?.(commitAttempt)
-        if (options.commitError && commitAttempt === (options.commitErrorAt ?? 1)) throw options.commitError
+        if (activeCommitError && commitAttempt === (options.commitErrorAt ?? 1)) throw activeCommitError
         if (state.generation !== expectedGeneration) throw new Error("CAS conflict")
         state = structuredClone({ ...next, generation: expectedGeneration + 1 })
       },
     },
     content: {
-      revision: async () => revision,
+      revision: async () => { calls.revisions += 1; return revision },
       capture: async () => {
         calls.captures += 1
         await options.beforeCapture?.()
@@ -75,8 +79,11 @@ function fixture(options: {
       },
     },
     transport: {
-      inventory: async (cursor: number) => options.inventoryResponse?.(cursor) ?? ({ objects: inventoryObjects.filter(object => object.sequence > cursor),
-        cursor: inventoryObjects.filter(object => object.sequence > cursor).at(-1)?.sequence ?? cursor, hasMore: false }),
+      inventory: async (cursor: number) => {
+        calls.inventories += 1
+        return options.inventoryResponse?.(cursor) ?? ({ objects: inventoryObjects.filter(object => object.sequence > cursor),
+          cursor: inventoryObjects.filter(object => object.sequence > cursor).at(-1)?.sequence ?? cursor, hasMore: false })
+      },
       download: async (id: string): Promise<Ciphertext> => ({ ciphertext: `downloaded:${id}` }),
       upload: async (object: Ciphertext, requestId: string) => {
         const ciphertext = object.ciphertext
@@ -94,8 +101,8 @@ function fixture(options: {
     verifyReceipt: async (receipt: { object: string; requestId: string; valid: boolean }, object: Ciphertext, requestId: string) => {
       calls.verifies.push({ object: object.ciphertext, requestId })
       await options.beforeVerify?.()
-      if (options.receiptError || !receipt.valid || receipt.object !== object.ciphertext || receipt.requestId !== requestId) {
-        throw options.receiptError ?? new Error("invalid receipt")
+      if (activeReceiptError || !receipt.valid || receipt.object !== object.ciphertext || receipt.requestId !== requestId) {
+        throw activeReceiptError ?? new Error("invalid receipt")
       }
       if (lostReceiptOnce) {
         lostReceiptOnce = false
@@ -115,10 +122,46 @@ function fixture(options: {
     setRevision: (next: string) => { revision = next },
     setPayload: (next: Payload) => { payload = next },
     loseNextReceipt: () => { lostReceiptOnce = true },
+    clearReceiptError: () => { activeReceiptError = undefined },
+    clearCommitError: () => { activeCommitError = undefined },
   }
 }
 
 describe("shared replica host contract", () => {
+  it("Given an uncertain old-basis upload, when sync receives a compact basis, then acknowledge the exact old request before attempting incoming admission", async () => {
+    const pending: Pending = { requestId: "old-request", hash: "old-hash", bytes: 10,
+      object: { ciphertext: "exact-original-ciphertext" }, revision: "revision-1" }
+    const f = fixture({ initialState: { pending }, inventory: [{ objectId: "new-basis", sequence: 1 }],
+      admissionError: new Error("Basis awaits local-head coverage"), inventoryResponse: cursor => {
+        expect(f.read().pending).toBeUndefined()
+        expect(f.read().lastUploaded).toBe(pending.hash)
+        return { objects: [{ objectId: "new-basis", sequence: 1 }], cursor: 1, hasMore: false }
+      } })
+    await expect(f.engine().sync()).resolves.toBe(false)
+    expect(f.calls.inventories).toBe(0)
+    await expect(f.engine().sync()).rejects.toThrow("Basis awaits local-head coverage")
+    expect(f.calls.uploads).toEqual([{ requestId: pending.requestId, object: pending.object }])
+    expect(f.calls.captures).toBe(0)
+    expect(f.calls.seals).toBe(0)
+    expect(f.read()).toMatchObject({ cursor: 0, lastUploaded: pending.hash })
+  })
+
+  it("Given the old outbox has no verified receipt, when sync retries, then preserve original ciphertext and skip incoming basis admission", async () => {
+    const pending: Pending = { requestId: "old-request", hash: "old-hash", bytes: 10,
+      object: { ciphertext: "exact-original-ciphertext" }, revision: "revision-1" }
+    const f = fixture({ initialState: { pending }, receiptError: new Error("Reply unavailable") })
+    await expect(f.engine().sync()).rejects.toThrow("Reply unavailable")
+    expect(f.read().pending).toEqual(pending)
+    expect(f.calls.inventories).toBe(0)
+    expect(f.calls.admissions).toEqual([])
+    expect(f.calls.captures).toBe(0)
+    f.clearReceiptError()
+    await f.engine().sync()
+    expect(f.calls.uploads).toEqual([{ requestId: pending.requestId, object: pending.object },
+      { requestId: pending.requestId, object: pending.object }])
+    expect(f.calls.captures).toBe(0)
+  })
+
   it("Given an acknowledged snapshot, when push runs again in this engine or after restart, then unchanged revision skips capture, sealing, and upload", async () => {
     const f = fixture()
     const first = f.engine()
@@ -343,5 +386,87 @@ describe("shared replica host contract", () => {
     expect(f.calls.seals).toBe(1)
     expect(f.read().pending).toBeUndefined()
     expect(f.read().lastUploaded).toBe("hash:snapshot-1")
+  })
+
+  it("Given no durable upload is pending, when drainPending runs, then it performs no content or remote work", async () => {
+    const f = fixture()
+
+    await expect(f.engine().drainPending()).resolves.toBe(true)
+
+    expect(f.calls.revisions).toBe(0)
+    expect(f.calls.captures).toBe(0)
+    expect(f.calls.seals).toBe(0)
+    expect(f.calls.inventories).toBe(0)
+    expect(f.calls.admissions).toEqual([])
+    expect(f.calls.uploads).toEqual([])
+    expect(f.calls.commits).toEqual([])
+  })
+
+  it("Given newer local content and an older durable upload, when draining, then upload only the saved request once", async () => {
+    const pending: Pending = { requestId: "saved-request", revision: "revision-1", hash: "saved-hash", bytes: 12,
+      object: { ciphertext: "sealed:old-snapshot" }, identity: "identity:revision-1" }
+    const f = fixture({ revision: "revision-2", payload: { text: "newer-local-snapshot" }, initialState: { pending } })
+    const engine = f.engine()
+
+    await expect(engine.drainPending()).resolves.toBe(true)
+    await expect(engine.drainPending()).resolves.toBe(true)
+
+    expect(f.calls.uploads).toEqual([{ object: pending.object, requestId: pending.requestId }])
+    expect(f.calls.revisions).toBe(0)
+    expect(f.calls.captures).toBe(0)
+    expect(f.calls.seals).toBe(0)
+    expect(f.calls.inventories).toBe(0)
+    expect(f.read().pending).toBeUndefined()
+    expect(f.read().lastUploaded).toBe(pending.hash)
+    expect(f.read().uploadedRevision).toBe(pending.revision)
+  })
+
+  it.each(["receipt verification", "acknowledgment commit"] as const)(
+    "Given %s fails while draining, when a new engine retries, then retain and deliver the exact saved request", async failure => {
+      const pending: Pending = { requestId: "saved-request", revision: "revision-1", hash: "saved-hash", bytes: 12,
+        object: { ciphertext: "sealed:old-snapshot" }, identity: "identity:revision-1" }
+      const f = fixture({ initialState: { pending },
+        ...(failure === "receipt verification" ? { receiptError: new Error("receipt signature rejected") }
+          : { commitError: new Error("acknowledgment write failed") }) })
+      const original = f.read().pending
+
+      await expect(f.engine().drainPending()).rejects.toThrow(failure === "receipt verification" ? "receipt signature rejected" : "acknowledgment write failed")
+      expect(f.read().pending).toEqual(original)
+      f.clearReceiptError()
+      f.clearCommitError()
+
+      await expect(f.engine().drainPending()).resolves.toBe(true)
+
+      expect(f.calls.uploads).toEqual([
+        { object: pending.object, requestId: pending.requestId },
+        { object: pending.object, requestId: pending.requestId },
+      ])
+      expect(f.calls.captures).toBe(0)
+      expect(f.calls.seals).toBe(0)
+      expect(f.read().pending).toBeUndefined()
+      expect(f.read().lastUploaded).toBe(pending.hash)
+    }
+  )
+
+  it("Given authorization is revoked during a pending upload, when transport returns, then do not verify or acknowledge it", async () => {
+    const pending: Pending = { requestId: "saved-request", revision: "revision-1", hash: "saved-hash", bytes: 12,
+      object: { ciphertext: "sealed:old-snapshot" }, identity: "identity:revision-1" }
+    let revoked = false
+    let releaseUpload!: () => void
+    let uploadStarted!: () => void
+    const started = new Promise<void>(resolve => { uploadStarted = resolve })
+    const gate = new Promise<void>(resolve => { releaseUpload = resolve })
+    const f = fixture({ initialState: { pending }, beforeUpload: async () => { uploadStarted(); await gate },
+      guard: () => { if (revoked) throw new Error("binding revoked") } })
+    const draining = f.engine().drainPending()
+    await started
+    revoked = true
+    releaseUpload()
+
+    await expect(draining).rejects.toThrow("binding revoked")
+
+    expect(f.calls.verifies).toEqual([])
+    expect(f.calls.commits).toEqual([])
+    expect(f.read().pending).toEqual(pending)
   })
 })

@@ -4,12 +4,22 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 
 mod catalogue;
+mod archived_snapshot;
+mod entity_history;
 mod original_json;
+pub(crate) mod source;
 mod storage;
 mod writer;
 
-pub use catalogue::{HistoryArchiveCatalogue, HistoryCapturedChange};
-pub use storage::{HistoryArchiveEncryptedReader, VerifiedHistoryArchiveStorage};
+pub use archived_snapshot::verify_archived_snapshot;
+pub use entity_history::{VerifiedArchivedEntityVersion, read_archived_entity_version, read_archived_peer_entity_version};
+pub use source::HistoryArchivePlaintextReader;
+pub use catalogue::{HistoryArchiveCatalogue, HistoryCapturedChange, HistoryCapturedChangeMetadata, HistoryCapturedEntityIndex, history_entity_index_id};
+pub use storage::{
+    HistoryArchiveEncryptedReader, VerifiedHistoryArchiveStorage,
+    read_history_archive_control, read_history_archive_source_document,
+    resolve_history_archive_ciphertext_id,
+};
 pub use writer::{HistoryArchiveBytesReference, HistoryArchiveObjectBinding, HistoryArchiveWriter};
 
 pub struct HistoryOriginalEvidence {
@@ -119,4 +129,15 @@ pub(crate) fn verify_exact_history_json(
     expected: &serde_json::Value,
 ) -> Result<(), String> {
     original_json::verify(bytes, expected, original_json::Defaults::None)
+}
+
+pub(crate) fn verify_history_control_json(
+    bytes: &[u8],
+    snapshot: &WorkspaceWriteAuthorizationSnapshot,
+) -> Result<(), String> {
+    original_json::verify(
+        bytes,
+        &history_control_value(snapshot)?,
+        original_json::Defaults::Control,
+    )
 }

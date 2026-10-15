@@ -11,7 +11,7 @@ export type ArchiveRemoteAccess = {
 }
 export type ArchiveStorageReceipt = SignedEnvelope<{ kind: "blind-archive-storage-receipt"; version: 1;
   serviceId: string; scopeId: string; policyRevision: number; requestId: string; objectId: string; keyEpoch: number }>
-export type ArchiveRemotePort = { fetch: typeof fetch; ensureCurrent: () => void | Promise<void> }
+export type ArchiveRemotePort = { fetch: (input: string, init: RequestInit) => Promise<Response>; ensureCurrent: () => void | Promise<void> }
 
 export class ArchiveRemoteError extends Error {
   readonly status: number

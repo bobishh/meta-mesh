@@ -28,6 +28,7 @@ export type IrohModule = {
   WasmWorkspaceJoinHandshake?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandshake
   WasmWorkspaceJoinHandoff?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandoff
   WasmStateCore?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmStateCore
+  WasmVerifiedReceivedHistoryBaseline?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmVerifiedReceivedHistoryBaseline
   WasmDeviceRouteCatalog?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmDeviceRouteCatalog
   WasmAutomergeSyncEngine?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeSyncEngine
   WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeDeviceSyncFlow

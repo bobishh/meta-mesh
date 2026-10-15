@@ -68,6 +68,22 @@ pub(super) fn source_data(text: &str, digest: &str, record_id: &str) -> String {
     .unwrap()
 }
 
+fn source_data_with_refs(
+    text: &str,
+    digest: &str,
+    record_id: &str,
+    refs: serde_json::Value,
+) -> String {
+    let mut data: serde_json::Value =
+        serde_json::from_str(&source_data(text, digest, record_id)).unwrap();
+    let object = data.as_object_mut().unwrap();
+    object.insert("version".into(), serde_json::Value::from(2));
+    for (key, value) in refs.as_object().unwrap() {
+        object.insert(key.clone(), value.clone());
+    }
+    crate::identity::canonicalize_json(&data).unwrap()
+}
+
 fn source_refresh_data(text: &str, record_id: &str, original_id: &str) -> String {
     let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()));
     let mut data: serde_json::Value =
@@ -193,6 +209,68 @@ fn valid_owner_application_source_creation_is_admitted() {
         "{:?}",
         plan.decisions
     );
+}
+
+#[test]
+fn version_two_application_source_references_are_admitted_and_bounded() {
+    let (mut doc, owner, seed, device, certs, _) = source_base();
+    let text = "role details";
+    let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()));
+    let data = source_data_with_refs(
+        text,
+        &digest,
+        "source_refs",
+        serde_json::json!({"messageIds": ["mail-1", "mail-2"], "atsId": "ats-42"}),
+    );
+    write_source(&mut doc, "source_refs", &data);
+    commit_owner_edit(&mut doc, &owner, &device);
+
+    let plan = evaluate(doc, owner, seed, device, certs);
+    assert!(plan.decisions.iter().all(|decision| matches!(
+        decision.status,
+        CausalAdmissionStatus::Admitted { .. }
+    )), "{:?}", plan.decisions);
+}
+
+#[test]
+fn application_source_reference_schema_rejects_invalid_version_and_references() {
+    let cases = [
+        ("unsupported-version", 3, serde_json::json!({})),
+        ("empty-v2-refs", 2, serde_json::json!({"messageIds": []})),
+        ("refs-on-v1", 1, serde_json::json!({"messageIds": ["mail-1"]})),
+        (
+            "unknown-ref-field",
+            2,
+            serde_json::json!({"messageIds": ["mail-1"], "sourceUrl": "https://example.test"}),
+        ),
+        (
+            "too-many-message-ids",
+            2,
+            serde_json::json!({"messageIds": vec!["mail-1"; 41]}),
+        ),
+        ("blank-message-id", 2, serde_json::json!({"messageIds": ["  "]})),
+    ];
+
+    for (record_id, version, refs) in cases {
+        let (mut doc, owner, seed, device, certs, _) = source_base();
+        let text = "role details";
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()));
+        let mut data: serde_json::Value =
+            serde_json::from_str(&source_data(text, &digest, record_id)).unwrap();
+        data["version"] = serde_json::Value::from(version);
+        for (key, value) in refs.as_object().unwrap() {
+            data.as_object_mut().unwrap().insert(key.clone(), value.clone());
+        }
+        let data = crate::identity::canonicalize_json(&data).unwrap();
+        write_source(&mut doc, record_id, &data);
+        commit_owner_edit(&mut doc, &owner, &device);
+
+        let plan = evaluate(doc, owner, seed, device, certs);
+        assert!(plan.decisions.iter().any(|decision| matches!(
+            decision.status,
+            CausalAdmissionStatus::Quarantined { .. }
+        )), "{record_id}: {:?}", plan.decisions);
+    }
 }
 
 #[test]

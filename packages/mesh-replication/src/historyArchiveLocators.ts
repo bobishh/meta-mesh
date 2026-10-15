@@ -11,6 +11,11 @@ export type ArchiveLocatorRoot = { kind: "workspace-history-locator-root"; versi
 export type ArchiveLocatorWriter = { write(binding: ArchiveEncryptionBinding, bytes: Uint8Array): Promise<SealedArchiveObject>; ensureCurrent(): void | Promise<void> }
 export type ArchiveLocatorReader = { download(ciphertextId: string): Promise<EncryptedArchiveObject>; ensureCurrent(): void | Promise<void> }
 
+/** Validate detached untrusted routing before any remote read. */
+export function captureArchiveLocatorRoot(input: unknown): ArchiveLocatorRoot {
+  return captureRoot(input as ArchiveLocatorRoot)
+}
+
 /** Same SHA-256 binding key as the durable preparation index. Pages and data still use independent authenticated contexts. */
 export async function archiveLocatorKey(binding: ArchiveEncryptionBinding): Promise<string> {
   return sha256Base64Url(canonical(captureArchiveEncryptionBinding(binding)))
@@ -100,6 +105,43 @@ export async function lookupArchiveLocator(scope: ArchiveEncryptionScope, root: 
   bindingInput: ArchiveEncryptionBinding, port: ArchiveLocatorReader): Promise<string | undefined> {
   const binding = captureArchiveEncryptionBinding(bindingInput)
   return reader(scope, root, port).lookup(binding)
+}
+
+/** Explicit full export walks the directory; ordinary reads retain logarithmic lookup. No data object is decrypted here. */
+export async function* iterateArchiveLocatorEntries(scopeInput: ArchiveEncryptionScope, rootInput: ArchiveLocatorRoot,
+  port: ArchiveLocatorReader, retainDirectory?: (ciphertextId: string, object: EncryptedArchiveObject) => void | Promise<void>): AsyncIterable<ArchiveLocatorEntry> {
+  const scope = captureArchiveEncryptionScope(scopeInput), root = captureRoot(rootInput)
+  const download = port?.download, ensureCurrent = guard(port?.ensureCurrent)
+  if (typeof download !== "function" || retainDirectory !== undefined && typeof retainDirectory !== "function") fail()
+  const stack = [root.root], visited = new Set<string>()
+  let count = 0, previous: string | undefined
+  while (stack.length) {
+    const next = stack.pop()!
+    if (visited.has(next.ciphertextId) || visited.size >= MAX_LOCATOR_ENTRIES * 2) fail("Archive locator cycle or page limit exceeded")
+    visited.add(next.ciphertextId)
+    await ensureCurrent()
+    const object = structuredClone(await download.call(port, next.ciphertextId))
+    await ensureCurrent()
+    const bytes = await openArchiveObject(scope, binding(root.context, next.objectId), next.ciphertextId, object)
+    const page = parsePage(bytes, root.context, next)
+    await ensureCurrent()
+    if (retainDirectory) {
+      if (await retainDirectory(next.ciphertextId, structuredClone(object)) !== undefined) fail("Archive retention callback must return no value")
+      await ensureCurrent()
+    }
+    if ("entries" in page) {
+      for (const entry of page.entries) {
+        if (++count > root.root.count || count > MAX_LOCATOR_ENTRIES || previous !== undefined && entry.key <= previous) fail("Archive directory coverage or ordering changed")
+        previous = entry.key
+        await ensureCurrent()
+        yield structuredClone(entry)
+      }
+    } else {
+      for (let index = page.children.length - 1; index >= 0; index--) stack.push(page.children[index]!)
+    }
+  }
+  await ensureCurrent()
+  if (count !== root.root.count) fail("Archive directory has incomplete coverage")
 }
 
 /** Read-only cold adapter. A signed baseline must authorize both roots separately; this adapter establishes content integrity only. */

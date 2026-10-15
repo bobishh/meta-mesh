@@ -214,6 +214,12 @@ async function loadPage(context: ArchiveTreeContext, root: ArchiveIndexRoot, sto
   return page
 }
 
+/** One authenticated page for bounded streaming/export walks that must continue past missing sibling pages. */
+export async function readArchiveIndexPage(contextInput: ArchiveTreeContext, rootInput: ArchiveIndexRoot,
+  store: ArchiveObjectStore): Promise<IndexPage> {
+  return loadPage(captureContext(contextInput), captureRoot(rootInput), store)
+}
+
 /** Authenticate the root even for empty/outside-range queries. Returned index entries do not establish historical author permission. */
 export async function readArchiveIndex(
   contextInput: ArchiveTreeContext, rootInput: ArchiveIndexRoot, store: ArchiveObjectStore,

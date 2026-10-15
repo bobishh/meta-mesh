@@ -1,6 +1,7 @@
 /** Durable host-independent replica progress. This record never travels with a shared document. */
 export type ReplicaPending<Object> = {
   requestId: string
+  observedSequence?: number
   hash: string
   bytes: number
   object: Object
@@ -40,7 +41,7 @@ export type ReplicaPorts<Payload, Object, Receipt> = {
   transport: {
     inventory: (cursor: number) => Promise<ReplicaInventory>
     download: (objectId: string) => Promise<Object>
-    upload: (object: Object, requestId: string) => Promise<Receipt>
+    upload: (object: Object, requestId: string, observedSequence: number) => Promise<Receipt>
   }
   /** Await signed causal admission and durable host storage before returning. Never grants application rights. */
   admit: (object: Object, sequence: number) => Promise<{ hash: string; identity?: string }>
@@ -73,13 +74,17 @@ function validateState<Object>(state: ReplicaState<Object>, binding: string) {
     !positiveCounter(state.generation) || !positiveCounter(state.cursor)) throw new Error("Invalid or changed replica binding")
   if (typeof state.lastUploaded !== "string" || state.lastUploaded.length > 128 ||
     !optionalToken(state.uploadedRevision) || !optionalToken(state.contentIdentity)) throw new Error("Invalid replica acknowledgment")
-  if (state.pending) validatePending(state.pending)
+  if (state.pending) {
+    validatePending(state.pending)
+    if ((state.pending.observedSequence ?? 0) > state.cursor) throw new Error("Outbox sequence exceeds admitted replica progress")
+  }
 }
 
 function validatePending<Object>(pending: ReplicaPending<Object>) {
   if (!token(pending.requestId) || pending.requestId.length > 128 || !token(pending.hash) || pending.hash.length > 128 ||
     !positiveCounter(pending.bytes) || pending.bytes > maximumContentBytes || pending.object === undefined ||
-    !optionalToken(pending.revision) || !optionalToken(pending.identity)) throw new Error("Invalid durable replica outbox")
+    !optionalToken(pending.revision) || !optionalToken(pending.identity) ||
+    pending.observedSequence !== undefined && !positiveCounter(pending.observedSequence)) throw new Error("Invalid durable replica outbox")
 }
 
 function validateInventory(inventory: ReplicaInventory, after: number) {
@@ -106,7 +111,20 @@ export class ReplicaEngine<Payload, Object, Receipt> {
 
   pull(): Promise<boolean> { return this.enqueue(() => this.pullNow()) }
   push(): Promise<boolean> { return this.enqueue(() => this.pushNow()) }
+  /** Finish only the saved request before a credential transition; never capture newer local content. */
+  drainPending(): Promise<boolean> { return this.enqueue(async () => {
+    const state = await this.state()
+    return state.pending ? this.deliver(state, false) : true
+  }) }
   sync(): Promise<boolean> { return this.enqueue(async () => {
+    // A sync pass that starts with an uncertain upload only resolves that exact
+    // request. Newer local content waits for the next pass; do not report a full
+    // sync while it remains unpublished.
+    const original = await this.state()
+    if (original.pending) {
+      await this.deliver(original, false)
+      return false
+    }
     const caughtUp = await this.pullNow()
     const uploaded = await this.pushNow()
     return caughtUp && uploaded
@@ -180,7 +198,7 @@ export class ReplicaEngine<Payload, Object, Receipt> {
     const object = await this.ports.content.seal(clone(captured.payload))
     await this.ports.guard()
     const finalRevision = stableRevision && await this.ports.content.revision() === stableRevision ? stableRevision : undefined
-    const pending: ReplicaPending<Object> = { requestId: crypto.randomUUID(), hash: captured.hash, bytes: captured.bytes,
+    const pending: ReplicaPending<Object> = { requestId: crypto.randomUUID(), observedSequence: state.cursor, hash: captured.hash, bytes: captured.bytes,
       object: clone(object), revision: finalRevision, identity: captured.identity }
     state = await this.commit(state, { ...state, pending })
     return this.deliver(state)
@@ -191,10 +209,10 @@ export class ReplicaEngine<Payload, Object, Receipt> {
       Boolean(content.identity && [state.contentIdentity, this.received?.identity].includes(content.identity))
   }
 
-  private async deliver(state: ReplicaState<Object>): Promise<boolean> {
+  private async deliver(state: ReplicaState<Object>, inspectRevision = true): Promise<boolean> {
     const pending = state.pending!
     await this.ports.guard()
-    const receipt = await this.ports.transport.upload(clone(pending.object), pending.requestId)
+    const receipt = await this.ports.transport.upload(clone(pending.object), pending.requestId, pending.observedSequence ?? 0)
     await this.ports.guard()
     await this.ports.verifyReceipt(receipt, clone(pending.object), pending.requestId)
     await this.ports.guard()
@@ -202,6 +220,7 @@ export class ReplicaEngine<Payload, Object, Receipt> {
     await this.commit(state, { ...completed, lastUploaded: pending.hash,
       uploadedRevision: pending.revision, contentIdentity: pending.identity })
     this.observe("uploaded", pending.bytes)
+    if (!inspectRevision) return true
     const revision = await this.ports.content.revision()
     await this.ports.guard()
     return revision === undefined || pending.revision === revision

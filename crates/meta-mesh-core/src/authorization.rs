@@ -529,6 +529,10 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
             .contains_key(&(person_id.to_string(), device_id.to_string()))
     }
 
+    pub(crate) fn person_was_departed(&self, person_id: &str) -> bool {
+        self.departure_boundaries.contains_key(person_id)
+    }
+
     pub(crate) fn inside_signed_frontiers(
         &self,
         person_id: &str,

@@ -43,6 +43,8 @@ export type HistoryPreparationJournal = {
   read(): Promise<HistoryPreparationState | undefined>
   readSource(): Promise<AsyncIterable<Uint8Array>>
   stage(scope: ArchiveEncryptionScope, binding: ArchiveEncryptionBinding, bytes: Uint8Array): Promise<HistoryPreparedObject>
+  stageSealed(scope: ArchiveEncryptionScope, binding: ArchiveEncryptionBinding, sealed: SealedArchiveObject): Promise<HistoryPreparedObject>
+  readObject(ciphertextId: string): Promise<HistoryPreparedObject | undefined>
   objects(): AsyncIterable<HistoryPreparedObject>
   locators(): AsyncIterable<ArchiveLocatorEntry>
   archive(root: ArchiveEncryptionBinding): Promise<HistoryPreparationState>
@@ -143,6 +145,17 @@ export function createHistoryPreparationJournal(identityInput: HistoryPreparatio
     if (count !== captured.state.objectCount || await persistence.read(captured.key) !== captured.raw) fail("Prepared archive set changed or incomplete")
     ensureCurrent()
   }
+  async function readPreparedObject(ciphertextId: string): Promise<HistoryPreparedObject | undefined> {
+    validateArchiveObjectId(ciphertextId)
+    ensureCurrent()
+    const saved = await head(false)
+    if (!saved) return undefined
+    const raw = await persistence.read(await objectKey(ciphertextId)); ensureCurrent()
+    if (raw === undefined) return undefined
+    const item = (await readObject(ciphertextId, saved.state.objectCount)).record
+    if (canonicalizeJson(item) !== raw) fail("Prepared archive object changed during lookup")
+    return item
+  }
   async function* locators(): AsyncGenerator<ArchiveLocatorEntry> {
     const captured = (await head())!, bindingPrefix = (await prefix()) + "binding."
     if (captured.state.phase === "captured") fail("Archive data must be frozen before portable locator enumeration")
@@ -176,6 +189,7 @@ export function createHistoryPreparationJournal(identityInput: HistoryPreparatio
     get identity() { return structuredClone(identity) },
     locators,
     async read() { return (await head(false))?.state },
+    readObject: readPreparedObject,
     readSource,
     async capture(source) {
       ensureCurrent()
@@ -216,6 +230,43 @@ export function createHistoryPreparationJournal(identityInput: HistoryPreparatio
         if (state.objectCount >= MAX_PREPARED_OBJECTS) fail("Prepared archive capacity exceeded")
         sealed ??= await sealArchiveObject(scope, binding, bytes)
         requestId ??= crypto.randomUUID()
+        const record: HistoryPreparedObject = { kind: "workspace-history-prepared-object", version: 1, index: state.objectCount,
+          previousDigest: state.objectDigest, binding, requestId, sealed }
+        const raw = canonicalizeJson(record), digest = await digestRecord(raw), oKey = await objectKey(sealed.ciphertextId)
+        const ordinal = await orderKey(record.index)
+        const next: HistoryPreparationState = { ...state, objectCount: state.objectCount + 1, objectDigest: digest }
+        const writes = [{ key: previous.key, value: canonicalizeJson(next) }, { key: bKey, value: sealed.ciphertextId },
+          { key: oKey, value: raw }, { key: ordinal, value: canonicalizeJson({ ciphertextId: sealed.ciphertextId, digest }) }]
+        ensureCurrent()
+        if (await persistence.compareAndSwap([{ key: previous.key, expected: previous.raw }, { key: bKey, expected: undefined },
+          { key: oKey, expected: undefined }, { key: ordinal, expected: undefined }], writes, ensureCurrent)) {
+          ensureCurrent(); return record
+        }
+      }
+      fail("History preparation contention; retry from persisted state")
+    },
+    async stageSealed(scopeInput, bindingInput, sealedInput) {
+      const scope = captureArchiveEncryptionScope(scopeInput), binding = capturePreparationBinding(bindingInput, identity)
+      const sealed = structuredClone(sealedInput)
+      if (typeof sealed?.ciphertextId !== "string") fail("Invalid pre-encrypted history object")
+      validateArchiveObjectId(sealed.ciphertextId)
+      await openArchiveObject(scope, binding, sealed.ciphertextId, sealed.object)
+      ensureCurrent()
+      if (scope.scopeId !== identity.storage.scopeId || scope.keyEpoch !== identity.storage.keyEpoch ||
+          await sha256Base64Url(scope.key) !== identity.storage.keyDigest) fail("History preparation encryption context changed")
+      const bKey = await bindingKey(binding)
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const previous = (await head())!, state = previous.state
+        const saved = await existing(binding, state.objectCount)
+        if (saved) {
+          if (saved.sealed.ciphertextId !== sealed.ciphertextId || canonicalizeJson(saved.sealed.object) !== canonicalizeJson(sealed.object)) {
+            fail("Prepared archive binding already contains different ciphertext")
+          }
+          return saved
+        }
+        if (state.phase !== "captured") fail("Prepared archive is frozen")
+        if (state.objectCount >= MAX_PREPARED_OBJECTS) fail("Prepared archive capacity exceeded")
+        const requestId = crypto.randomUUID()
         const record: HistoryPreparedObject = { kind: "workspace-history-prepared-object", version: 1, index: state.objectCount,
           previousDigest: state.objectDigest, binding, requestId, sealed }
         const raw = canonicalizeJson(record), digest = await digestRecord(raw), oKey = await objectKey(sealed.ciphertextId)

@@ -11,10 +11,20 @@ use serde::{Deserialize, Serialize};
 
 mod confirmation;
 mod proposal;
+mod receive;
+mod peer;
+
+pub use receive::{VerifiedReceivedHistoryBaseline, verify_received_history_baseline,
+    verify_received_owner_attested_history_baseline};
+pub use peer::verify_received_owner_attested_peer_history_baseline;
 
 pub const HISTORY_BASELINE_DOMAIN: &str = "MESH-HISTORY/1";
-pub const HISTORY_BASELINE_CAPABILITY: &str = "workspace-history-baseline@1";
+pub const HISTORY_BASELINE_CAPABILITY: &str = "workspace-history-baseline@2";
+pub const HISTORY_BASELINE_LEGACY_CAPABILITY: &str = "workspace-history-baseline@1";
 pub const MAX_HISTORY_BASELINE_BYTES: usize = 64 * 1024;
+/// Current compact document content has a separate budget from its bounded signed envelope.
+pub const MAX_HISTORY_BASIS_DOCUMENT_BYTES: usize = 256 * 1024 * 1024;
+pub const MAX_ATTESTED_HISTORY_BASELINE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -55,6 +65,16 @@ pub struct HistoryBaselinePayload {
     pub storage: HistoryBaselineStorage,
     pub required_reader_capability: String,
     pub required_writer_capability: String,
+    /// Present only in the bounded current-owner attestation format. Receiver
+    /// must compare its signed genesis against an independently trusted invite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_authority: Option<crate::ScopeAuthoritySnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_control_epoch: Option<u64>,
+    /// Fresh owner-attested control state. Original records remain unchanged;
+    /// the attestation does not claim to replay their historical admission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_control: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +122,17 @@ impl<'a> VerifiedHistoryBasisArchive<'a> {
         parent: HistoryBaselineParent<'_>,
     ) -> Result<HistoryBaselineProposal<'a>, String> {
         proposal::prepare(self, parent)
+    }
+
+    /// Prepare a compact Owner-attested current state. This is an explicit
+    /// policy transition: the scope ledger must be trusted by the receiving
+    /// invite/bootstrap path and its current controller must be this Owner.
+    pub fn propose_owner_attested_baseline(
+        &'a self,
+        parent: HistoryBaselineParent<'_>,
+        scope_authority: &crate::ScopeAuthoritySnapshot,
+    ) -> Result<HistoryBaselineProposal<'a>, String> {
+        proposal::prepare_owner_attested(self, parent, scope_authority)
     }
 }
 impl HistoryBaselineProposal<'_> {

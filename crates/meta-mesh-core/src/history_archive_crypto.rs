@@ -39,6 +39,37 @@ pub struct EncryptedHistoryArchiveObject {
     pub ciphertext: String,
 }
 
+/// Seal one Native-derived archive object after the host supplies a fresh
+/// browser-generated nonce. Ciphertext, never plaintext, crosses the storage
+/// sink boundary.
+pub fn seal_history_archive_object(
+    scope: &HistoryArchiveEncryptionScope,
+    binding: &HistoryArchiveEncryptionBinding,
+    nonce: &[u8],
+    plaintext: &[u8],
+) -> Result<(String, EncryptedHistoryArchiveObject), String> {
+    let maximum = validate_binding(scope, binding)?;
+    if nonce.len() != 12 || plaintext.len() > maximum
+        || history_archive_object_id(plaintext) != binding.object_id
+    {
+        return Err("Invalid archive plaintext, nonce, or binding".into());
+    }
+    let value = serde_json::to_value(binding).map_err(|_| "Invalid archive encryption binding")?;
+    let mut value = value.as_object().cloned().ok_or("Invalid archive encryption binding")?;
+    value.insert("purpose".into(), "archive".into());
+    value.insert("scopeId".into(), scope.scope_id.clone().into());
+    value.insert("keyEpoch".into(), scope.key_epoch.into());
+    let aad = format!("MESH-HISTORY/1/archive-object\0{}", crate::canonicalize_json(&value.into())?);
+    let ciphertext = Aes256Gcm::new_from_slice(&scope.key)
+        .map_err(|_| "Invalid archive encryption key")?
+        .encrypt(Nonce::from_slice(nonce), Payload { msg: plaintext, aad: aad.as_bytes() })
+        .map_err(|_| "Archive encryption failed")?;
+    let object = EncryptedHistoryArchiveObject { version: 1, scope_id: scope.scope_id.clone(),
+        key_epoch: scope.key_epoch, nonce: URL_SAFE_NO_PAD.encode(nonce), ciphertext: URL_SAFE_NO_PAD.encode(ciphertext) };
+    let encoded = crate::canonicalize_json(&serde_json::to_value(&object).map_err(|_| "Invalid archive ciphertext envelope")?)?;
+    Ok((history_archive_object_id(encoded.as_bytes()), object))
+}
+
 pub fn open_history_archive_object(
     scope: &HistoryArchiveEncryptionScope,
     binding: &HistoryArchiveEncryptionBinding,

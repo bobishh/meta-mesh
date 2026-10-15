@@ -8,6 +8,51 @@ use crate::{
 use automerge::AutoCommit;
 use serde_json::Value;
 
+pub(super) fn prepare_owner_attested<'a>(
+    basis: &'a VerifiedHistoryBasisArchive<'a>,
+    parent: HistoryBaselineParent<'_>,
+    scope_authority: &crate::ScopeAuthoritySnapshot,
+) -> Result<HistoryBaselineProposal<'a>, String> {
+    let validated = crate::validate_scope_authority(scope_authority)?;
+    let preparation = basis.capture().preparation();
+    let owner = preparation.owner();
+    if validated.scope_id != preparation.source().snapshot.workspace_id
+        || validated.controller.person_id != owner.person_id
+        || validated.controller.public_key != owner.public_key
+    {
+        return Err("Current scope controller does not match the prepared workspace Owner".into());
+    }
+    let mut proposal = prepare(basis, parent)?;
+    proposal.payload.version = 2;
+    proposal.payload.required_reader_capability = HISTORY_BASELINE_CAPABILITY.into();
+    proposal.payload.required_writer_capability = HISTORY_BASELINE_CAPABILITY.into();
+    proposal.payload.scope_authority = Some(scope_authority.clone());
+    proposal.payload.scope_control_epoch = Some(validated.control_epoch);
+    proposal.payload.current_control = Some(history_control_value(&preparation.source().snapshot)?);
+    refresh_baseline_id(&mut proposal.payload)?;
+    let envelope_bound = HistoryBaselineEnvelope {
+        signer_key_id: proposal.payload.device_id.clone(),
+        payload: proposal.payload.clone(),
+        signature: "A".repeat(86),
+    };
+    if serde_json::to_vec(&envelope_bound)
+        .map_err(|_| "Invalid baseline payload encoding")?
+        .len() > MAX_ATTESTED_HISTORY_BASELINE_BYTES
+    {
+        return Err("Owner-attested history baseline exceeds preparation limit".into());
+    }
+    Ok(proposal)
+}
+
+fn refresh_baseline_id(payload: &mut HistoryBaselinePayload) -> Result<(), String> {
+    payload.baseline_id.clear();
+    let mut unsigned = serde_json::to_value(&*payload)
+        .map_err(|_| "Invalid baseline payload encoding")?;
+    unsigned.as_object_mut().ok_or("Invalid baseline payload encoding")?.remove("baselineId");
+    payload.baseline_id = history_archive_object_id(crate::canonicalize_json(&unsigned)?.as_bytes());
+    Ok(())
+}
+
 pub(super) fn prepare<'a>(
     basis: &'a VerifiedHistoryBasisArchive<'a>,
     parent: HistoryBaselineParent<'_>,
@@ -101,9 +146,13 @@ pub(super) fn prepare<'a>(
             data_receipt: coverage.data_receipt().clone(),
             directory_receipt: coverage.directory_receipt().clone(),
         },
-        required_reader_capability: HISTORY_BASELINE_CAPABILITY.into(),
-        required_writer_capability: HISTORY_BASELINE_CAPABILITY.into(),
+        required_reader_capability: HISTORY_BASELINE_LEGACY_CAPABILITY.into(),
+        required_writer_capability: HISTORY_BASELINE_LEGACY_CAPABILITY.into(),
+        scope_authority: None,
+        scope_control_epoch: None,
+        current_control: None,
     };
+    payload.version = 1;
     let mut unsigned =
         serde_json::to_value(&payload).map_err(|_| "Invalid baseline payload encoding")?;
     unsigned.as_object_mut().unwrap().remove("baselineId");
@@ -125,7 +174,7 @@ pub(super) fn prepare<'a>(
 }
 
 // These values are derived from verified typed snapshots, never arbitrary host JSON.
-fn preserves_control(previous: &Value, current: &Value) -> bool {
+pub(super) fn preserves_control(previous: &Value, current: &Value) -> bool {
     if previous["workspaceId"] != current["workspaceId"]
         || previous["genesisEpoch"] != current["genesisEpoch"]
         || previous["genesisOwner"]["personId"] != current["genesisOwner"]["personId"]

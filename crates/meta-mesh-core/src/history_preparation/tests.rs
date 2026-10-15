@@ -117,6 +117,10 @@ fn given_same_source_under_different_admission_policies_when_preparing_then_keep
         source_revision_for_policy(&f.source, "mesh-causal-admission@1").unwrap(),
         source_revision_for_policy(&f.source, "mesh-causal-admission@2").unwrap()
     );
+    assert_ne!(
+        source_revision_for_policy(&f.source, "mesh-causal-admission@2").unwrap(),
+        source_revision_for_policy(&f.source, crate::causal_admission::CAUSAL_ADMISSION_POLICY_ID).unwrap()
+    );
 }
 
 #[test]

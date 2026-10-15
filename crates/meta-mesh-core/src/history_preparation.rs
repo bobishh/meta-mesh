@@ -6,10 +6,12 @@ use crate::{
 };
 use automerge::AutoCommit;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HistoryPreparationSigner {
     pub person_id: String,
     pub device_id: String,
@@ -67,6 +69,27 @@ pub fn prepare_workspace_history(
     // cannot replace the derived admission projection with a claimed cache result.
     validate_source_bounds(&source)?;
     let admission = evaluate_causal_admission(source.clone())?;
+    finish_preparation(source, signer, admission)
+}
+
+/// Prepare a new bounded history capture from a Native-verified compact basis.
+/// The basis handle admits the ordinary signed tail; the host cannot turn the
+/// compact document into a synthetic genesis or claim its own admission.
+pub fn prepare_workspace_history_from_basis(
+    source: CausalAdmissionInput,
+    signer: HistoryPreparationSigner,
+    basis: &crate::history_baseline::VerifiedReceivedHistoryBaseline,
+) -> Result<VerifiedHistoryPreparation, String> {
+    validate_source_bounds(&source)?;
+    let admission = basis.admit_tail(source.clone())?;
+    finish_preparation(source, signer, admission)
+}
+
+fn finish_preparation(
+    source: CausalAdmissionInput,
+    signer: HistoryPreparationSigner,
+    admission: CausalAdmissionPlan,
+) -> Result<VerifiedHistoryPreparation, String> {
     let context = crate::authorization::ValidatedWorkspaceWriteAuthorizationContext::from_snapshot(
         &source.snapshot,
         source.now_ms,
@@ -175,8 +198,13 @@ fn validate_source_bounds(source: &CausalAdmissionInput) -> Result<(), String> {
     Ok(())
 }
 
-fn authority_digest(source: &CausalAdmissionInput) -> Result<String, String> {
-    let s = &source.snapshot;
+pub(crate) fn authority_digest(source: &CausalAdmissionInput) -> Result<String, String> {
+    authority_digest_snapshot(&source.snapshot)
+}
+
+pub(crate) fn authority_digest_snapshot(
+    s: &crate::WorkspaceWriteAuthorizationSnapshot,
+) -> Result<String, String> {
     let authority = serde_json::json!({
         "workspaceId": s.workspace_id, "genesisOwner": s.genesis_owner, "genesisEpoch": s.genesis_epoch,
         "expectedCurrentOwner": s.expected_current_owner, "ownershipTransfers": s.ownership_transfers,

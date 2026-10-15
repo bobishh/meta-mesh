@@ -733,16 +733,91 @@ export class BrowserIdentityStore {
     envelope: IdentityRecoveryEnvelope,
     recoveryKey: string,
     displayName = "Mesh user",
+    commit?: IdentityAdoptionCommit,
   ): Promise<LocalProfile> {
-    const candidate = await openIdentityRecoveryEnvelope(envelope, recoveryKey, displayName)
-    const saved = await this.load()
-    if (saved?.identity.personId === candidate.identity.personId) {
-      this.profile = saved
-      return saved
+    const startingProfile = this.profile
+    const startingKeys = startingProfile ? { ...startingProfile.privateKeys } : undefined
+    const startingPublic = startingProfile
+      ? canonicalizeJson({ identity: startingProfile.identity, device: startingProfile.device, certificate: startingProfile.certificate })
+      : undefined
+    const ensureStartingCurrent = () => {
+      if (startingProfile && (this.profile !== startingProfile || startingProfile.privateKeys.devicePrivateKey !== startingKeys!.devicePrivateKey ||
+        startingProfile.privateKeys.identityPrivateKey !== startingKeys!.identityPrivateKey ||
+        canonicalizeJson({ identity: startingProfile.identity, device: startingProfile.device, certificate: startingProfile.certificate }) !== startingPublic)) {
+        throw new Error("Identity changed during recovery")
+      }
     }
-    await this.persist(candidate, true)
-    this.profile = candidate
-    return candidate
+    ensureStartingCurrent()
+    const current = await this.bootstrap()
+    ensureStartingCurrent()
+    const active = this.profile
+    const keys = { ...current.privateKeys }
+    const currentPublic = canonicalizeJson({ identity: current.identity, device: current.device, certificate: current.certificate })
+    const ensureCurrent = () => {
+      if (!active || this.profile !== active || active.privateKeys.devicePrivateKey !== keys.devicePrivateKey ||
+        active.privateKeys.identityPrivateKey !== keys.identityPrivateKey ||
+        canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+        throw new Error("Identity changed during recovery")
+      }
+    }
+    const baseline: LocalProfile = {
+      identity: structuredClone(current.identity),
+      device: structuredClone(current.device),
+      certificate: structuredClone(current.certificate),
+      privateKeys: keys,
+    }
+    const previous = await this.get(this.options.storageKey)
+    ensureCurrent()
+    const baselineSerialized = await this.serialize(baseline)
+    ensureCurrent()
+    if (previous !== null && previous !== baselineSerialized) {
+      if (this.profile === current) this.clearMemory()
+      throw new Error("Durable identity changed before recovery")
+    }
+    const candidate = await openIdentityRecoveryEnvelope(envelope, recoveryKey, displayName)
+    ensureCurrent()
+    const latest = await this.get(this.options.storageKey)
+    ensureCurrent()
+    if (latest !== previous) {
+      if (this.profile === current) this.clearMemory()
+      throw new Error("Durable identity changed before recovery")
+    }
+    let profile = candidate
+    if (candidate.identity.personId === baseline.identity.personId) {
+      if (candidate.identity.publicKey !== baseline.identity.publicKey) throw new Error("Recovered root key does not match the active identity")
+      profile = keys.identityPrivateKey
+        ? current
+        : { ...baseline, privateKeys: { ...keys, identityPrivateKey: candidate.privateKeys.identityPrivateKey } }
+    }
+    const candidateProfile = await this.serialize(profile)
+    const plan: IdentityAdoptionCommitPlan = {
+      storageKey: this.options.storageKey,
+      previousProfile: previous,
+      candidateProfile,
+      publicProfile: {
+        identity: structuredClone(profile.identity),
+        device: structuredClone(profile.device),
+        certificate: structuredClone(profile.certificate),
+      },
+      ...(previous ? { backup: { key: `${this.options.storageKey}.backup.${baseline.identity.personId}`, value: previous } } : {}),
+    }
+    ensureCurrent()
+    if (commit) {
+      await commit(structuredClone(plan), ensureCurrent)
+    } else {
+      if (plan.backup) await this.set(plan.backup.key, plan.backup.value, true)
+      ensureCurrent()
+      const beforeWrite = await this.get(this.options.storageKey)
+      ensureCurrent()
+      if (beforeWrite !== previous) {
+        if (this.profile === current) this.clearMemory()
+        throw new Error("Durable identity changed before recovery")
+      }
+      await this.set(this.options.storageKey, candidateProfile, true)
+    }
+    ensureCurrent()
+    this.profile = profile
+    return profile
   }
 
   async createPassphrase(passphrase: string, displayName = "Mesh user"): Promise<PassphraseIdentity> {

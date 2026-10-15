@@ -10,7 +10,12 @@ pub(super) fn confirm(
     signed_json: &[u8],
     current: &CausalAdmissionInput,
 ) -> Result<VerifiedHistoryBaselineAttestation, String> {
-    if signed_json.len() > MAX_HISTORY_BASELINE_BYTES {
+    let maximum = if proposal.payload.version == 2 {
+        MAX_ATTESTED_HISTORY_BASELINE_BYTES
+    } else {
+        MAX_HISTORY_BASELINE_BYTES
+    };
+    if signed_json.len() > maximum {
         return Err("History baseline envelope exceeds size limit".into());
     }
     proposal.basis.assert_source_current(current)?;

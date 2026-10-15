@@ -364,7 +364,8 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       const snapshot = { genesis: { signed: "fixture" }, grants: [], grantIssuers: [], revocations: [], controlTransfers: [] }
       const state = (await import("@meta-uber/mesh-replication/runtime")).meshRustRuntime().state as any
       const validateSnapshot = vi.spyOn(state, "validateScopeAuthority").mockReturnValue({
-        scopeId: workspaceId, controller: { personId: "owner", publicKey: "public-key" },
+        scopeId: workspaceId, creator: { personId: "owner", publicKey: "public-key", certificates: [] },
+        controller: { personId: "owner", publicKey: "public-key", certificates: [] }, controlEpoch: 1,
       })
       const initial = {
         version: 1 as const, workspaceId, ownerPersonId: "owner", ownerPublicKey: "public-key",
@@ -418,6 +419,63 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
         scopeAuthoritySnapshot: { genesis: {}, grants: [], grantIssuers: [], revocations: [], controlTransfers: [] },
       })).rejects.toThrow()
       await expect(store.getWorkspaceAuthority(authority.workspaceId)).resolves.toEqual(authority)
+    })
+
+    it("Given clock-skewed authority with a signed scope revocation, when saved, then Native merge keeps records and current controller", async () => {
+      const store = new PeerStore("match-test-authority-signed-scope-clock-skew", mockIdb as any)
+      const state = (await import("@meta-uber/mesh-replication/runtime")).meshRustRuntime().state as any
+      const genesis = { signed: "same-scope-genesis" }
+      const currentScope = { genesis, grants: [], grantIssuers: [], revocations: [], controlTransfers: [{ signed: "transfer-to-b" }] }
+      const incomingScope = { genesis, grants: [], grantIssuers: [], revocations: [{ signed: "revocation-b" }], controlTransfers: [] }
+      const mergedScope = { genesis, grants: [], grantIssuers: [], revocations: [{ signed: "revocation-b" }],
+        controlTransfers: [{ signed: "transfer-to-b" }] }
+      const controller = { personId: "owner-b", publicKey: "key-b", certificates: [{ signed: "cert-b" }] }
+      const creator = { personId: "owner-a", publicKey: "key-a", certificates: [{ signed: "cert-a" }] }
+      const mergeScope = vi.spyOn(state, "mergeScopeAuthoritySnapshots").mockReturnValue(mergedScope)
+      const validateScope = vi.spyOn(state, "validateScopeAuthority").mockReturnValue({ creator, controller, controlEpoch: 2 })
+      const current = { version: 1 as const, workspaceId: "ws_skewed_scope", genesisOwnerPersonId: "owner-a",
+        ownerPersonId: "owner-b", ownerPublicKey: "key-b", ownerCertificates: [{ signed: "cert-b" }],
+        ownerHistory: [creator], epoch: 2, updatedAt: "2026-10-15T12:00:00.000Z", catalog: {
+          revocations: [{ signed: "workspace-revocation" }], deviceRevocations: [{ signed: "device-revocation" }],
+        }, scopeAuthoritySnapshot: currentScope }
+      const staleClock = { ...current, ownerPersonId: "owner-a", ownerPublicKey: "key-a", ownerCertificates: [{ signed: "cert-a" }],
+        ownerHistory: [], updatedAt: "2026-10-15T11:00:00.000Z", catalog: {
+          revocations: [{ signed: "scope-independent-revocation" }], departures: [{ signed: "departure" }],
+        }, scopeAuthoritySnapshot: incomingScope }
+      try {
+        await store.putWorkspaceAuthority(current)
+        await store.putWorkspaceAuthority(staleClock)
+
+        const saved = await store.getWorkspaceAuthority(current.workspaceId)
+        expect(mergeScope).toHaveBeenCalledWith(currentScope, incomingScope, expect.any(Number))
+        expect(saved).toMatchObject({ ownerPersonId: "owner-b", ownerPublicKey: "key-b", epoch: 2,
+          genesisOwnerPersonId: "owner-a", scopeAuthoritySnapshot: mergedScope })
+        expect(saved?.ownerHistory).toEqual([creator])
+        expect(saved?.catalog).toMatchObject({ revocations: expect.arrayContaining([{ signed: "workspace-revocation" },
+          { signed: "scope-independent-revocation" }]), deviceRevocations: [{ signed: "device-revocation" }],
+          departures: [{ signed: "departure" }] })
+      } finally { mergeScope.mockRestore(); validateScope.mockRestore() }
+    })
+
+    it("Given signed scope authority without a local grant, when same-controller membership arrives, then retain that grant for access decisions", async () => {
+      const store = new PeerStore("match-test-scope-membership-grant", mockIdb as any)
+      const state = (await import("@meta-uber/mesh-replication/runtime")).meshRustRuntime().state
+      const controller = { personId: "owner-a", publicKey: "key-a", certificates: [] }
+      const snapshot = { genesis: {}, grants: [], grantIssuers: [], revocations: [], controlTransfers: [] }
+      const validate = vi.spyOn(state, "validateScopeAuthority").mockReturnValue({ creator: controller, controller, controlEpoch: 1 })
+      const merge = vi.spyOn(state, "mergeScopeAuthoritySnapshots").mockReturnValue(snapshot)
+      const authority = { version: 1 as const, workspaceId: "scope-membership", ownerPersonId: "owner-a", ownerPublicKey: "key-a",
+        ownerCertificates: [], epoch: 1, updatedAt: "2026-10-15T12:00:00Z", scopeAuthoritySnapshot: snapshot }
+      const grant = { payload: { personId: "member", accessEpoch: 2, role: "editor" } }
+      try {
+        await store.putWorkspaceAuthority(authority)
+        await store.putWorkspaceAuthority({ ...authority, localGrant: grant })
+        expect((await store.getWorkspaceAuthority(authority.workspaceId))?.localGrant).toEqual(grant)
+        await store.putWorkspaceAuthority({ ...authority, localGrant: { payload: { personId: "member", accessEpoch: 1, role: "visitor" } } })
+        expect((await store.getWorkspaceAuthority(authority.workspaceId))?.localGrant).toEqual(grant)
+        await store.putWorkspaceAuthority(authority)
+        expect((await store.getWorkspaceAuthority(authority.workspaceId))?.localGrant).toEqual(grant)
+      } finally { validate.mockRestore(); merge.mockRestore() }
     })
 
     it("Given an existing install upgrades, when slot zero starts, then it keeps the durable endpoint identity", async () => {
@@ -551,6 +609,40 @@ describe("Peer Catalog & Node Secret Module (src/sync/peerStore.ts)", () => {
       expect(storageSpy.setItem).not.toHaveBeenCalled()
       expect(storageSpy.removeItem).not.toHaveBeenCalled()
       expect(storageSpy.clear).not.toHaveBeenCalled()
+    })
+
+    it("Given equivalent signed certificates with different JSON field order, when credentials refresh repeatedly, then retain one exact signed record", async () => {
+      const store = new PeerStore("match-test-certificate-field-order", mockIdb as any)
+      const certificate = { payload: { kind: "device-certificate", version: 1, personId: "owner", deviceId: "device",
+        devicePublicKey: "device-key", issuerCertificateHash: null, canEnrollDevices: true }, signerKeyId: "owner", signature: "exact-signature" }
+      const reordered = { signature: certificate.signature, signerKeyId: certificate.signerKeyId,
+        payload: Object.fromEntries(Object.entries(certificate.payload).reverse()) }
+      const originalBytes = JSON.stringify(certificate), reorderedBytes = JSON.stringify(reordered)
+      expect(originalBytes).not.toBe(reorderedBytes)
+      const base: WorkspaceMeshCredential = { version: 1, workspaceId: "certificate-field-order", ownerPersonId: "owner",
+        ownerPublicKey: "key", transportSecret: "secret", epoch: 1, updatedAt: "2026-10-15T00:00:00Z",
+        ownerCertificates: [certificate, reordered] }
+      await store.putWorkspaceCredential(base)
+      for (const candidate of [reordered, certificate, reordered]) {
+        await store.putWorkspaceCredential({ ...base, ownerCertificates: [candidate] })
+        const saved = await store.getWorkspaceCredential(base.workspaceId)
+        expect(saved?.ownerCertificates).toHaveLength(1)
+        expect(JSON.stringify(saved!.ownerCertificates[0])).toBe(JSON.stringify(candidate))
+        expect(saved?.ownerCertificates[0]).toEqual(certificate)
+      }
+      expect(JSON.stringify(certificate)).toBe(originalBytes)
+      expect(JSON.stringify(reordered)).toBe(reorderedBytes)
+    })
+
+    it("Given certificates with the same signer and signature but different payloads, when credentials merge, then preserve both for signature validation", async () => {
+      const store = new PeerStore("match-test-certificate-distinct-payload", mockIdb as any)
+      const certificate = { payload: { personId: "owner", deviceId: "first" }, signerKeyId: "owner", signature: "same-signature" }
+      const distinct = { ...certificate, payload: { ...certificate.payload, deviceId: "second" } }
+      const base: WorkspaceMeshCredential = { version: 1, workspaceId: "certificate-distinct-payload", ownerPersonId: "owner",
+        ownerPublicKey: "key", transportSecret: "secret", epoch: 1, updatedAt: "2026-10-15T00:00:00Z", ownerCertificates: [certificate] }
+      await store.putWorkspaceCredential(base)
+      await store.putWorkspaceCredential({ ...base, ownerCertificates: [distinct] })
+      expect((await store.getWorkspaceCredential(base.workspaceId))?.ownerCertificates).toEqual([certificate, distinct])
     })
 
     it("keeps device removals and a newer local grant when a stale tab saves credentials", async () => {

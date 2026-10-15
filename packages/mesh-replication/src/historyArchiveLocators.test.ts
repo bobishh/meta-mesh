@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest"
 import { canonicalizeJson, sha256Base64Url } from "@meta-uber/mesh-identity"
 import { sealArchiveObject, type ArchiveEncryptionBinding, type EncryptedArchiveObject } from "./historyArchiveCrypto"
-import { archiveLocatorKey, buildArchiveLocators, createLocatedArchiveStore, lookupArchiveLocator, type ArchiveLocatorEntry } from "./historyArchiveLocators"
+import { archiveLocatorKey, buildArchiveLocators, createLocatedArchiveStore, iterateArchiveLocatorEntries, lookupArchiveLocator, type ArchiveLocatorEntry } from "./historyArchiveLocators"
 
 const encoder = new TextEncoder()
 async function fixture(count = 131) {
@@ -94,4 +94,35 @@ it("Given a page-store failure during directory preparation, when retried, then 
   const root = await buildArchiveLocators(f.scope, f.context, f.entries, { write, ensureCurrent: () => {} })
   expect(root.root.count).toBe(67)
   expect([...f.data]).toEqual(original)
+})
+
+it("Given a complete encrypted directory, when preparing a full recovery export, then enumerate every data object in order and retain every authenticated directory page", async () => {
+  const f = await fixture(131), pages = new Map<string, EncryptedArchiveObject>(), entries: ArchiveLocatorEntry[] = []
+  for await (const entry of iterateArchiveLocatorEntries(f.scope, f.root, { download: f.download, ensureCurrent: () => {} },
+    (id, object) => { pages.set(id, object) })) entries.push(entry)
+  expect(entries).toEqual(f.entries)
+  expect(pages).toEqual(f.pages)
+  expect(f.download).toHaveBeenCalledTimes(f.pages.size)
+  expect(entries.every(entry => f.data.has(entry.ciphertextId))).toBe(true)
+})
+
+it("Given an incomplete directory, when export enumerates it, then reject instead of reporting complete coverage", async () => {
+  const f = await fixture(67)
+  const missing = [...f.pages.keys()].find(id => id !== f.root.root.ciphertextId)!
+  f.pages.delete(missing)
+  await expect((async () => {
+    for await (const _entry of iterateArchiveLocatorEntries(f.scope, f.root, { download: f.download, ensureCurrent: () => {} })) { /* Consume the full directory. */ }
+  })()).rejects.toThrow(/missing/i)
+})
+
+it("Given access changes while enumerating an archive, when a page returns, then release no locator from that page", async () => {
+  const f = await fixture(2), entries: ArchiveLocatorEntry[] = []
+  let current = true
+  await expect((async () => {
+    for await (const entry of iterateArchiveLocatorEntries(f.scope, f.root, {
+      download: async id => { const object = await f.download(id); current = false; return object },
+      ensureCurrent: () => { if (!current) throw new Error("Access revoked") },
+    })) entries.push(entry)
+  })()).rejects.toThrow("Access revoked")
+  expect(entries).toEqual([])
 })
