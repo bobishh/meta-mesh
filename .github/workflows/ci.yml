@@ -19,6 +19,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: dtolnay/rust-toolchain@stable
+      - name: Verify disposable Cargo workspace copies
+        run: python3 -m unittest formal.test_workspace_copy
       - name: Check TLC graphs against Rust and kill implementation mutants
         run: ./formal/check.sh
         env:

@@ -1,0 +1,10 @@
+[package]
+name = "meta-mesh-transport-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+anyhow = "1"
+iroh = { version = "0.98.2", default-features = false, features = ["tls-ring"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "rt", "sync", "time"] }

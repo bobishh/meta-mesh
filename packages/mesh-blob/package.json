@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./stream": "./src/stream.ts"
+  },
   "dependencies": {
     "@meta-uber/mesh-browser-store": "*",
     "@meta-uber/mesh-identity": "*",

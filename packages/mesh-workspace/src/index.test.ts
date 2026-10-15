@@ -13,6 +13,7 @@ import {
   MAX_PEER_ADVERTISEMENT_SIZE,
   createWorkspaceRevocation,
   verifyWorkspaceRevocation,
+  createWorkspaceDeviceRevocation,
   createWorkspaceOwnershipTransfer,
   verifyWorkspaceOwnershipTransfer,
   createWorkspaceSuccessionPolicy,
@@ -25,6 +26,19 @@ import {
 
 describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () => {
   const workspaceId = "ws_mesh_alpha"
+
+  it("Given a LocalProfile with opaque CryptoKey handles, when owner records are signed, then public fields snapshot without cloning keys", async () => {
+    const owner = await createProfile("Owner")
+    const successor = await createProfile("Successor")
+    const revocation = await createWorkspaceDeviceRevocation(owner, workspaceId, owner.identity.personId,
+      "removed-device", ["head-before-revocation"], [owner.certificate])
+    const transfer = await createWorkspaceOwnershipTransfer(owner, workspaceId, {
+      personId: successor.identity.personId, publicKey: successor.identity.publicKey, certificates: [successor.certificate],
+    }, ["head-before-transfer"], 2)
+
+    expect(revocation.authority.personId).toBe(owner.identity.personId)
+    expect(transfer.payload.toOwnerPersonId).toBe(successor.identity.personId)
+  })
 
   describe("ownership transfer", () => {
     it("Given an owner and editor, when ownership transfers, then the signed record promotes editor and demotes former owner", async () => {

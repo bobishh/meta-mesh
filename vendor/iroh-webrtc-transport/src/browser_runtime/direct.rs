@@ -273,6 +273,28 @@ impl BrowserRuntime {
             .map_err(|err| runtime_error_to_js(err))
     }
 
+    pub(crate) fn take_stream_for_reset(
+        &self,
+        stream_key: &str,
+    ) -> Result<Option<std::sync::Arc<crate::core::stream_state::StreamState>>, JsValue> {
+        Ok(self
+            .core
+            .open_node()
+            .map_err(|err| runtime_error_to_js(err))?
+            .take_stream_for_reset(parse_stream_key(stream_key)?))
+    }
+
+    pub(crate) fn stream_for_read(
+        &self,
+        stream_key: &str,
+    ) -> Result<std::sync::Arc<crate::core::stream_state::StreamState>, JsValue> {
+        self.core
+            .open_node()
+            .map_err(runtime_error_to_js)?
+            .stream_handle(parse_stream_key(stream_key)?)
+            .map_err(runtime_error_to_js)
+    }
+
     pub(crate) fn open_benchmark_echo(&self, alpn: String) -> Result<(), JsValue> {
         let _ = self
             .core

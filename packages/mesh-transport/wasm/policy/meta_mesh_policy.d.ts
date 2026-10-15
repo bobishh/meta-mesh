@@ -254,6 +254,7 @@ export class WasmStateCore {
     static canRemoveWorkspaceDevice(credential: any, local_person_id: string, local_public_key: string, local_device_id: string, target_person_id: string, target_device_id: string, peer_person_id?: string | null): boolean;
     static canReuseMemberBundle(raw: any): boolean;
     static canonicalRevocations(records: any): any;
+    static causalAdmissionPolicyId(): string;
     static createCoownershipGenesisPayload(raw: any): any;
     static createScopeControlTransferPayload(raw: any, now_ms: number): any;
     static createScopeGenesis(raw: any): any;
@@ -312,6 +313,18 @@ export class WasmStateCore {
     static planSuccessionMerge(raw: any, now_ms: number): any;
     static planSuccessionPolicyRefresh(current: any, eligible: any, epoch: number): any;
     static preferredSessionDirection(local_device_id: string, local_instance_id: string, remote_device_id: string, remote_instance_id: string): any;
+    /**
+     * Run full Native causal admission and bind it to the current Owner's
+     * complete device certificate chain. The returned token cannot be built
+     * from a host-claimed admission result.
+     */
+    static prepareWorkspaceHistory(source_raw: any, signer_raw: any): WasmVerifiedHistoryPreparation;
+    /**
+     * Prepare a bounded active-tail capture descended from an opaque,
+     * independently verified compact baseline. The caller cannot provide a
+     * host-asserted basis marker or use a synthetic genesis.
+     */
+    static prepareWorkspaceHistoryFromBasis(source_raw: any, signer_raw: any, basis: WasmVerifiedReceivedHistoryBaseline): WasmVerifiedHistoryPreparation;
     static prepareWriteEvidence(raw: any): any;
     static reconcileReplicaSets(left: any, right: any): any;
     static requireChangeAuthorizationCoverage(change_hashes: any, records: any): void;
@@ -334,6 +347,15 @@ export class WasmStateCore {
     static validateScopeAuthority(raw: any, now_ms: number): any;
     static verifyDeviceRoute(envelope: any, public_key: string, now_ms: number, allow_expired: boolean): any;
     static verifyDurableAck(envelope: any, public_key: string): any;
+    static verifyOwnerAttestedHistoryBaseline(signed_json: Uint8Array, document: Uint8Array, scope_id: string, key_epoch: number, key: Uint8Array, pin: any, trusted: any, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
+    static verifyOwnerAttestedHistoryBaselineFromParent(signed_json: Uint8Array, document: Uint8Array, scope_id: string, key_epoch: number, key: Uint8Array, pin: any, trusted: any, previous: WasmVerifiedReceivedHistoryBaseline, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
+    static verifyOwnerAttestedPeerHistoryBaseline(signed_json: Uint8Array, document: Uint8Array, trusted: any, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
+    static verifyOwnerAttestedPeerHistoryBaselineFromParent(signed_json: Uint8Array, document: Uint8Array, trusted: any, previous: WasmVerifiedReceivedHistoryBaseline, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
+    /**
+     * Initial and parent-bound receivers borrow opaque Native handles through the generated class ABI.
+     */
+    static verifyReceivedHistoryBaseline(signed_json: Uint8Array, document: Uint8Array, scope_id: string, key_epoch: number, key: Uint8Array, pin: any, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
+    static verifyReceivedHistoryBaselineFromParent(signed_json: Uint8Array, document: Uint8Array, scope_id: string, key_epoch: number, key: Uint8Array, pin: any, previous: WasmVerifiedReceivedHistoryBaseline, objects: Map<any, any>, guard: Function): WasmVerifiedReceivedHistoryBaseline;
     static verifyWorkspaceDeparture(record: any, workspace_id: string, authority: any, now_ms: number): any;
     static verifyWorkspaceDeviceRevocation(record: any, workspace_id: string, owner_person_id: string, authority: any, now_ms: number): any;
     static verifyWorkspaceGrant(grant: any, workspace_id: string, member_person_id: string, authority: any): any;
@@ -343,6 +365,130 @@ export class WasmStateCore {
     static verifyWorkspaceSuccessionClaim(claim: any, workspace_id: string, authority: any, minimum_epoch: number, revoked: any, now_ms: number): any;
     static verifyWorkspaceSuccessionPolicy(policy: any, workspace_id: string, authority: any, now_ms: number): any;
     static verifyWorkspaceSuccessionVote(vote: any, policy: any, candidate_person_id: string, authority: any, revoked: any, now_ms: number): any;
+}
+
+/**
+ * Native capture of the exact source evidence retained by a preparation.
+ */
+export class WasmVerifiedHistoryArchiveCapture {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Confirm the identity SDK signature against the exact Native proposal
+     * and a fresh caller-captured source/authority snapshot.
+     */
+    confirmOwnerAttestedProposal(rebase: WasmVerifiedHistoryRebase, coverage: WasmVerifiedHistoryArchiveCoverage, scope_authority_raw: any, signed_json: Uint8Array, current_source_raw: any): WasmVerifiedHistoryBaselineAttestation;
+    confirmOwnerAttestedProposalFromParent(rebase: WasmVerifiedHistoryRebase, coverage: WasmVerifiedHistoryArchiveCoverage, scope_authority_raw: any, previous: WasmVerifiedHistoryBaselineAttestation, signed_json: Uint8Array, current_source_raw: any): WasmVerifiedHistoryBaselineAttestation;
+    /**
+     * Return the exact v2 Owner payload after full Native preparation,
+     * encrypted archive correspondence, storage coverage, and trusted scope
+     * authority have been joined. Signing is deliberately a separate step.
+     */
+    ownerAttestedProposal(rebase: WasmVerifiedHistoryRebase, coverage: WasmVerifiedHistoryArchiveCoverage, scope_authority_raw: any): any;
+    ownerAttestedProposalFromParent(rebase: WasmVerifiedHistoryRebase, coverage: WasmVerifiedHistoryArchiveCoverage, scope_authority_raw: any, previous: WasmVerifiedHistoryBaselineAttestation): any;
+    /**
+     * Create a deterministic current-state rebase only from this verified preparation.
+     */
+    rebase(history_epoch: number, transition_id: string): WasmVerifiedHistoryRebase;
+    /**
+     * Independently derive the catalogue again and verify every encrypted
+     * data/directory locator against the supplied ciphertext objects.
+     */
+    verifyStorageDirectory(scope_id: string, key_epoch: number, content_key: Uint8Array, locator_root_raw: any, objects: Map<any, any>, ensure_current: Function): WasmVerifiedHistoryArchiveStorage;
+    /**
+     * Build and encrypt the Native catalogue. `sink(ciphertextId,binding,object)`
+     * must synchronously enqueue an encrypted-object write in the caller's
+     * durable transaction; it must not return a promise or plaintext.
+     */
+    writeEncryptedCatalogue(scope_id: string, key_epoch: number, content_key: Uint8Array, nonce_source: Function, sink: Function, ensure_current: Function): any;
+}
+
+export class WasmVerifiedHistoryArchiveCoverage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+}
+
+export class WasmVerifiedHistoryArchiveStorage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    verifyCoverage(authority_raw: any, data_transition_id: string, directory_transition_id: string, data_receipt: Uint8Array, directory_receipt: Uint8Array): WasmVerifiedHistoryArchiveCoverage;
+}
+
+export class WasmVerifiedHistoryBaselineAttestation {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    document(): Uint8Array;
+    envelope(): any;
+    originalJson(): Uint8Array;
+}
+
+/**
+ * Native full-history preparation. This opaque token is produced only after
+ * causal admission and owner/device-chain validation.
+ */
+export class WasmVerifiedHistoryPreparation {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Freeze original JSON bytes against the Native-prepared typed history.
+     */
+    captureOriginals(history_epoch: number, control_json: Uint8Array, authorization_json_raw: any): WasmVerifiedHistoryArchiveCapture;
+}
+
+export class WasmVerifiedHistoryRebase {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    document(): Uint8Array;
+    stateDigest(): string;
+    transitionId(): string;
+}
+
+/**
+ * Native-verified cold baseline candidate. Construction performs archive,
+ * control, Owner, frontier, and coverage verification; callers cannot build
+ * this value from serialized claims.
+ */
+export class WasmVerifiedReceivedHistoryBaseline {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Admit ordinary changes descended from this exact verified compact basis.
+     * The host cannot supply or serialize a trusted-basis marker.
+     */
+    admitTail(raw: any): any;
+    controlJson(): Uint8Array;
+    document(): Uint8Array;
+    /**
+     * Exact encrypted evidence needed to independently reverify this baseline
+     * after restart, including when the device is offline.
+     */
+    encryptedObjects(): Map<any, any>;
+    envelope(): any;
+    originalJson(): Uint8Array;
+    owner(): any;
+    plaintextObjects(): Map<any, any>;
+    /**
+     * Convert only a Native-reverified baseline into an opaque proposal parent.
+     */
+    proposalParent(): WasmVerifiedHistoryBaselineAttestation;
+    /**
+     * Verify one original entity version against this opaque baseline's signed archive, never a host root flag.
+     */
+    readArchivedEntityVersion(scope_id: string, key_epoch: number, content_key: Uint8Array, entity_id: string, change_hash: string, objects: Map<any, any>, ensure_current: Function): any;
+    readArchivedPeerEntityVersion(entity_id: string, change_hash: string, objects: Map<any, any>, ensure_current: Function): any;
+    storageVerification(): string;
+    /**
+     * Acknowledge only byte-exact originals already retained by this signed archive.
+     */
+    verifyArchivedSnapshot(scope_id: string, key_epoch: number, content_key: Uint8Array, document: Uint8Array, objects: Map<any, any>, ensure_current: Function): void;
+    verifyPreviousBaseline(previous: WasmVerifiedReceivedHistoryBaseline): void;
 }
 
 export class WasmWorkspaceJoinHandoff {
@@ -382,122 +528,48 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_wasmautomergedevicesyncflow_free: (a: number, b: number) => void;
+    readonly __wbg_wasmautomergesyncengine_free: (a: number, b: number) => void;
     readonly __wbg_wasmdeviceroutecatalog_free: (a: number, b: number) => void;
-    readonly __wbg_wasmmeshauthenticatedsessions_free: (a: number, b: number) => void;
-    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
-    readonly wasmdeviceroutecatalog_admit: (a: number, b: any) => [number, number, number];
-    readonly wasmdeviceroutecatalog_new: () => number;
-    readonly wasmdeviceroutecatalog_routesFor: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmmeshauthenticatedsessions_admit: (a: number, b: any, c: any, d: number, e: number, f: number) => [number, number, number];
-    readonly wasmmeshauthenticatedsessions_clear: (a: number) => void;
-    readonly wasmmeshauthenticatedsessions_peer: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmmeshauthenticatedsessions_refresh: (a: number, b: any, c: number) => [number, number, number];
-    readonly wasmmeshauthenticatedsessions_remove: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly wasmstatecore_admitMeshPeer: (a: any, b: any, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_admitWorkspaceChangeAuthorization: (a: any, b: any, c: any, d: number) => [number, number, number];
-    readonly wasmstatecore_admitWorkspaceChangeAuthorizations: (a: any, b: any, c: any, d: number) => [number, number, number];
-    readonly wasmstatecore_authorizationExport: (a: number, b: number, c: any) => [number, number, number];
-    readonly wasmstatecore_authorizationRecordPages: (a: any) => [number, number, number];
-    readonly wasmstatecore_canRemoveWorkspaceDevice: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
-    readonly wasmstatecore_canReuseMemberBundle: (a: any) => [number, number, number];
-    readonly wasmstatecore_canonicalRevocations: (a: any) => [number, number, number];
-    readonly wasmstatecore_createCoownershipGenesisPayload: (a: any) => [number, number, number];
-    readonly wasmstatecore_createScopeControlTransferPayload: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_createScopeGenesis: (a: any) => [number, number, number];
-    readonly wasmstatecore_createScopeGenesisPayload: (a: any) => [number, number, number];
-    readonly wasmstatecore_credentialBelongsToProfile: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_decideOwnerCredential: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly wasmstatecore_decideWorkspaceAccess: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_decodeMeshHandshake: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
-    readonly wasmstatecore_decodeWorkspaceSet: (a: number, b: number, c: any) => [number, number, number];
-    readonly wasmstatecore_durableAckMatches: (a: any, b: any, c: number, d: number) => [number, number, number];
-    readonly wasmstatecore_eligibleEditorPersonIds: (a: any) => [number, number, number];
-    readonly wasmstatecore_encodeMeshHandshake: (a: number, b: number, c: number, d: number, e: any) => [number, number, number, number];
-    readonly wasmstatecore_encodeWorkspaceSet: (a: any) => [number, number, number, number];
-    readonly wasmstatecore_evaluateCausalAdmission: (a: any) => [number, number, number];
-    readonly wasmstatecore_hasAuthorityConflict: (a: any) => [number, number, number];
-    readonly wasmstatecore_hasConflictingOwnershipTransfers: (a: any) => [number, number, number];
-    readonly wasmstatecore_hasLeftWorkspace: (a: any, b: number, c: number, d: any) => [number, number, number];
-    readonly wasmstatecore_inspectMeshHandshake: (a: number, b: number) => [number, number, number];
-    readonly wasmstatecore_isDeviceRevoked: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_isGrantRevoked: (a: any, b: number, c: number, d: any) => [number, number, number];
-    readonly wasmstatecore_isWorkspaceEnvelope: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_knowsWorkspaceIssuer: (a: any, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
-    readonly wasmstatecore_mergeCoownershipLedgers: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_mergePeerRecords: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_mergeScopeAuthoritySnapshots: (a: any, b: any, c: number) => [number, number, number];
-    readonly wasmstatecore_meshCapabilities: () => [number, number, number];
-    readonly wasmstatecore_meshHandshakeFeatures: (a: any) => [number, number, number];
-    readonly wasmstatecore_missingOwnerWorkspaces: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_nextAccessEpoch: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_nextVerifiedOwnershipTransition: (a: any, b: number, c: number, d: any, e: number, f: any, g: number) => [number, number, number];
-    readonly wasmstatecore_orderDeliveryRoutes: (a: number, b: number, c: any) => [number, number, number];
-    readonly wasmstatecore_ownedWorkspaceIds: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_partitionCredentials: (a: any) => [number, number, number];
-    readonly wasmstatecore_planAuthorityCommand: (a: any) => [number, number, number];
-    readonly wasmstatecore_planAuthorityImport: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly wasmstatecore_planAuthorityMerge: (a: any) => [number, number, number];
-    readonly wasmstatecore_planCatalogMerge: () => [number, number, number];
-    readonly wasmstatecore_planChangeAdmission: (a: number, b: number, c: any, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_planChangeAdmissionFlow: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_planCoownershipFork: (a: any) => [number, number, number];
-    readonly wasmstatecore_planCoownershipResolution: (a: any) => [number, number, number];
-    readonly wasmstatecore_planCoownershipTransition: (a: any) => [number, number, number];
-    readonly wasmstatecore_planDialSchedule: (a: any) => [number, number, number];
-    readonly wasmstatecore_planGuestAdvertisements: (a: any) => [number, number, number];
-    readonly wasmstatecore_planInvitation: (a: any) => [number, number, number];
-    readonly wasmstatecore_planInvitationCredential: (a: any) => [number, number, number];
-    readonly wasmstatecore_planMemberGrant: (a: any) => [number, number, number];
-    readonly wasmstatecore_planMeshHandshakeAuthorityImport: () => [number, number, number];
-    readonly wasmstatecore_planOwnerCertificateRefresh: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number];
-    readonly wasmstatecore_planOwnershipAdoption: (a: any) => [number, number, number];
-    readonly wasmstatecore_planOwnershipAuthorityFlow: (a: any) => [number, number, number];
-    readonly wasmstatecore_planOwnershipMerge: (a: any) => [number, number, number];
-    readonly wasmstatecore_planOwnershipTransitions: (a: any, b: number, c: number, d: number) => [number, number, number];
-    readonly wasmstatecore_planScopeGenesis: (a: any) => [number, number, number];
-    readonly wasmstatecore_planSuccessionCatalog: (a: any) => [number, number, number];
-    readonly wasmstatecore_planSuccessionMerge: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_planSuccessionPolicyRefresh: (a: any, b: any, c: number) => [number, number, number];
-    readonly wasmstatecore_preferredSessionDirection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
-    readonly wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
-    readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
-    readonly wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_selectOwnershipTransfer: (a: any) => [number, number, number];
-    readonly wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
-    readonly wasmstatecore_shouldAdvertiseOwnerWorkspaceIds: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly wasmstatecore_signDeviceRoute: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
-    readonly wasmstatecore_signDurableAck: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
-    readonly wasmstatecore_summarizeSuccession: (a: any, b: any, c: any, d: any, e: any, f: number) => [number, number, number];
-    readonly wasmstatecore_transitionOutboxClaim: (a: any, b: any) => [number, number, number];
-    readonly wasmstatecore_validateCoownershipLedger: (a: any) => [number, number, number];
-    readonly wasmstatecore_validateDeviceRoute: (a: any) => [number, number];
-    readonly wasmstatecore_validateDeviceRoutePayload: (a: any) => [number, number];
-    readonly wasmstatecore_validateDurableAckPayload: (a: any) => [number, number];
-    readonly wasmstatecore_validateMeshCapabilities: (a: any) => [number, number];
-    readonly wasmstatecore_validateMeshCatalog: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_validateMeshHandshake: (a: any, b: number, c: number) => [number, number, number];
-    readonly wasmstatecore_validateOwnerWorkspaceOffer: (a: any, b: number, c: number, d: number, e: number) => [number, number, number, number];
-    readonly wasmstatecore_validateScopeAuthority: (a: any, b: number) => [number, number, number];
-    readonly wasmstatecore_verifyDeviceRoute: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmstatecore_verifyDurableAck: (a: any, b: number, c: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceDeparture: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceDeviceRevocation: (a: any, b: number, c: number, d: number, e: number, f: any, g: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceMemberBundle: (a: any, b: any, c: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceOwnershipTransfer: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceRevocation: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceSuccessionClaim: (a: any, b: number, c: number, d: any, e: number, f: any, g: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceSuccessionPolicy: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
-    readonly wasmstatecore_verifyWorkspaceSuccessionVote: (a: any, b: any, c: number, d: number, e: any, f: any, g: number) => [number, number, number];
-    readonly wasmmeshauthenticatedsessions_new: () => number;
     readonly __wbg_wasmgossiplifecyclestate_free: (a: number, b: number) => void;
+    readonly __wbg_wasmidentitycrypto_free: (a: number, b: number) => void;
     readonly __wbg_wasmliveworkspacesession_free: (a: number, b: number) => void;
+    readonly __wbg_wasmmeshauthenticatedsessions_free: (a: number, b: number) => void;
     readonly __wbg_wasmmeshbatchdeliveryflow_free: (a: number, b: number) => void;
     readonly __wbg_wasmmeshhandshakeflow_free: (a: number, b: number) => void;
     readonly __wbg_wasmmeshlifecyclestate_free: (a: number, b: number) => void;
     readonly __wbg_wasmmeshruntimestate_free: (a: number, b: number) => void;
     readonly __wbg_wasmmeshscoperuntime_free: (a: number, b: number) => void;
+    readonly __wbg_wasmmeshsessionlifecycle_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistoryarchivecapture_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistoryarchivecoverage_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistoryarchivestorage_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistorybaselineattestation_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistorypreparation_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedhistoryrebase_free: (a: number, b: number) => void;
+    readonly __wbg_wasmverifiedreceivedhistorybaseline_free: (a: number, b: number) => void;
+    readonly __wbg_wasmworkspacejoinhandoff_free: (a: number, b: number) => void;
+    readonly __wbg_wasmworkspacejoinhandshake_free: (a: number, b: number) => void;
+    readonly mesh_version: () => [number, number];
+    readonly wasmautomergedevicesyncflow_completeRound: (a: number, b: number, c: number, d: any) => [number, number, number];
+    readonly wasmautomergedevicesyncflow_decodeIncomingRequest: (a: any, b: number, c: number) => [number, number, number];
+    readonly wasmautomergedevicesyncflow_encodeResponse: (a: number, b: number, c: any, d: any) => [number, number, number];
+    readonly wasmautomergedevicesyncflow_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmautomergedevicesyncflow_nextRound: (a: number, b: any) => [number, number, number];
+    readonly wasmautomergedevicesyncflow_validateResponse: (a: number, b: any) => [number, number];
+    readonly wasmautomergesyncengine_abortPreparedReceive: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly wasmautomergesyncengine_commitPreparedReceive: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmautomergesyncengine_generate: (a: number, b: number, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
+    readonly wasmautomergesyncengine_heads: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmautomergesyncengine_loadDocument: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly wasmautomergesyncengine_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmautomergesyncengine_prepareReceive: (a: number, b: number, c: number, d: any, e: number, f: any) => [number, number, number];
+    readonly wasmautomergesyncengine_receive: (a: number, b: number, c: number, d: any, e: number, f: any) => [number, number, number];
+    readonly wasmautomergesyncengine_reset: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly wasmautomergesyncengine_saveDocument: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmdeviceroutecatalog_admit: (a: number, b: any) => [number, number, number];
+    readonly wasmdeviceroutecatalog_new: () => number;
+    readonly wasmdeviceroutecatalog_routesFor: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmgossiplifecyclestate_broadcastPlan: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmgossiplifecyclestate_close: (a: number, b: number, c: number) => [number, number];
     readonly wasmgossiplifecyclestate_closeAll: (a: number) => void;
@@ -509,6 +581,29 @@ export interface InitOutput {
     readonly wasmgossiplifecyclestate_startFailed: (a: number, b: number, c: number) => [number, number];
     readonly wasmgossiplifecyclestate_started: (a: number, b: number, c: number) => [number, number];
     readonly wasmgossiplifecyclestate_topic: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_canonicalizeJson: (a: any) => [number, number, number, number];
+    readonly wasmidentitycrypto_certificateHash: (a: any) => [number, number, number, number];
+    readonly wasmidentitycrypto_deriveDeviceSeed: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_identitySecurityForRecovery: (a: number, b: number) => [number, number];
+    readonly wasmidentitycrypto_legacyRecoveryFromSamples: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_openIdentitySeed: (a: any, b: number, c: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_openIdentitySeedWithPassphrase: (a: any, b: number, c: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_publicKeyFromSeed: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_publicKeyId: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_recoveryPhraseFromEntropy: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_recoveryPhraseToEntropy: (a: number, b: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_sealIdentitySeed: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
+    readonly wasmidentitycrypto_sealIdentitySeedWithPassphrase: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly wasmidentitycrypto_signEnvelope: (a: number, b: number, c: any, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
+    readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
+    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
+    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
+    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
     readonly wasmliveworkspacesession_abortDocument: (a: number) => void;
     readonly wasmliveworkspacesession_acknowledgeSaved: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmliveworkspacesession_commitDocument: (a: number) => [number, number];
@@ -533,6 +628,11 @@ export interface InitOutput {
     readonly wasmliveworkspacesession_startDocumentSync: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmliveworkspacesession_verifyHeartbeatAck: (a: number, b: number, c: number) => [number, number];
     readonly wasmliveworkspacesession_verifySavedReceipt: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmmeshauthenticatedsessions_admit: (a: number, b: any, c: any, d: number, e: number, f: number) => [number, number, number];
+    readonly wasmmeshauthenticatedsessions_clear: (a: number) => void;
+    readonly wasmmeshauthenticatedsessions_peer: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmmeshauthenticatedsessions_refresh: (a: number, b: any, c: number) => [number, number, number];
+    readonly wasmmeshauthenticatedsessions_remove: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly wasmmeshbatchdeliveryflow_abort: (a: number) => [number, number, number];
     readonly wasmmeshbatchdeliveryflow_fallbackElapsed: (a: number, b: number) => [number, number, number];
     readonly wasmmeshbatchdeliveryflow_new: (a: number, b: number, c: any, d: number, e: any) => [number, number, number];
@@ -598,25 +698,6 @@ export interface InitOutput {
     readonly wasmmeshscoperuntime_rejectDocumentReceive: (a: number) => [number, number];
     readonly wasmmeshscoperuntime_resetDocument: (a: number) => void;
     readonly wasmmeshscoperuntime_startDocumentSync: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly __wbg_wasmidentitycrypto_free: (a: number, b: number) => void;
-    readonly __wbg_wasmmeshsessionlifecycle_free: (a: number, b: number) => void;
-    readonly wasmidentitycrypto_canonicalizeJson: (a: any) => [number, number, number, number];
-    readonly wasmidentitycrypto_certificateHash: (a: any) => [number, number, number, number];
-    readonly wasmidentitycrypto_deriveDeviceSeed: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_identitySecurityForRecovery: (a: number, b: number) => [number, number];
-    readonly wasmidentitycrypto_legacyRecoveryFromSamples: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_openIdentitySeed: (a: any, b: number, c: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_openIdentitySeedWithPassphrase: (a: any, b: number, c: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_publicKeyFromSeed: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_publicKeyId: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_recoveryPhraseFromEntropy: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_recoveryPhraseToEntropy: (a: number, b: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_sealIdentitySeed: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
-    readonly wasmidentitycrypto_sealIdentitySeedWithPassphrase: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
-    readonly wasmidentitycrypto_signEnvelope: (a: number, b: number, c: any, d: number, e: number, f: number, g: number) => [number, number, number];
-    readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
-    readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
     readonly wasmmeshsessionlifecycle_callbackPlan: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_clear: (a: number) => void;
     readonly wasmmeshsessionlifecycle_evict: (a: number, b: any, c: number) => [number, number, number];
@@ -626,13 +707,145 @@ export interface InitOutput {
     readonly wasmmeshsessionlifecycle_publishRecovery: (a: number, b: any, c: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_register: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_reportFailure: (a: number, b: any, c: number) => [number, number, number];
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworkspacejoinhandoff_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworkspacejoinhandshake_free: (a: number, b: number) => void;
-    readonly mesh_version: () => [number, number];
     readonly wasmpairingcodec_decode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmpairingcodec_new: () => number;
+    readonly wasmstatecore_admitMeshPeer: (a: any, b: any, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_admitWorkspaceChangeAuthorization: (a: any, b: any, c: any, d: number) => [number, number, number];
+    readonly wasmstatecore_admitWorkspaceChangeAuthorizations: (a: any, b: any, c: any, d: number) => [number, number, number];
+    readonly wasmstatecore_authorizationExport: (a: number, b: number, c: any) => [number, number, number];
+    readonly wasmstatecore_authorizationRecordPages: (a: any) => [number, number, number];
+    readonly wasmstatecore_canRemoveWorkspaceDevice: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
+    readonly wasmstatecore_canReuseMemberBundle: (a: any) => [number, number, number];
+    readonly wasmstatecore_canonicalRevocations: (a: any) => [number, number, number];
+    readonly wasmstatecore_causalAdmissionPolicyId: () => [number, number];
+    readonly wasmstatecore_createCoownershipGenesisPayload: (a: any) => [number, number, number];
+    readonly wasmstatecore_createScopeControlTransferPayload: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_createScopeGenesis: (a: any) => [number, number, number];
+    readonly wasmstatecore_createScopeGenesisPayload: (a: any) => [number, number, number];
+    readonly wasmstatecore_credentialBelongsToProfile: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_decideOwnerCredential: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly wasmstatecore_decideWorkspaceAccess: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_decodeMeshHandshake: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly wasmstatecore_decodeWorkspaceSet: (a: number, b: number, c: any) => [number, number, number];
+    readonly wasmstatecore_durableAckMatches: (a: any, b: any, c: number, d: number) => [number, number, number];
+    readonly wasmstatecore_eligibleEditorPersonIds: (a: any) => [number, number, number];
+    readonly wasmstatecore_encodeMeshHandshake: (a: number, b: number, c: number, d: number, e: any) => [number, number, number, number];
+    readonly wasmstatecore_encodeWorkspaceSet: (a: any) => [number, number, number, number];
+    readonly wasmstatecore_evaluateCausalAdmission: (a: any) => [number, number, number];
+    readonly wasmstatecore_hasAuthorityConflict: (a: any) => [number, number, number];
+    readonly wasmstatecore_hasConflictingOwnershipTransfers: (a: any) => [number, number, number];
+    readonly wasmstatecore_hasLeftWorkspace: (a: any, b: number, c: number, d: any) => [number, number, number];
+    readonly wasmstatecore_inspectMeshHandshake: (a: number, b: number) => [number, number, number];
+    readonly wasmstatecore_isDeviceRevoked: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_isGrantRevoked: (a: any, b: number, c: number, d: any) => [number, number, number];
+    readonly wasmstatecore_isWorkspaceEnvelope: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_knowsWorkspaceIssuer: (a: any, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly wasmstatecore_mergeCoownershipLedgers: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_mergePeerRecords: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_mergeScopeAuthoritySnapshots: (a: any, b: any, c: number) => [number, number, number];
+    readonly wasmstatecore_meshCapabilities: () => [number, number, number];
+    readonly wasmstatecore_meshHandshakeFeatures: (a: any) => [number, number, number];
+    readonly wasmstatecore_missingOwnerWorkspaces: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_nextAccessEpoch: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_nextVerifiedOwnershipTransition: (a: any, b: number, c: number, d: any, e: number, f: any, g: number) => [number, number, number];
+    readonly wasmstatecore_orderDeliveryRoutes: (a: number, b: number, c: any) => [number, number, number];
+    readonly wasmstatecore_ownedWorkspaceIds: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_partitionCredentials: (a: any) => [number, number, number];
+    readonly wasmstatecore_planAuthorityCommand: (a: any) => [number, number, number];
+    readonly wasmstatecore_planAuthorityImport: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmstatecore_planAuthorityMerge: (a: any) => [number, number, number];
+    readonly wasmstatecore_planCatalogMerge: () => [number, number, number];
+    readonly wasmstatecore_planChangeAdmission: (a: number, b: number, c: any, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_planChangeAdmissionFlow: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_planCoownershipFork: (a: any) => [number, number, number];
+    readonly wasmstatecore_planCoownershipResolution: (a: any) => [number, number, number];
+    readonly wasmstatecore_planCoownershipTransition: (a: any) => [number, number, number];
+    readonly wasmstatecore_planDialSchedule: (a: any) => [number, number, number];
+    readonly wasmstatecore_planGuestAdvertisements: (a: any) => [number, number, number];
+    readonly wasmstatecore_planInvitation: (a: any) => [number, number, number];
+    readonly wasmstatecore_planInvitationCredential: (a: any) => [number, number, number];
+    readonly wasmstatecore_planMemberGrant: (a: any) => [number, number, number];
+    readonly wasmstatecore_planMeshHandshakeAuthorityImport: () => [number, number, number];
+    readonly wasmstatecore_planOwnerCertificateRefresh: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number];
+    readonly wasmstatecore_planOwnershipAdoption: (a: any) => [number, number, number];
+    readonly wasmstatecore_planOwnershipAuthorityFlow: (a: any) => [number, number, number];
+    readonly wasmstatecore_planOwnershipMerge: (a: any) => [number, number, number];
+    readonly wasmstatecore_planOwnershipTransitions: (a: any, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmstatecore_planScopeGenesis: (a: any) => [number, number, number];
+    readonly wasmstatecore_planSuccessionCatalog: (a: any) => [number, number, number];
+    readonly wasmstatecore_planSuccessionMerge: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_planSuccessionPolicyRefresh: (a: any, b: any, c: number) => [number, number, number];
+    readonly wasmstatecore_preferredSessionDirection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly wasmstatecore_prepareWorkspaceHistory: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_prepareWorkspaceHistoryFromBasis: (a: any, b: any, c: number) => [number, number, number];
+    readonly wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
+    readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
+    readonly wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_selectOwnershipTransfer: (a: any) => [number, number, number];
+    readonly wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
+    readonly wasmstatecore_shouldAdvertiseOwnerWorkspaceIds: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly wasmstatecore_signDeviceRoute: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
+    readonly wasmstatecore_signDurableAck: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
+    readonly wasmstatecore_summarizeSuccession: (a: any, b: any, c: any, d: any, e: any, f: number) => [number, number, number];
+    readonly wasmstatecore_transitionOutboxClaim: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_validateCoownershipLedger: (a: any) => [number, number, number];
+    readonly wasmstatecore_validateDeviceRoute: (a: any) => [number, number];
+    readonly wasmstatecore_validateDeviceRoutePayload: (a: any) => [number, number];
+    readonly wasmstatecore_validateDurableAckPayload: (a: any) => [number, number];
+    readonly wasmstatecore_validateMeshCapabilities: (a: any) => [number, number];
+    readonly wasmstatecore_validateMeshCatalog: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_validateMeshHandshake: (a: any, b: number, c: number) => [number, number, number];
+    readonly wasmstatecore_validateOwnerWorkspaceOffer: (a: any, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmstatecore_validateScopeAuthority: (a: any, b: number) => [number, number, number];
+    readonly wasmstatecore_verifyDeviceRoute: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmstatecore_verifyDurableAck: (a: any, b: number, c: number) => [number, number, number];
+    readonly wasmstatecore_verifyOwnerAttestedHistoryBaseline: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any, k: any, l: any, m: any) => [number, number, number];
+    readonly wasmstatecore_verifyOwnerAttestedHistoryBaselineFromParent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any, k: any, l: number, m: any, n: any) => [number, number, number];
+    readonly wasmstatecore_verifyOwnerAttestedPeerHistoryBaseline: (a: number, b: number, c: number, d: number, e: any, f: any, g: any) => [number, number, number];
+    readonly wasmstatecore_verifyOwnerAttestedPeerHistoryBaselineFromParent: (a: number, b: number, c: number, d: number, e: any, f: number, g: any, h: any) => [number, number, number];
+    readonly wasmstatecore_verifyReceivedHistoryBaseline: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any, k: any, l: any) => [number, number, number];
+    readonly wasmstatecore_verifyReceivedHistoryBaselineFromParent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: any, k: number, l: any, m: any) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceDeparture: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceDeviceRevocation: (a: any, b: number, c: number, d: number, e: number, f: any, g: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceMemberBundle: (a: any, b: any, c: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceOwnershipTransfer: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceRevocation: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceSuccessionClaim: (a: any, b: number, c: number, d: any, e: number, f: any, g: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceSuccessionPolicy: (a: any, b: number, c: number, d: any, e: number) => [number, number, number];
+    readonly wasmstatecore_verifyWorkspaceSuccessionVote: (a: any, b: any, c: number, d: number, e: any, f: any, g: number) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_confirmOwnerAttestedProposal: (a: number, b: number, c: number, d: any, e: number, f: number, g: any) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_confirmOwnerAttestedProposalFromParent: (a: number, b: number, c: number, d: any, e: number, f: number, g: number, h: any) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_ownerAttestedProposal: (a: number, b: number, c: number, d: any) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_ownerAttestedProposalFromParent: (a: number, b: number, c: number, d: any, e: number) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_rebase: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_verifyStorageDirectory: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: any, i: any) => [number, number, number];
+    readonly wasmverifiedhistoryarchivecapture_writeEncryptedCatalogue: (a: number, b: number, c: number, d: number, e: number, f: number, g: any, h: any, i: any) => [number, number, number];
+    readonly wasmverifiedhistoryarchivestorage_verifyCoverage: (a: number, b: any, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly wasmverifiedhistorybaselineattestation_document: (a: number) => [number, number];
+    readonly wasmverifiedhistorybaselineattestation_envelope: (a: number) => [number, number, number];
+    readonly wasmverifiedhistorybaselineattestation_originalJson: (a: number) => [number, number];
+    readonly wasmverifiedhistorypreparation_captureOriginals: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
+    readonly wasmverifiedhistoryrebase_document: (a: number) => [number, number];
+    readonly wasmverifiedhistoryrebase_stateDigest: (a: number) => [number, number];
+    readonly wasmverifiedhistoryrebase_transitionId: (a: number) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_admitTail: (a: number, b: any) => [number, number, number];
+    readonly wasmverifiedreceivedhistorybaseline_controlJson: (a: number) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_document: (a: number) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_encryptedObjects: (a: number) => any;
+    readonly wasmverifiedreceivedhistorybaseline_envelope: (a: number) => [number, number, number];
+    readonly wasmverifiedreceivedhistorybaseline_originalJson: (a: number) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_owner: (a: number) => [number, number, number];
+    readonly wasmverifiedreceivedhistorybaseline_plaintextObjects: (a: number) => any;
+    readonly wasmverifiedreceivedhistorybaseline_proposalParent: (a: number) => number;
+    readonly wasmverifiedreceivedhistorybaseline_readArchivedEntityVersion: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: any, l: any) => [number, number, number];
+    readonly wasmverifiedreceivedhistorybaseline_readArchivedPeerEntityVersion: (a: number, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number];
+    readonly wasmverifiedreceivedhistorybaseline_storageVerification: (a: number) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_verifyArchivedSnapshot: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any, j: any) => [number, number];
+    readonly wasmverifiedreceivedhistorybaseline_verifyPreviousBaseline: (a: number, b: number) => [number, number];
     readonly wasmworkspacejoinhandoff_guestBeginConfirmation: (a: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandoff_guestConfirmationFailed: (a: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandoff_guestConfirmationSent: (a: number) => [number, number, number, number];
@@ -654,32 +867,10 @@ export interface InitOutput {
     readonly wasmworkspacejoinhandshake_rejectAcceptedResponse: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasmpairingcodec_new: () => number;
-    readonly __wbg_wasmautomergedevicesyncflow_free: (a: number, b: number) => void;
-    readonly __wbg_wasmautomergesyncengine_free: (a: number, b: number) => void;
+    readonly wasmmeshauthenticatedsessions_new: () => number;
     readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
-    readonly wasmautomergedevicesyncflow_completeRound: (a: number, b: number, c: number, d: any) => [number, number, number];
-    readonly wasmautomergedevicesyncflow_decodeIncomingRequest: (a: any, b: number, c: number) => [number, number, number];
-    readonly wasmautomergedevicesyncflow_encodeResponse: (a: number, b: number, c: any, d: any) => [number, number, number];
-    readonly wasmautomergedevicesyncflow_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly wasmautomergedevicesyncflow_nextRound: (a: number, b: any) => [number, number, number];
-    readonly wasmautomergedevicesyncflow_validateResponse: (a: number, b: any) => [number, number];
-    readonly wasmautomergesyncengine_abortPreparedReceive: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly wasmautomergesyncengine_commitPreparedReceive: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmautomergesyncengine_generate: (a: number, b: number, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
-    readonly wasmautomergesyncengine_heads: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasmautomergesyncengine_loadDocument: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
-    readonly wasmautomergesyncengine_new: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmautomergesyncengine_prepareReceive: (a: number, b: number, c: number, d: any, e: number, f: any) => [number, number, number];
-    readonly wasmautomergesyncengine_receive: (a: number, b: number, c: number, d: any, e: number, f: any) => [number, number, number];
-    readonly wasmautomergesyncengine_reset: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly wasmautomergesyncengine_saveDocument: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
-    readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
-    readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_pairingInviteUrl: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly wasminvitations_parseInvitation: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

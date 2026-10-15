@@ -3,6 +3,7 @@ members = [
   "crates/meta-mesh-core",
   "crates/meta-mesh",
   "crates/meta-mesh-policy",
+  "crates/meta-mesh-transport-tests",
 ]
 exclude = [
   "crates/meta-mesh-native",

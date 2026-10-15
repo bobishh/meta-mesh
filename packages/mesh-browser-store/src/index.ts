@@ -5,13 +5,77 @@ export type MeshStore = {
   put<T>(store: string, key: string, value: T): Promise<void>
   delete(store: string, key: string): Promise<void>
   list<T>(store: string): Promise<Array<{ key: string; value: T }>>
+  scan<T>(store: string, prefix: string, after: string | undefined, limit: number): Promise<{ entries: Array<{ key: string; value: T }>; nextAfter: string | null }>
   batch(operations: readonly MeshStoreOperation[]): Promise<void>
+  compareAndSwap(conditions: readonly MeshStoreCondition[], operations: readonly MeshStoreOperation[], guard?: () => void): Promise<boolean>
   update<T>(store: string, key: string, change: (current: T | undefined) => T | undefined): Promise<T | undefined>
+  updateRecords<T>(store: string, keys: readonly string[], change: (values: readonly unknown[]) => { writes: readonly { key: string; value: unknown | undefined }[]; result: T }): Promise<T>
+}
+
+type RecordUpdatePlan<T> = { writes: readonly { key: string; value: unknown | undefined }[]; result: T }
+
+function recordUpdateInput<T>(keys: readonly string[], values: readonly unknown[], change: (values: readonly unknown[]) => { writes: readonly { key: string; value: unknown | undefined }[]; result: T }): RecordUpdatePlan<T> {
+  const allowed = new Set(keys)
+  const input = structuredClone(values)
+  const proposed = change(input)
+  if (proposed === null || typeof proposed !== "object" || Array.isArray(proposed)) throw new Error("Invalid synchronous record update plan")
+  if (typeof (proposed as { then?: unknown }).then === "function") {
+    void Promise.resolve(proposed).catch(() => undefined)
+    throw new Error("Invalid synchronous record update plan")
+  }
+  const detached = structuredClone(proposed)
+  if (!Array.isArray(detached.writes)) throw new Error("Invalid record update writes")
+  const seen = new Set<string>()
+  for (const write of detached.writes) {
+    if (!write || typeof write !== "object" || typeof write.key !== "string" || !allowed.has(write.key) || seen.has(write.key)) {
+      throw new Error("Record update writes must target distinct declared keys")
+    }
+    seen.add(write.key)
+  }
+  return detached
+}
+
+function recordUpdateKeys(keys: readonly string[]): string[] {
+  const snapshot = structuredClone(keys)
+  if (!Array.isArray(snapshot) || snapshot.some(key => typeof key !== "string" || !key) || new Set(snapshot).size !== snapshot.length) {
+    throw new Error("Record update keys must be distinct non-empty strings")
+  }
+  return snapshot
+}
+
+function prefixScanInput(prefix: string, after: string | undefined, limit: number): void {
+  if (typeof prefix !== "string" || prefix.length < 1 || prefix.length > 2048) throw new Error("Invalid scan prefix")
+  if (!Number.isInteger(limit) || limit < 1 || limit > 128) throw new Error("Invalid scan limit")
+  if (after !== undefined && (typeof after !== "string" || !after.startsWith(prefix))) throw new Error("Invalid scan continuation key")
+}
+
+function prefixSuccessor(prefix: string): string | undefined {
+  for (let index = prefix.length - 1; index >= 0; index -= 1) {
+    const code = prefix.charCodeAt(index)
+    if (code < 0xffff) return `${prefix.slice(0, index)}${String.fromCharCode(code + 1)}`
+  }
+  return undefined
 }
 
 export type MeshStoreOperation =
   | { type: "put"; store: string; key: string; value: unknown }
   | { type: "delete"; store: string; key: string }
+
+/** Exact serialized-state conditions; undefined means the record must be absent. */
+export type MeshStoreCondition = { store: string; key: string; expected: string | undefined }
+
+function transactionInput(conditions: readonly MeshStoreCondition[], operations: readonly MeshStoreOperation[]) {
+  const snapshot = structuredClone({ conditions, operations })
+  const seen = new Set<string>()
+  for (const condition of snapshot.conditions) {
+    const key = JSON.stringify([condition.store, condition.key])
+    if (seen.has(key) || (condition.expected !== undefined && typeof condition.expected !== "string")) {
+      throw new Error("Invalid atomic store conditions")
+    }
+    seen.add(key)
+  }
+  return snapshot
+}
 
 export class MemoryMeshStore implements MeshStore {
   private readonly stores = new Map<string, Map<string, unknown>>()
@@ -44,6 +108,17 @@ export class MemoryMeshStore implements MeshStore {
     }))
   }
 
+  async scan<T>(store: string, prefix: string, after: string | undefined, limit: number): Promise<{ entries: Array<{ key: string; value: T }>; nextAfter: string | null }> {
+    prefixScanInput(prefix, after, limit)
+    const entries = [...this.store(store).entries()]
+      .filter(([key]) => key.startsWith(prefix) && (after === undefined || key > after))
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    return {
+      entries: entries.slice(0, limit).map(([key, value]) => ({ key, value: structuredClone(value) as T })),
+      nextAfter: entries.length > limit ? entries[limit - 1][0] : null,
+    }
+  }
+
   async batch(operations: readonly MeshStoreOperation[]): Promise<void> {
     const next = structuredClone(this.stores)
     for (const operation of operations) {
@@ -65,6 +140,36 @@ export class MemoryMeshStore implements MeshStore {
     if (next === undefined) values.delete(key)
     else values.set(key, structuredClone(next))
     return structuredClone(next)
+  }
+
+  async updateRecords<T>(name: string, keys: readonly string[], change: (values: readonly unknown[]) => { writes: readonly { key: string; value: unknown | undefined }[]; result: T }): Promise<T> {
+    const snapshot = recordUpdateKeys(keys)
+    const current = this.stores.get(name)
+    const values = snapshot.map(key => structuredClone(current?.get(key)))
+    const plan = recordUpdateInput(snapshot, values, change)
+    const next = new Map(current)
+    for (const write of plan.writes) {
+      if (write.value === undefined) next.delete(write.key)
+      else next.set(write.key, write.value)
+    }
+    this.stores.set(name, next)
+    return plan.result
+  }
+
+  async compareAndSwap(conditions: readonly MeshStoreCondition[], operations: readonly MeshStoreOperation[], guard: () => void = () => {}) {
+    const snapshot = transactionInput(conditions, operations)
+    if (snapshot.conditions.some(condition => this.stores.get(condition.store)?.get(condition.key) !== condition.expected)) return false
+    const next = structuredClone(this.stores)
+    for (const operation of snapshot.operations) {
+      let values = next.get(operation.store)
+      if (!values) { values = new Map(); next.set(operation.store, values) }
+      if (operation.type === "put") values.set(operation.key, operation.value)
+      else values.delete(operation.key)
+    }
+    guard()
+    this.stores.clear()
+    for (const [name, values] of next) this.stores.set(name, values)
+    return true
   }
 }
 
@@ -164,6 +269,39 @@ export class BrowserMeshStore implements MeshStore {
     })
   }
 
+  async scan<T>(store: string, prefix: string, after: string | undefined, limit: number): Promise<{ entries: Array<{ key: string; value: T }>; nextAfter: string | null }> {
+    prefixScanInput(prefix, after, limit)
+    if (!this.stores.includes(store)) throw new Error(`Unknown store: ${store}`)
+    const database = await this.open()
+    const upper = prefixSuccessor(prefix)
+    const range = upper === undefined
+      ? IDBKeyRange.lowerBound(after === undefined ? prefix : after, after !== undefined)
+      : IDBKeyRange.bound(after === undefined ? prefix : after, upper, after !== undefined, true)
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(store, "readonly")
+      const cursorRequest = transaction.objectStore(store).openCursor(range)
+      const entries: Array<{ key: string; value: T }> = []
+      let nextAfter: string | null = null
+      let failure: unknown
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result
+        if (!cursor) return
+        if (typeof cursor.key !== "string" || !cursor.key.startsWith(prefix)) return
+        const key = cursor.key
+        if (entries.length === limit) {
+          nextAfter = entries[entries.length - 1].key
+          return
+        }
+        entries.push({ key, value: cursor.value as T })
+        cursor.continue()
+      }
+      cursorRequest.onerror = () => { failure = cursorRequest.error ?? new Error("IndexedDB scan cursor failed") }
+      transaction.oncomplete = () => resolve({ entries, nextAfter })
+      transaction.onerror = () => reject(failure ?? transaction.error ?? new Error("IndexedDB scan failed"))
+      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error("IndexedDB scan aborted"))
+    })
+  }
+
   async batch(operations: readonly MeshStoreOperation[]): Promise<void> {
     const names = [...new Set(operations.map(operation => operation.store))]
     if (names.some(name => !this.stores.includes(name))) throw new Error("Unknown store in batch")
@@ -204,6 +342,83 @@ export class BrowserMeshStore implements MeshStore {
       transaction.oncomplete = () => resolve(next)
       transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB update failed"))
       transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB update aborted"))
+    })
+  }
+
+  async updateRecords<T>(store: string, keys: readonly string[], change: (values: readonly unknown[]) => { writes: readonly { key: string; value: unknown | undefined }[]; result: T }): Promise<T> {
+    if (!this.stores.includes(store)) throw new Error(`Unknown store: ${store}`)
+    const snapshot = recordUpdateKeys(keys)
+    const database = await this.open()
+    return new Promise<T>((resolve, reject) => {
+      const transaction = database.transaction(store, "readwrite")
+      const objectStore = transaction.objectStore(store)
+      const requests: IDBRequest[] = snapshot.map(key => objectStore.get(key))
+      let result: T
+      let failure: unknown
+      let settled = false
+      const rejectOnce = (error: unknown) => {
+        if (!settled) { settled = true; reject(error) }
+      }
+      const run = () => {
+        try {
+          const plan = recordUpdateInput(snapshot, requests.map(request => request.result), change)
+          result = plan.result
+          for (const write of plan.writes) {
+            if (write.value === undefined) objectStore.delete(write.key)
+            else objectStore.put(write.value, write.key)
+          }
+        } catch (error) {
+          failure = error
+          try { transaction.abort() } catch { rejectOnce(error) }
+        }
+      }
+      if (requests.length === 0) run()
+      else {
+        let remaining = requests.length
+        for (const request of requests) {
+          request.onsuccess = () => { remaining -= 1; if (remaining === 0) run() }
+          request.onerror = () => { failure = request.error ?? new Error("IndexedDB record update read failed") }
+        }
+      }
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(result) } }
+      transaction.onerror = () => rejectOnce(failure ?? transaction.error ?? new Error("IndexedDB record update failed"))
+      transaction.onabort = () => rejectOnce(failure ?? transaction.error ?? new Error("IndexedDB record update aborted"))
+    })
+  }
+
+  async compareAndSwap(conditions: readonly MeshStoreCondition[], operations: readonly MeshStoreOperation[], guard: () => void = () => {}) {
+    const snapshot = transactionInput(conditions, operations)
+    const names = [...new Set([...snapshot.conditions, ...snapshot.operations].map(record => record.store))]
+    if (names.some(name => !this.stores.includes(name))) throw new Error("Unknown store in atomic update")
+    if (!names.length) { guard(); return true }
+    const database = await this.open()
+    return new Promise<boolean>((resolve, reject) => {
+      const transaction = database.transaction(names, "readwrite")
+      let matched = true
+      let remaining = snapshot.conditions.length
+      const publish = () => {
+        if (!matched) return
+        try {
+          guard()
+          for (const operation of snapshot.operations) {
+            const values = transaction.objectStore(operation.store)
+            if (operation.type === "put") values.put(operation.value, operation.key)
+            else values.delete(operation.key)
+          }
+        } catch (error) { transaction.abort(); reject(error) }
+      }
+      for (const condition of snapshot.conditions) {
+        const request = transaction.objectStore(condition.store).get(condition.key)
+        request.onsuccess = () => {
+          if (request.result !== condition.expected) matched = false
+          remaining -= 1
+          if (!remaining) publish()
+        }
+      }
+      transaction.oncomplete = () => resolve(matched)
+      transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB atomic update failed"))
+      transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB atomic update aborted"))
+      if (!remaining) publish()
     })
   }
 }

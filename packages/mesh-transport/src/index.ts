@@ -1,7 +1,8 @@
 export type IrohStream = {
   send(bytes: Uint8Array): Promise<void>
-  read(): Promise<Uint8Array>
+  read(maximumBytes?: number): Promise<Uint8Array>
   closeSend(): Promise<void>
+  reset?(): Promise<void>
 }
 
 export type IrohConnection = {
@@ -27,6 +28,7 @@ export type IrohModule = {
   WasmWorkspaceJoinHandshake?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandshake
   WasmWorkspaceJoinHandoff?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmWorkspaceJoinHandoff
   WasmStateCore?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmStateCore
+  WasmVerifiedReceivedHistoryBaseline?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmVerifiedReceivedHistoryBaseline
   WasmDeviceRouteCatalog?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmDeviceRouteCatalog
   WasmAutomergeSyncEngine?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeSyncEngine
   WasmAutomergeDeviceSyncFlow?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmAutomergeDeviceSyncFlow
@@ -47,8 +49,11 @@ export type WireHandler = (payload: unknown) => Promise<unknown>
 
 export type MeshStream = {
   send(bytes: Uint8Array): Promise<void>
-  read(): Promise<Uint8Array>
+  /** Limit buffered bytes before EOF. Current WASM enforces it; legacy adapters may ignore it. */
+  read(maximumBytes?: number): Promise<Uint8Array>
   closeSend(): Promise<void>
+  /** Cancel both directions of this stream without closing its connection. Older adapters may omit it. */
+  reset?(): Promise<void>
 }
 
 export type MeshConnection = {
@@ -72,11 +77,20 @@ export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
 }
 
 export function meshNetworkConnection<TConnection extends MeshConnection>(connection: TConnection): TConnection {
-  const stream = (value: MeshStream): MeshStream => ({
-    read: () => meshNetworkIO(value.read()),
-    send: bytes => meshNetworkIO(value.send(bytes)),
-    closeSend: () => meshNetworkIO(value.closeSend()),
-  })
+  const stream = (value: MeshStream): MeshStream => {
+    const reset = value.reset
+    return {
+      read: maximumBytes => {
+        if (maximumBytes !== undefined && (!Number.isInteger(maximumBytes) || maximumBytes < 0 || maximumBytes > 0xffff_ffff)) {
+          return Promise.reject(new RangeError("Invalid stream read limit"))
+        }
+        return meshNetworkIO(maximumBytes === undefined ? value.read() : value.read(maximumBytes))
+      },
+      send: bytes => meshNetworkIO(value.send(bytes)),
+      closeSend: () => meshNetworkIO(value.closeSend()),
+      ...(reset ? { reset: () => meshNetworkIO(Promise.resolve().then(() => reset.call(value))) } : {}),
+    }
+  }
   return {
     ...connection,
     remoteEndpointId: connection.remoteEndpointId,

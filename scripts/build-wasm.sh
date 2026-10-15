@@ -55,6 +55,9 @@ PATH="$rust_bin:$(dirname "$clang_bin"):$(dirname "$lld_bin"):$PATH" \
 CC="$clang_bin" \
 AR="$ar_bin" \
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER="$lld_bin" \
+CARGO_PROFILE_RELEASE_OPT_LEVEL=s \
+CARGO_PROFILE_RELEASE_LTO=thin \
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
 cargo build --manifest-path "$crate_dir/Cargo.toml" --release --target wasm32-unknown-unknown
 
 wasm-bindgen \
@@ -71,6 +74,9 @@ PATH="$rust_bin:$(dirname "$clang_bin"):$(dirname "$lld_bin"):$PATH" \
 CC="$clang_bin" \
 AR="$ar_bin" \
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER="$lld_bin" \
+CARGO_PROFILE_RELEASE_OPT_LEVEL=s \
+CARGO_PROFILE_RELEASE_LTO=thin \
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
 cargo build --manifest-path "$root_dir/Cargo.toml" -p meta-mesh-policy --release --target wasm32-unknown-unknown
 
 mkdir -p "$policy_out_dir"

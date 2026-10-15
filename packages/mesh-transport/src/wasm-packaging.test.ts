@@ -26,4 +26,15 @@ describe("WASM package boundary", () => {
     expect(codec.inspect(frame)).toMatchObject({ type: "mesh-handshake-request", secret: "shared-secret" })
     expect([...codec.decode(frame, "mesh-handshake-request", "shared-secret")]).toEqual([1, 2, 3])
   })
+
+  it("Given optional history parents, when exposing the Native bridge, then keep explicit initial and borrowed-parent entrypoints", () => {
+    for (const name of ["verifyReceivedHistoryBaseline", "verifyReceivedHistoryBaselineFromParent",
+      "verifyOwnerAttestedHistoryBaseline", "verifyOwnerAttestedHistoryBaselineFromParent",
+      "verifyOwnerAttestedPeerHistoryBaseline", "verifyOwnerAttestedPeerHistoryBaselineFromParent", "prepareWorkspaceHistoryFromBasis"] as const) {
+      expect(typeof policyModule.WasmStateCore[name]).toBe("function")
+    }
+    for (const name of ["ownerAttestedProposal", "ownerAttestedProposalFromParent", "confirmOwnerAttestedProposal", "confirmOwnerAttestedProposalFromParent"] as const) {
+      expect(typeof policyModule.WasmVerifiedHistoryArchiveCapture.prototype[name]).toBe("function")
+    }
+  })
 })

@@ -10,6 +10,8 @@ import {
 } from "@meta-uber/mesh-identity"
 import { meshRustRuntime } from "@meta-uber/mesh-replication/runtime"
 import { WasmIdentityCrypto } from "@meta-uber/mesh-transport/wasm"
+import { signWorkspaceRecord, workspaceSignerCertificates, type WorkspaceRecordSigner } from "./signing"
+export type { WorkspaceRecordSigner } from "./signing"
 
 export * from "./coownership"
 
@@ -23,13 +25,19 @@ export type WorkspaceGrant = SignedEnvelope<{
   role: WorkspaceRole
   accessEpoch?: number
   automation?: {
-    version: 1
+    version: 1 | 2
     boardId: string
     columns: { lead: string; applied?: string; interview: string; rejected: string }
     fieldIds: string[]
     expiresAt: number
   }
 }>
+
+/** Capture mutable profile data without cloning opaque WebCrypto key handles. */
+function captureSigningProfile(profile: LocalProfile): LocalProfile {
+  return { ...profile, identity: structuredClone(profile.identity), device: structuredClone(profile.device),
+    certificate: structuredClone(profile.certificate), privateKeys: { ...profile.privateKeys } }
+}
 
 export async function certHashDefault(cert: DeviceCertificate): Promise<string> {
   return sha256Base64Url(new TextEncoder().encode(canonicalizeJson(cert)))
@@ -60,11 +68,12 @@ export async function createWorkspaceGrant(
   personId: string,
   role: "owner" | "editor" | "visitor",
   accessEpoch = 1,
+  signing?: WorkspaceRecordSigner,
 ): Promise<WorkspaceGrant> {
   if (role !== "owner" && role !== "editor" && role !== "visitor") {
     throw new TypeError("Use an explicit scoped automation grant for automation access")
   }
-  return await signEnvelope(profile.privateKeys.devicePrivateKey, {
+  return await signWorkspaceRecord(profile, {
     kind: "workspace-grant" as const,
     version: 1 as const,
     grantId: crypto.randomUUID(),
@@ -72,7 +81,7 @@ export async function createWorkspaceGrant(
     personId,
     role,
     accessEpoch,
-  }, profile.device.deviceId) as WorkspaceGrant
+  }, signing) as WorkspaceGrant
 }
 
 export const MAX_PEER_ADVERTISEMENT_SIZE = 65536 // 64 KiB
@@ -175,6 +184,7 @@ export type WorkspaceMemberBundle = {
 }
 
 export type CreatePeerAdvertisementOptions = {
+  signing?: WorkspaceRecordSigner
   profile?: LocalProfile
   workspaceId: string
   endpoint: string
@@ -264,6 +274,7 @@ export async function createPeerAdvertisement(
   let workspaceId: string
   let ep: string
   let certificates: DeviceCertificate[] | undefined
+  let signing: WorkspaceRecordSigner | undefined
   let grant: WorkspaceGrant | undefined
   let ownerPublicKey: string | undefined
   let ownerCertificates: DeviceCertificate[] | undefined
@@ -284,6 +295,7 @@ export async function createPeerAdvertisement(
     workspaceId = opts.workspaceId
     ep = opts.endpoint
     certificates = opts.certificates
+    signing = opts.signing
     grant = opts.grant
     ownerPublicKey = opts.ownerPublicKey
     ownerCertificates = opts.ownerCertificates
@@ -299,6 +311,7 @@ export async function createPeerAdvertisement(
       workspaceId = workspaceIdOrOptions.workspaceId
       ep = workspaceIdOrOptions.endpoint
       certificates = workspaceIdOrOptions.certificates
+      signing = workspaceIdOrOptions.signing
       grant = workspaceIdOrOptions.grant
       ownerPublicKey = workspaceIdOrOptions.ownerPublicKey
       ownerCertificates = workspaceIdOrOptions.ownerCertificates
@@ -313,6 +326,7 @@ export async function createPeerAdvertisement(
       ep = endpoint as string
       if (extraOptions) {
         certificates = extraOptions.certificates
+        signing = extraOptions.signing
         grant = extraOptions.grant
         ownerPublicKey = extraOptions.ownerPublicKey
         ownerCertificates = extraOptions.ownerCertificates
@@ -326,6 +340,10 @@ export async function createPeerAdvertisement(
     }
   }
 
+  profile = captureSigningProfile(profile)
+  grant = grant ? structuredClone(grant) : undefined
+  ownerCertificates = ownerCertificates ? structuredClone(ownerCertificates) : undefined
+  certificates = certificates ? structuredClone(certificates) : undefined
   if (!profile?.identity?.personId || !profile?.device?.deviceId || !profile?.privateKeys?.devicePrivateKey) {
     throw new Error("Invalid LocalProfile: missing required identity or device keys")
   }
@@ -362,13 +380,9 @@ export async function createPeerAdvertisement(
     ...(reportedUserAgent ? { userAgent: reportedUserAgent } : {}),
   }
 
-  const advertisement = (await signEnvelope(
-    profile.privateKeys.devicePrivateKey,
-    payload,
-    profile.device.deviceId
-  )) as unknown as PeerAdvertisement
+  const advertisement = await signWorkspaceRecord(profile, payload, signing) as PeerAdvertisement
 
-  const certChain = certificates ?? [profile.certificate]
+  const certChain = signing ? workspaceSignerCertificates(profile, signing) : certificates ?? [profile.certificate]
 
   const bundle: WorkspaceMemberBundle = {
     advertisement,
@@ -432,17 +446,15 @@ export async function verifyWorkspaceMemberBundle(
 export const verifyPeerAdvertisement = verifyWorkspaceMemberBundle
 
 export async function createWorkspaceRevocation(profile: LocalProfile, workspaceId: string, personId: string, epoch: number,
-  workspaceHeads: string[], revokedAt = new Date().toISOString()): Promise<WorkspaceRevocation> {
+  workspaceHeads: string[], revokedAt = new Date().toISOString(), signing?: WorkspaceRecordSigner): Promise<WorkspaceRevocation> {
   if (!workspaceId || !personId || personId === profile.identity.personId || !Number.isSafeInteger(epoch) || epoch < 2 ||
     !Array.isArray(workspaceHeads) || !workspaceHeads.length || workspaceHeads.length > 256 ||
     workspaceHeads.some(head => typeof head !== "string" || !head) ||
     !Number.isFinite(Date.parse(revokedAt)) || new Date(revokedAt).toISOString() !== revokedAt) throw new Error("Invalid workspace revocation")
-  const key = profile.privateKeys.identityPrivateKey ?? profile.privateKeys.devicePrivateKey
-  const signer = profile.privateKeys.identityPrivateKey ? profile.identity.personId : profile.device.deviceId
-  return signEnvelope(key, {
+  return signWorkspaceRecord(profile, {
     kind: "workspace-revocation", version: 1, workspaceId, ownerPersonId: profile.identity.personId,
     personId, epoch, workspaceHeads, revokedAt,
-  }, signer)
+  }, signing, true)
 }
 
 export async function verifyWorkspaceRevocation(raw: unknown, workspaceId: string, ownerPersonId: string,
@@ -469,7 +481,11 @@ export async function createWorkspaceOwnershipTransfer(
   workspaceHeads: string[],
   epoch: number,
   transferredAt = new Date().toISOString(),
+  signing?: WorkspaceRecordSigner,
 ): Promise<WorkspaceOwnershipTransfer> {
+  profile = captureSigningProfile(profile)
+  target = structuredClone(target)
+  workspaceHeads = structuredClone(workspaceHeads)
   if (!workspaceId || !target.personId || target.personId === profile.identity.personId ||
     !Array.isArray(workspaceHeads) || workspaceHeads.length === 0 || workspaceHeads.length > 256 ||
     workspaceHeads.some(head => typeof head !== "string" || !head) || !Number.isSafeInteger(epoch) || epoch < 2 ||
@@ -479,14 +495,14 @@ export async function createWorkspaceOwnershipTransfer(
   if (await keyId(target.publicKey) !== target.personId) throw new Error("Invalid new owner identity")
   await verifyDeviceChain({ personId: target.personId, publicKey: target.publicKey,
     deviceId: target.certificates[0]?.payload.deviceId, certificates: target.certificates })
-  const toOwnerGrant = await createWorkspaceGrant(profile, workspaceId, target.personId, "owner")
-  const formerOwnerGrant = await createWorkspaceGrant(profile, workspaceId, profile.identity.personId, "editor")
-  return signEnvelope(profile.privateKeys.devicePrivateKey, {
+  const toOwnerGrant = await createWorkspaceGrant(profile, workspaceId, target.personId, "owner", 1, signing)
+  const formerOwnerGrant = await createWorkspaceGrant(profile, workspaceId, profile.identity.personId, "editor", 1, signing)
+  return signWorkspaceRecord(profile, {
     kind: "workspace-ownership-transfer", version: 1, workspaceId,
     fromOwnerPersonId: profile.identity.personId, toOwnerPersonId: target.personId,
     toOwnerPublicKey: target.publicKey, toOwnerCertificates: target.certificates,
     toOwnerGrant, formerOwnerGrant, workspaceHeads, epoch, transferredAt,
-  }, profile.device.deviceId)
+  }, signing)
 }
 
 export async function verifyWorkspaceOwnershipTransfer(
@@ -508,7 +524,7 @@ function validIso(value: unknown, now = Date.now()) {
 
 export async function createWorkspaceSuccessionPolicy(profile: LocalProfile, workspaceId: string,
   successorPersonId: string | null, eligibleEditorPersonIds: string[], epoch: number,
-  updatedAt = new Date().toISOString()): Promise<WorkspaceSuccessionPolicy> {
+  updatedAt = new Date().toISOString(), signing?: WorkspaceRecordSigner): Promise<WorkspaceSuccessionPolicy> {
   const eligible = [...new Set(eligibleEditorPersonIds)].sort()
   if (!workspaceId || !Number.isSafeInteger(epoch) || epoch < 1 || eligible.length > MAX_SUCCESSION_EDITORS ||
     eligible.some(id => typeof id !== "string" || !id || id === profile.identity.personId) ||
@@ -516,10 +532,10 @@ export async function createWorkspaceSuccessionPolicy(profile: LocalProfile, wor
     (successorPersonId !== null && !eligible.includes(successorPersonId)) || !validIso(updatedAt)) {
     throw new Error("Invalid workspace succession policy")
   }
-  return signEnvelope(profile.privateKeys.devicePrivateKey, {
+  return signWorkspaceRecord(profile, {
     kind: "workspace-succession-policy", version: 1, workspaceId, ownerPersonId: profile.identity.personId,
     successorPersonId, eligibleEditorPersonIds: eligible, epoch, updatedAt,
-  }, profile.device.deviceId)
+  }, signing)
 }
 
 export async function verifyWorkspaceSuccessionPolicy(raw: unknown, workspaceId: string,
@@ -531,17 +547,22 @@ export async function verifyWorkspaceSuccessionPolicy(raw: unknown, workspaceId:
 
 export async function createWorkspaceSuccessionVote(profile: LocalProfile, policy: WorkspaceSuccessionPolicy,
   candidatePersonId: string, voterGrant: WorkspaceGrant,
-  votedAt = new Date().toISOString(), voterCertificates: DeviceCertificate[] = [profile.certificate]): Promise<WorkspaceSuccessionVote> {
+  votedAt = new Date().toISOString(), voterCertificates: DeviceCertificate[] = [profile.certificate],
+  signing?: WorkspaceRecordSigner): Promise<WorkspaceSuccessionVote> {
+  profile = captureSigningProfile(profile)
+  policy = structuredClone(policy)
+  voterGrant = structuredClone(voterGrant)
+  voterCertificates = structuredClone(voterCertificates)
   const p = policy.payload
   if (!candidatePersonId || !p.eligibleEditorPersonIds.includes(profile.identity.personId) ||
     !p.eligibleEditorPersonIds.includes(candidatePersonId) || !validIso(votedAt)) throw new Error("Invalid workspace succession vote")
   return {
-    signed: await signEnvelope(profile.privateKeys.devicePrivateKey, {
+    signed: await signWorkspaceRecord(profile, {
       kind: "workspace-succession-vote", version: 1, workspaceId: p.workspaceId, ownerPersonId: p.ownerPersonId,
       voterPersonId: profile.identity.personId, candidatePersonId, policySignature: policy.signature, votedAt,
-    }, profile.device.deviceId),
+    }, signing),
     voterPublicKey: profile.identity.publicKey,
-    voterCertificates,
+    voterCertificates: signing ? workspaceSignerCertificates(profile, signing) : voterCertificates,
     voterGrant,
   }
 }
@@ -555,19 +576,27 @@ export async function verifyWorkspaceSuccessionVote(raw: unknown, policy: Worksp
 
 export async function createWorkspaceSuccessionClaim(profile: LocalProfile, policy: WorkspaceSuccessionPolicy,
   votes: WorkspaceSuccessionVote[], candidateGrant: WorkspaceGrant, workspaceHeads: string[], epoch: number,
-  toOwnerCertificates: DeviceCertificate[] = [profile.certificate], claimedAt = new Date().toISOString()): Promise<WorkspaceSuccessionClaim> {
+  toOwnerCertificates: DeviceCertificate[] = [profile.certificate], claimedAt = new Date().toISOString(),
+  signing?: WorkspaceRecordSigner): Promise<WorkspaceSuccessionClaim> {
+  profile = captureSigningProfile(profile)
+  policy = structuredClone(policy)
+  votes = structuredClone(votes)
+  candidateGrant = structuredClone(candidateGrant)
+  workspaceHeads = structuredClone(workspaceHeads)
+  toOwnerCertificates = structuredClone(toOwnerCertificates)
   if (!Array.isArray(workspaceHeads) || !workspaceHeads.length || workspaceHeads.length > 256 ||
     workspaceHeads.some(head => typeof head !== "string" || !head) || !Number.isSafeInteger(epoch) || epoch < 2 ||
     !Array.isArray(toOwnerCertificates) || !toOwnerCertificates.length || toOwnerCertificates.length > MAX_CERT_CHAIN_LENGTH || !validIso(claimedAt)) {
     throw new Error("Invalid workspace succession claim")
   }
-  const formerOwnerGrant = await createWorkspaceGrant(profile, policy.payload.workspaceId, policy.payload.ownerPersonId, "editor")
-  return signEnvelope(profile.privateKeys.devicePrivateKey, {
+  const formerOwnerGrant = await createWorkspaceGrant(profile, policy.payload.workspaceId, policy.payload.ownerPersonId, "editor", 1, signing)
+  toOwnerCertificates = signing ? workspaceSignerCertificates(profile, signing) : toOwnerCertificates
+  return signWorkspaceRecord(profile, {
     kind: "workspace-succession-claim", version: 1, workspaceId: policy.payload.workspaceId,
     fromOwnerPersonId: policy.payload.ownerPersonId, toOwnerPersonId: profile.identity.personId,
     toOwnerPublicKey: profile.identity.publicKey, toOwnerCertificates, candidateGrant,
     formerOwnerGrant, policy, votes, workspaceHeads, epoch, claimedAt,
-  }, profile.device.deviceId)
+  }, signing)
 }
 
 export async function verifyWorkspaceSuccessionClaim(raw: unknown, workspaceId: string, authority: WorkspaceAuthority,
@@ -583,16 +612,20 @@ export type WorkspaceDeviceRevocation = {
 }
 
 export async function createWorkspaceDeviceRevocation(profile: LocalProfile, workspaceId: string,
-  personId: string, deviceId: string, workspaceHeads: string[], certificates: DeviceCertificate[]): Promise<WorkspaceDeviceRevocation> {
+  personId: string, deviceId: string, workspaceHeads: string[], certificates: DeviceCertificate[],
+  signing?: WorkspaceRecordSigner): Promise<WorkspaceDeviceRevocation> {
+  profile = captureSigningProfile(profile)
+  certificates = structuredClone(certificates)
   if (!workspaceId || !personId || !deviceId || !Array.isArray(workspaceHeads) || !workspaceHeads.length ||
     workspaceHeads.length > 256 || workspaceHeads.some(head => typeof head !== "string" || !head)) {
     throw new Error("Invalid workspace device revocation")
   }
-  const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
+  const record = await signWorkspaceRecord(profile, {
     kind: "workspace-device-revocation" as const, version: 1 as const, workspaceId, personId, deviceId,
     workspaceHeads, revokedAt: new Date().toISOString(),
-  }, profile.device.deviceId)
-  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
+  }, signing)
+  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey,
+    certificates: signing ? workspaceSignerCertificates(profile, signing) : certificates } }
 }
 
 export function verifyWorkspaceDeviceRevocation(value: WorkspaceDeviceRevocation, workspaceId: string,
@@ -607,16 +640,19 @@ export type WorkspaceDeparture = {
   authority: WorkspaceAuthority
 }
 export async function createWorkspaceDeparture(profile: LocalProfile, workspaceId: string, accessEpoch: number,
-  workspaceHeads: string[], certificates: DeviceCertificate[]): Promise<WorkspaceDeparture> {
+  workspaceHeads: string[], certificates: DeviceCertificate[], signing?: WorkspaceRecordSigner): Promise<WorkspaceDeparture> {
+  profile = captureSigningProfile(profile)
+  certificates = structuredClone(certificates)
   if (!workspaceId || !Number.isSafeInteger(accessEpoch) || accessEpoch < 1 || !Array.isArray(workspaceHeads) ||
     !workspaceHeads.length || workspaceHeads.length > 256 || workspaceHeads.some(head => typeof head !== "string" || !head)) {
     throw new Error("Invalid workspace departure")
   }
-  const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
+  const record = await signWorkspaceRecord(profile, {
     kind: "workspace-departure" as const, version: 1 as const, workspaceId, personId: profile.identity.personId,
     accessEpoch, workspaceHeads, leftAt: new Date().toISOString(),
-  }, profile.device.deviceId)
-  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey, certificates } }
+  }, signing)
+  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey,
+    certificates: signing ? workspaceSignerCertificates(profile, signing) : certificates } }
 }
 export function verifyWorkspaceDeparture(value: WorkspaceDeparture, workspaceId: string): WorkspaceDeparture {
   return { record: meshRustRuntime().state.verifyWorkspaceDeparture(value.record, workspaceId, value.authority, Date.now()) as WorkspaceDeparture["record"], authority: value.authority }

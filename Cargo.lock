@@ -2109,6 +2109,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meta-mesh-transport-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "iroh",
+ "tokio",
+]
+
+[[package]]
 name = "mio"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

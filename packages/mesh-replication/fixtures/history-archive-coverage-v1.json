@@ -1,0 +1,197 @@
+{
+  "authority": {
+    "servicePublicKey": "ebVWLo_mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ",
+    "scopeId": "opaque-coverage-fixture",
+    "policyRevision": 7
+  },
+  "transitionId": "native-coverage-fixture-00001",
+  "keyEpoch": 3,
+  "sets": [
+    {
+      "count": 1,
+      "root": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 1,
+        "objectCount": 1,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "n0HDKA46rBFBC2SBdZMKJSAW7WLolAOmjHJ6T7MwWU4"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "EIekVRlStMsTjWWqx2nSj9AkzGsvOe1qeLVQqdkK4D8",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 1,
+          "objectCount": 1,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "n0HDKA46rBFBC2SBdZMKJSAW7WLolAOmjHJ6T7MwWU4",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "2eIWDMqlt5E5rUW-4DrzpSh9F8B6n3v65c5q8bJ2Nl9lMWYaon_alSkmY2NkY4uzA47VPCxB2kLU0q4bXJTDBg"
+      }
+    },
+    {
+      "count": 64,
+      "root": "0000003fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 1,
+        "objectCount": 64,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "0000003fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "8ks2XzzQX4vYaHCkMzdaxp_W0oBDobgqYcDTu4GSwmI"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "Y_yme7Y5md7FJ-Ws6OzVWyx4biwwnPPLOkfc6Enz-Dw",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "0000003fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 1,
+          "objectCount": 64,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "0000003fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "8ks2XzzQX4vYaHCkMzdaxp_W0oBDobgqYcDTu4GSwmI",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "6CCnoAwSZlEqeBuQd0ISB7NFbbUFKSPtEzmlQ37c-PygqFmffGe0vTFGRjs2s9ki1ushuFPhNiAe-C0Bgi27Cg"
+      }
+    },
+    {
+      "count": 65,
+      "root": "00000040AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 1,
+        "objectCount": 65,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "00000040AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "aJY2lzg4zugcLm9r5OeNnUNnXSY4mikZnmXdD-Jei7g"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "_0tk50Q_dO7GrnsqfMc4FHlPpnjpsdgiDr1qG5Uvrfs",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "00000040AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 1,
+          "objectCount": 65,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "00000040AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "aJY2lzg4zugcLm9r5OeNnUNnXSY4mikZnmXdD-Jei7g",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "PX6dA4HS2WH4ZgDA1EynMfjhOFBjXMPlk44cdVXGQuFRzJY7iLVoz-VsWkrWfxTVr8luwY5O_QnSSsUPrMaYDQ"
+      }
+    },
+    {
+      "count": 512,
+      "root": "000001ffAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 1,
+        "objectCount": 512,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "000001ffAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "IQB9Ix_iqJkBv_0BZwzROdPEX70MAnbk-NpLFjv9gdQ"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "2tvIuLvfNDH3M0mToOg17hSHgnvV15Oy_dm-2RehxSQ",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "000001ffAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 1,
+          "objectCount": 512,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "000001ffAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "IQB9Ix_iqJkBv_0BZwzROdPEX70MAnbk-NpLFjv9gdQ",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "QVqo6HBGEIki1T6jgD0aK9nk2XftCy9eoW_-yTmjAInTLP5S_UY8_h4zeGQDvKRIjuCQzWxrQBbU9iUjp9qAAQ"
+      }
+    },
+    {
+      "count": 513,
+      "root": "00000200AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 2,
+        "objectCount": 513,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "00000200AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "WXfmeQgF29Tc6YAKC0fP2Hy0jgknSgiK_W24acGQICE"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "NOhh4CGbcFx6Z7EkFzvRKcBuWh1wv7_4nghj5yZj1Kk",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "00000200AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 2,
+          "objectCount": 513,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "00000200AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "WXfmeQgF29Tc6YAKC0fP2Hy0jgknSgiK_W24acGQICE",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "Ez-NnibjAAWEWvCtwdn890WsZPFFXKXNm9141Dx9dZqSe2FcMSgXdkcydfpJEJqzpRsVn5qTHuc8JTlE33yaCg"
+      }
+    },
+    {
+      "count": 4101,
+      "root": "00001004AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "summary": {
+        "height": 3,
+        "objectCount": 4101,
+        "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "lastObjectId": "00001004AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "rootCovered": true,
+        "setDigest": "vmPt8Vg0uuJKrbIq2PB_4y98av0oDh0L4VZak5cOncI"
+      },
+      "receipt": {
+        "payload": {
+          "version": 1,
+          "serviceId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+          "scopeId": "opaque-coverage-fixture",
+          "policyRevision": 7,
+          "requestId": "wl7g3qTwgn8m-NGgGzjF6yCnXXzt2AgOKXeNhbWEB40",
+          "kind": "blind-archive-coverage-aggregate-receipt",
+          "archiveRootId": "00001004AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "height": 3,
+          "objectCount": 4101,
+          "firstObjectId": "00000000AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "lastObjectId": "00001004AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "setDigest": "vmPt8Vg0uuJKrbIq2PB_4y98av0oDh0L4VZak5cOncI",
+          "rootCovered": true
+        },
+        "signerKeyId": "ZbYGc9btiEvwHCwiLYKtoHQPKawzVdapJcgfF_R6J7g",
+        "signature": "jkOiXdECcSRX5iWrQz33WAP48A-e9N1-brSqzutuHZYHvpyiIwjbccEjtksrCguyWdRK5Q_cze7MMzVRSdt_Ag"
+      }
+    }
+  ]
+}

@@ -1,5 +1,11 @@
 use super::*;
 
+#[path = "tests/application_source_tests.rs"]
+mod application_source_tests;
+
+#[path = "tests/automation_source_tests.rs"]
+mod automation_source_tests;
+
 use crate::{
     AutomationGrantScope, DEFAULT_SIGNATURE_DOMAIN, DeviceCertificate, DeviceCertificatePayload,
     WorkspaceAuthority, WorkspaceChangeAuthorization, WorkspaceChangeAuthorizationPayload,

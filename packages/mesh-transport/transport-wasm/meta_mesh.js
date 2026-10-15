@@ -201,10 +201,18 @@ export class BrowserStream {
         return ret;
     }
     /**
+     * @param {number | null} [maximum_bytes]
      * @returns {Promise<Uint8Array>}
      */
-    read() {
-        const ret = wasm.browserstream_read(this.__wbg_ptr);
+    read(maximum_bytes) {
+        const ret = wasm.browserstream_read(this.__wbg_ptr, isLikeNone(maximum_bytes) ? 0x100000001 : (maximum_bytes) >>> 0);
+        return ret;
+    }
+    /**
+     * @returns {Promise<void>}
+     */
+    reset() {
+        const ret = wasm.browserstream_reset(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -3095,6 +3103,21 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @returns {string}
+     */
+    static causalAdmissionPolicyId() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmstatecore_causalAdmissionPolicyId();
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {any} raw
      * @returns {any}
      */
@@ -3866,6 +3889,38 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * Run full Native causal admission and bind it to the current Owner's
+     * complete device certificate chain. The returned token cannot be built
+     * from a host-claimed admission result.
+     * @param {any} source_raw
+     * @param {any} signer_raw
+     * @returns {WasmVerifiedHistoryPreparation}
+     */
+    static prepareWorkspaceHistory(source_raw, signer_raw) {
+        const ret = wasm.wasmstatecore_prepareWorkspaceHistory(source_raw, signer_raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryPreparation.__wrap(ret[0]);
+    }
+    /**
+     * Prepare a bounded active-tail capture descended from an opaque,
+     * independently verified compact baseline. The caller cannot provide a
+     * host-asserted basis marker or use a synthetic genesis.
+     * @param {any} source_raw
+     * @param {any} signer_raw
+     * @param {WasmVerifiedReceivedHistoryBaseline} basis
+     * @returns {WasmVerifiedHistoryPreparation}
+     */
+    static prepareWorkspaceHistoryFromBasis(source_raw, signer_raw, basis) {
+        _assertClass(basis, WasmVerifiedReceivedHistoryBaseline);
+        const ret = wasm.wasmstatecore_prepareWorkspaceHistoryFromBasis(source_raw, signer_raw, basis.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryPreparation.__wrap(ret[0]);
+    }
+    /**
      * @param {any} raw
      * @returns {any}
      */
@@ -4167,6 +4222,157 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} key
+     * @param {any} pin
+     * @param {any} trusted
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyOwnerAttestedHistoryBaseline(signed_json, document, scope_id, key_epoch, key, pin, trusted, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_verifyOwnerAttestedHistoryBaseline(ptr0, len0, ptr1, len1, ptr2, len2, key_epoch, ptr3, len3, pin, trusted, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} key
+     * @param {any} pin
+     * @param {any} trusted
+     * @param {WasmVerifiedReceivedHistoryBaseline} previous
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyOwnerAttestedHistoryBaselineFromParent(signed_json, document, scope_id, key_epoch, key, pin, trusted, previous, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        _assertClass(previous, WasmVerifiedReceivedHistoryBaseline);
+        const ret = wasm.wasmstatecore_verifyOwnerAttestedHistoryBaselineFromParent(ptr0, len0, ptr1, len1, ptr2, len2, key_epoch, ptr3, len3, pin, trusted, previous.__wbg_ptr, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {any} trusted
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyOwnerAttestedPeerHistoryBaseline(signed_json, document, trusted, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_verifyOwnerAttestedPeerHistoryBaseline(ptr0, len0, ptr1, len1, trusted, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {any} trusted
+     * @param {WasmVerifiedReceivedHistoryBaseline} previous
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyOwnerAttestedPeerHistoryBaselineFromParent(signed_json, document, trusted, previous, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        _assertClass(previous, WasmVerifiedReceivedHistoryBaseline);
+        const ret = wasm.wasmstatecore_verifyOwnerAttestedPeerHistoryBaselineFromParent(ptr0, len0, ptr1, len1, trusted, previous.__wbg_ptr, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
+     * Initial and parent-bound receivers borrow opaque Native handles through the generated class ABI.
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} key
+     * @param {any} pin
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyReceivedHistoryBaseline(signed_json, document, scope_id, key_epoch, key, pin, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmstatecore_verifyReceivedHistoryBaseline(ptr0, len0, ptr1, len1, ptr2, len2, key_epoch, ptr3, len3, pin, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} signed_json
+     * @param {Uint8Array} document
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} key
+     * @param {any} pin
+     * @param {WasmVerifiedReceivedHistoryBaseline} previous
+     * @param {Map<any, any>} objects
+     * @param {Function} guard
+     * @returns {WasmVerifiedReceivedHistoryBaseline}
+     */
+    static verifyReceivedHistoryBaselineFromParent(signed_json, document, scope_id, key_epoch, key, pin, previous, objects, guard) {
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        _assertClass(previous, WasmVerifiedReceivedHistoryBaseline);
+        const ret = wasm.wasmstatecore_verifyReceivedHistoryBaselineFromParent(ptr0, len0, ptr1, len1, ptr2, len2, key_epoch, ptr3, len3, pin, previous.__wbg_ptr, objects, guard);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedReceivedHistoryBaseline.__wrap(ret[0]);
+    }
+    /**
      * @param {any} record
      * @param {string} workspace_id
      * @param {any} authority
@@ -4319,6 +4525,582 @@ export class WasmStateCore {
     }
 }
 if (Symbol.dispose) WasmStateCore.prototype[Symbol.dispose] = WasmStateCore.prototype.free;
+
+/**
+ * Native capture of the exact source evidence retained by a preparation.
+ */
+export class WasmVerifiedHistoryArchiveCapture {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryArchiveCapture.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryArchiveCaptureFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryArchiveCaptureFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistoryarchivecapture_free(ptr, 0);
+    }
+    /**
+     * Confirm the identity SDK signature against the exact Native proposal
+     * and a fresh caller-captured source/authority snapshot.
+     * @param {WasmVerifiedHistoryRebase} rebase
+     * @param {WasmVerifiedHistoryArchiveCoverage} coverage
+     * @param {any} scope_authority_raw
+     * @param {Uint8Array} signed_json
+     * @param {any} current_source_raw
+     * @returns {WasmVerifiedHistoryBaselineAttestation}
+     */
+    confirmOwnerAttestedProposal(rebase, coverage, scope_authority_raw, signed_json, current_source_raw) {
+        _assertClass(rebase, WasmVerifiedHistoryRebase);
+        _assertClass(coverage, WasmVerifiedHistoryArchiveCoverage);
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivecapture_confirmOwnerAttestedProposal(this.__wbg_ptr, rebase.__wbg_ptr, coverage.__wbg_ptr, scope_authority_raw, ptr0, len0, current_source_raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryBaselineAttestation.__wrap(ret[0]);
+    }
+    /**
+     * @param {WasmVerifiedHistoryRebase} rebase
+     * @param {WasmVerifiedHistoryArchiveCoverage} coverage
+     * @param {any} scope_authority_raw
+     * @param {WasmVerifiedHistoryBaselineAttestation} previous
+     * @param {Uint8Array} signed_json
+     * @param {any} current_source_raw
+     * @returns {WasmVerifiedHistoryBaselineAttestation}
+     */
+    confirmOwnerAttestedProposalFromParent(rebase, coverage, scope_authority_raw, previous, signed_json, current_source_raw) {
+        _assertClass(rebase, WasmVerifiedHistoryRebase);
+        _assertClass(coverage, WasmVerifiedHistoryArchiveCoverage);
+        _assertClass(previous, WasmVerifiedHistoryBaselineAttestation);
+        const ptr0 = passArray8ToWasm0(signed_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivecapture_confirmOwnerAttestedProposalFromParent(this.__wbg_ptr, rebase.__wbg_ptr, coverage.__wbg_ptr, scope_authority_raw, previous.__wbg_ptr, ptr0, len0, current_source_raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryBaselineAttestation.__wrap(ret[0]);
+    }
+    /**
+     * Return the exact v2 Owner payload after full Native preparation,
+     * encrypted archive correspondence, storage coverage, and trusted scope
+     * authority have been joined. Signing is deliberately a separate step.
+     * @param {WasmVerifiedHistoryRebase} rebase
+     * @param {WasmVerifiedHistoryArchiveCoverage} coverage
+     * @param {any} scope_authority_raw
+     * @returns {any}
+     */
+    ownerAttestedProposal(rebase, coverage, scope_authority_raw) {
+        _assertClass(rebase, WasmVerifiedHistoryRebase);
+        _assertClass(coverage, WasmVerifiedHistoryArchiveCoverage);
+        const ret = wasm.wasmverifiedhistoryarchivecapture_ownerAttestedProposal(this.__wbg_ptr, rebase.__wbg_ptr, coverage.__wbg_ptr, scope_authority_raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {WasmVerifiedHistoryRebase} rebase
+     * @param {WasmVerifiedHistoryArchiveCoverage} coverage
+     * @param {any} scope_authority_raw
+     * @param {WasmVerifiedHistoryBaselineAttestation} previous
+     * @returns {any}
+     */
+    ownerAttestedProposalFromParent(rebase, coverage, scope_authority_raw, previous) {
+        _assertClass(rebase, WasmVerifiedHistoryRebase);
+        _assertClass(coverage, WasmVerifiedHistoryArchiveCoverage);
+        _assertClass(previous, WasmVerifiedHistoryBaselineAttestation);
+        const ret = wasm.wasmverifiedhistoryarchivecapture_ownerAttestedProposalFromParent(this.__wbg_ptr, rebase.__wbg_ptr, coverage.__wbg_ptr, scope_authority_raw, previous.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Create a deterministic current-state rebase only from this verified preparation.
+     * @param {number} history_epoch
+     * @param {string} transition_id
+     * @returns {WasmVerifiedHistoryRebase}
+     */
+    rebase(history_epoch, transition_id) {
+        const ptr0 = passStringToWasm0(transition_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivecapture_rebase(this.__wbg_ptr, history_epoch, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryRebase.__wrap(ret[0]);
+    }
+    /**
+     * Independently derive the catalogue again and verify every encrypted
+     * data/directory locator against the supplied ciphertext objects.
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} content_key
+     * @param {any} locator_root_raw
+     * @param {Map<any, any>} objects
+     * @param {Function} ensure_current
+     * @returns {WasmVerifiedHistoryArchiveStorage}
+     */
+    verifyStorageDirectory(scope_id, key_epoch, content_key, locator_root_raw, objects, ensure_current) {
+        const ptr0 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(content_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivecapture_verifyStorageDirectory(this.__wbg_ptr, ptr0, len0, key_epoch, ptr1, len1, locator_root_raw, objects, ensure_current);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryArchiveStorage.__wrap(ret[0]);
+    }
+    /**
+     * Build and encrypt the Native catalogue. `sink(ciphertextId,binding,object)`
+     * must synchronously enqueue an encrypted-object write in the caller's
+     * durable transaction; it must not return a promise or plaintext.
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} content_key
+     * @param {Function} nonce_source
+     * @param {Function} sink
+     * @param {Function} ensure_current
+     * @returns {any}
+     */
+    writeEncryptedCatalogue(scope_id, key_epoch, content_key, nonce_source, sink, ensure_current) {
+        const ptr0 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(content_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivecapture_writeEncryptedCatalogue(this.__wbg_ptr, ptr0, len0, key_epoch, ptr1, len1, nonce_source, sink, ensure_current);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryArchiveCapture.prototype[Symbol.dispose] = WasmVerifiedHistoryArchiveCapture.prototype.free;
+
+export class WasmVerifiedHistoryArchiveCoverage {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryArchiveCoverage.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryArchiveCoverageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryArchiveCoverageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistoryarchivecoverage_free(ptr, 0);
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryArchiveCoverage.prototype[Symbol.dispose] = WasmVerifiedHistoryArchiveCoverage.prototype.free;
+
+export class WasmVerifiedHistoryArchiveStorage {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryArchiveStorage.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryArchiveStorageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryArchiveStorageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistoryarchivestorage_free(ptr, 0);
+    }
+    /**
+     * @param {any} authority_raw
+     * @param {string} data_transition_id
+     * @param {string} directory_transition_id
+     * @param {Uint8Array} data_receipt
+     * @param {Uint8Array} directory_receipt
+     * @returns {WasmVerifiedHistoryArchiveCoverage}
+     */
+    verifyCoverage(authority_raw, data_transition_id, directory_transition_id, data_receipt, directory_receipt) {
+        const ptr0 = passStringToWasm0(data_transition_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(directory_transition_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(data_receipt, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(directory_receipt, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistoryarchivestorage_verifyCoverage(this.__wbg_ptr, authority_raw, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryArchiveCoverage.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryArchiveStorage.prototype[Symbol.dispose] = WasmVerifiedHistoryArchiveStorage.prototype.free;
+
+export class WasmVerifiedHistoryBaselineAttestation {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryBaselineAttestation.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryBaselineAttestationFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryBaselineAttestationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistorybaselineattestation_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    document() {
+        const ret = wasm.wasmverifiedhistorybaselineattestation_document(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {any}
+     */
+    envelope() {
+        const ret = wasm.wasmverifiedhistorybaselineattestation_envelope(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    originalJson() {
+        const ret = wasm.wasmverifiedhistorybaselineattestation_originalJson(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryBaselineAttestation.prototype[Symbol.dispose] = WasmVerifiedHistoryBaselineAttestation.prototype.free;
+
+/**
+ * Native full-history preparation. This opaque token is produced only after
+ * causal admission and owner/device-chain validation.
+ */
+export class WasmVerifiedHistoryPreparation {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryPreparation.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryPreparationFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryPreparationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistorypreparation_free(ptr, 0);
+    }
+    /**
+     * Freeze original JSON bytes against the Native-prepared typed history.
+     * @param {number} history_epoch
+     * @param {Uint8Array} control_json
+     * @param {any} authorization_json_raw
+     * @returns {WasmVerifiedHistoryArchiveCapture}
+     */
+    captureOriginals(history_epoch, control_json, authorization_json_raw) {
+        const ptr0 = passArray8ToWasm0(control_json, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedhistorypreparation_captureOriginals(this.__wbg_ptr, history_epoch, ptr0, len0, authorization_json_raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return WasmVerifiedHistoryArchiveCapture.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryPreparation.prototype[Symbol.dispose] = WasmVerifiedHistoryPreparation.prototype.free;
+
+export class WasmVerifiedHistoryRebase {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedHistoryRebase.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedHistoryRebaseFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedHistoryRebaseFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedhistoryrebase_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    document() {
+        const ret = wasm.wasmverifiedhistoryrebase_document(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {string}
+     */
+    stateDigest() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmverifiedhistoryrebase_stateDigest(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    transitionId() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmverifiedhistoryrebase_transitionId(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) WasmVerifiedHistoryRebase.prototype[Symbol.dispose] = WasmVerifiedHistoryRebase.prototype.free;
+
+/**
+ * Native-verified cold baseline candidate. Construction performs archive,
+ * control, Owner, frontier, and coverage verification; callers cannot build
+ * this value from serialized claims.
+ */
+export class WasmVerifiedReceivedHistoryBaseline {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(WasmVerifiedReceivedHistoryBaseline.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmVerifiedReceivedHistoryBaselineFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmVerifiedReceivedHistoryBaselineFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmverifiedreceivedhistorybaseline_free(ptr, 0);
+    }
+    /**
+     * Admit ordinary changes descended from this exact verified compact basis.
+     * The host cannot supply or serialize a trusted-basis marker.
+     * @param {any} raw
+     * @returns {any}
+     */
+    admitTail(raw) {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_admitTail(this.__wbg_ptr, raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    controlJson() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_controlJson(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    document() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_document(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Exact encrypted evidence needed to independently reverify this baseline
+     * after restart, including when the device is offline.
+     * @returns {Map<any, any>}
+     */
+    encryptedObjects() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_encryptedObjects(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {any}
+     */
+    envelope() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_envelope(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    originalJson() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_originalJson(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {any}
+     */
+    owner() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_owner(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {Map<any, any>}
+     */
+    plaintextObjects() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_plaintextObjects(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Convert only a Native-reverified baseline into an opaque proposal parent.
+     * @returns {WasmVerifiedHistoryBaselineAttestation}
+     */
+    proposalParent() {
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_proposalParent(this.__wbg_ptr);
+        return WasmVerifiedHistoryBaselineAttestation.__wrap(ret);
+    }
+    /**
+     * Verify one original entity version against this opaque baseline's signed archive, never a host root flag.
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} content_key
+     * @param {string} entity_id
+     * @param {string} change_hash
+     * @param {Map<any, any>} objects
+     * @param {Function} ensure_current
+     * @returns {any}
+     */
+    readArchivedEntityVersion(scope_id, key_epoch, content_key, entity_id, change_hash, objects, ensure_current) {
+        const ptr0 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(content_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(entity_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(change_hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_readArchivedEntityVersion(this.__wbg_ptr, ptr0, len0, key_epoch, ptr1, len1, ptr2, len2, ptr3, len3, objects, ensure_current);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {string} entity_id
+     * @param {string} change_hash
+     * @param {Map<any, any>} objects
+     * @param {Function} ensure_current
+     * @returns {any}
+     */
+    readArchivedPeerEntityVersion(entity_id, change_hash, objects, ensure_current) {
+        const ptr0 = passStringToWasm0(entity_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(change_hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_readArchivedPeerEntityVersion(this.__wbg_ptr, ptr0, len0, ptr1, len1, objects, ensure_current);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {string}
+     */
+    storageVerification() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmverifiedreceivedhistorybaseline_storageVerification(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Acknowledge only byte-exact originals already retained by this signed archive.
+     * @param {string} scope_id
+     * @param {number} key_epoch
+     * @param {Uint8Array} content_key
+     * @param {Uint8Array} document
+     * @param {Map<any, any>} objects
+     * @param {Function} ensure_current
+     */
+    verifyArchivedSnapshot(scope_id, key_epoch, content_key, document, objects, ensure_current) {
+        const ptr0 = passStringToWasm0(scope_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(content_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(document, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_verifyArchivedSnapshot(this.__wbg_ptr, ptr0, len0, key_epoch, ptr1, len1, ptr2, len2, objects, ensure_current);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {WasmVerifiedReceivedHistoryBaseline} previous
+     */
+    verifyPreviousBaseline(previous) {
+        _assertClass(previous, WasmVerifiedReceivedHistoryBaseline);
+        const ret = wasm.wasmverifiedreceivedhistorybaseline_verifyPreviousBaseline(this.__wbg_ptr, previous.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+}
+if (Symbol.dispose) WasmVerifiedReceivedHistoryBaseline.prototype[Symbol.dispose] = WasmVerifiedReceivedHistoryBaseline.prototype.free;
 
 export class WasmWorkspaceJoinHandoff {
     __destroy_into_raw() {
@@ -4864,6 +5646,10 @@ function __wbg_get_imports() {
             const ret = arg0.call(arg1);
             return ret;
         }, arguments); },
+        __wbg_call_86e39d65afc3d9db: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
+            const ret = arg0.call(arg1, arg2, arg3, arg4);
+            return ret;
+        }, arguments); },
         __wbg_call_a24592a6f349a97e: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.call(arg1, arg2);
             return ret;
@@ -4898,6 +5684,9 @@ function __wbg_get_imports() {
         __wbg_clearTimeout_47a40e3be01ed7a3: function() { return handleError(function (arg0, arg1) {
             arg0.clearTimeout(arg1);
         }, arguments); },
+        __wbg_close_7d22740f0d712f03: function(arg0) {
+            arg0.close();
+        },
         __wbg_close_88106990eea7f544: function() { return handleError(function (arg0) {
             arg0.close();
         }, arguments); },
@@ -4967,6 +5756,10 @@ function __wbg_get_imports() {
             const ret = fetch(arg0);
             return ret;
         },
+        __wbg_fromEntries_ce99d7540610a555: function() { return handleError(function (arg0) {
+            const ret = Object.fromEntries(arg0);
+            return ret;
+        }, arguments); },
         __wbg_from_0dbf29f09e7fb200: function(arg0) {
             const ret = Array.from(arg0);
             return ret;
@@ -4997,6 +5790,10 @@ function __wbg_get_imports() {
             const ret = arg0.done;
             return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
         },
+        __wbg_get_ef70f6ce70a05af6: function(arg0, arg1) {
+            const ret = arg0.get(arg1);
+            return ret;
+        },
         __wbg_get_unchecked_17f53dad852b9588: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
             return ret;
@@ -5007,6 +5804,10 @@ function __wbg_get_imports() {
         },
         __wbg_get_with_ref_key_6412cf3094599694: function(arg0, arg1) {
             const ret = arg0[arg1];
+            return ret;
+        },
+        __wbg_hasOwn_87305f6277e01bf0: function(arg0, arg1) {
+            const ret = Object.hasOwn(arg0, arg1);
             return ret;
         },
         __wbg_has_880f1d472f7cecba: function() { return handleError(function (arg0, arg1) {
@@ -5165,7 +5966,7 @@ function __wbg_get_imports() {
                     const a = state0.a;
                     state0.a = 0;
                     try {
-                        return wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined_______true_(a, state0.b, arg0, arg1);
+                        return wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined_______true_(a, state0.b, arg0, arg1);
                     } finally {
                         state0.a = a;
                     }
@@ -5440,6 +6241,10 @@ function __wbg_get_imports() {
             const ret = arg0.signal;
             return ret;
         },
+        __wbg_size_cec5cae0e9d95a0b: function(arg0) {
+            const ret = arg0.size;
+            return ret;
+        },
         __wbg_static_accessor_GLOBAL_8cfadc87a297ca02: function() {
             const ret = typeof global === 'undefined' ? null : global;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
@@ -5510,58 +6315,58 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 3692, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 2368, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 6455, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 4641, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_238e2318f8aa2c48___JsError___true_);
             return ret;
         },
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 3251, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_CloseEvent__CloseEvent______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("CloseEvent")], shim_idx: 1138, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_CloseEvent__CloseEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 1720, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("Event")], shim_idx: 483, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 4182, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_MessageEvent__MessageEvent______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("MessageEvent")], shim_idx: 2680, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_MessageEvent__MessageEvent______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000006: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 1720, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCDataChannelEvent")], shim_idx: 483, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5);
             return ret;
         },
         __wbindgen_cast_0000000000000007: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 1720, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("RTCPeerConnectionIceEvent")], shim_idx: 483, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6);
             return ret;
         },
         __wbindgen_cast_0000000000000008: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3641, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 2327, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true_);
             return ret;
         },
         __wbindgen_cast_0000000000000009: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3701, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__1_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 2408, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__1_);
             return ret;
         },
         __wbindgen_cast_000000000000000a: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3724, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
-            const ret = makeClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__2_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 2410, ret: Unit, inner_ret: Some(Unit) }, mutable: false }) -> Externref`.
+            const ret = makeClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__2_);
             return ret;
         },
         __wbindgen_cast_000000000000000b: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 5417, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__3_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [], shim_idx: 3748, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__3_);
             return ret;
         },
         __wbindgen_cast_000000000000000c: function(arg0) {
@@ -5612,55 +6417,55 @@ function __wbg_get_imports() {
     };
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true_(arg0, arg1) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true_(arg0, arg1);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true_(arg0, arg1) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true_(arg0, arg1);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__1_(arg0, arg1) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__1_(arg0, arg1);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__1_(arg0, arg1) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__1_(arg0, arg1);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__2_(arg0, arg1) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__2_(arg0, arg1);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__2_(arg0, arg1) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__2_(arg0, arg1);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__3_(arg0, arg1) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke_______true__3_(arg0, arg1);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__3_(arg0, arg1) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__3_(arg0, arg1);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue______true_(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue______true_(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue______true_(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_CloseEvent__CloseEvent______true_(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_CloseEvent__CloseEvent______true_(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_CloseEvent__CloseEvent______true_(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_CloseEvent__CloseEvent______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_MessageEvent__MessageEvent______true_(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_MessageEvent__MessageEvent______true_(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_MessageEvent__MessageEvent______true_(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_MessageEvent__MessageEvent______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___web_sys_8faf822951051c1a___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___wasm_bindgen_b3c7b8e9241432f4___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b3c7b8e9241432f4___JsError___true_(arg0, arg1, arg2);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_238e2318f8aa2c48___JsError___true_(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_238e2318f8aa2c48___JsError___true_(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined_______true_(arg0, arg1, arg2, arg3) {
-    wasm.wasm_bindgen_b3c7b8e9241432f4___convert__closures_____invoke___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined___js_sys_a2fff126d43a4d3e___Function_fn_wasm_bindgen_b3c7b8e9241432f4___JsValue_____wasm_bindgen_b3c7b8e9241432f4___sys__Undefined_______true_(arg0, arg1, arg2, arg3);
+function wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined_______true_(arg0, arg1, arg2, arg3) {
+    wasm.wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined_______true_(arg0, arg1, arg2, arg3);
 }
 
 
@@ -5764,6 +6569,27 @@ const WasmPairingCodecFinalization = (typeof FinalizationRegistry === 'undefined
 const WasmStateCoreFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmstatecore_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryArchiveCaptureFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistoryarchivecapture_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryArchiveCoverageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistoryarchivecoverage_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryArchiveStorageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistoryarchivestorage_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryBaselineAttestationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistorybaselineattestation_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryPreparationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistorypreparation_free(ptr >>> 0, 1));
+const WasmVerifiedHistoryRebaseFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedhistoryrebase_free(ptr >>> 0, 1));
+const WasmVerifiedReceivedHistoryBaselineFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmverifiedreceivedhistorybaseline_free(ptr >>> 0, 1));
 const WasmWorkspaceJoinHandoffFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmworkspacejoinhandoff_free(ptr >>> 0, 1));
@@ -5775,6 +6601,12 @@ function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
     wasm.__wbindgen_externrefs.set(idx, obj);
     return idx;
+}
+
+function _assertClass(instance, klass) {
+    if (!(instance instanceof klass)) {
+        throw new Error(`expected instance of ${klass.name}`);
+    }
 }
 
 const CLOSURE_DTORS = (typeof FinalizationRegistry === 'undefined')
