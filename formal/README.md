@@ -25,6 +25,14 @@ before execution, and fails if Java/TLC is unavailable. It uses `JAVA_HOME` or
 `java` on `PATH`; on Homebrew macOS it also discovers `openjdk@21` and `openjdk`.
 TLC metadata and counterexample traces are created under temporary directories.
 
+On 2026-10-15, a clean CI download rejected the previous prerelease checksum.
+The v1.8.0 asset updated on 2026-10-13 now has SHA-256
+`0f56d6a813368c48008dfbecb23a73ab43a4a5e1bf09f026782a674aa9d4b3c9`,
+matching the official [release asset metadata](https://api.github.com/repos/tlaplus/tlaplus/releases/tags/v1.8.0).
+All three runners pin this exact digest and still fail closed on any mismatch.
+Fresh CI results must establish conformance for this asset separately from the
+historical measurements below.
+
 `GrantProvenanceTransfer` models staged manifest/request negotiation, two-page
 delivery, cursor advancement, replay, and receiver completion. Its upgrade case
 transfers absent, grant-A, and grant-B provenance variants for one signed
@@ -126,9 +134,9 @@ specific failure scenarios rather than all external behavior.
 ## Bounds and checked results
 
 The checked configurations are exhaustive only within these finite bounds.
-Results below use the pinned v1.8.0 release asset (TLC build
-2026.09.25.163503) on 2026-09-25. The checksum matches the official
-GitHub release asset digest; a changed upstream asset fails closed.
+Historical results below used the then-published v1.8.0 prerelease asset (TLC
+build 2026.09.25.163503) on 2026-09-25. They do not claim a passing run against
+the replacement asset pinned above; a changed upstream asset fails closed.
 
 | Model | Bound | Result |
 | --- | --- | --- |

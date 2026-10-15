@@ -14,7 +14,7 @@ The main model checks the finite candidate graph. It includes branches A/B, late
 
 Four mutation runs require their named invariant to fail: one-signature threshold bypass, stale-head replay, conflict-evidence forgetting, and unilateral alternate-identity recovery. The focused runner stores compact logs and can retain a fresh graph with `--graph-dir PATH` or `COOWNERSHIP_GRAPH_DIR=PATH`.
 
-Focused runner pins TLA+ tools 1.8.0 to SHA-256 `7beec0f04818732a62fa193731711a99aa4f11279499b2360a7d156c519ea78d` in its separate cache file. This matches the `tla2tools.jar` asset digest from the [official v1.8.0 GitHub release API](https://api.github.com/repos/tlaplus/tlaplus/releases/tags/v1.8.0). Existing `formal/check.sh` pin remains untouched.
+Focused runner pins TLA+ tools 1.8.0 to SHA-256 `0f56d6a813368c48008dfbecb23a73ab43a4a5e1bf09f026782a674aa9d4b3c9` in its separate cache file. This matches the replacement `tla2tools.jar` asset digest from the [official v1.8.0 GitHub release API](https://api.github.com/repos/tlaplus/tlaplus/releases/tags/v1.8.0), verified on 2026-10-15. All three formal runners use this same pin; historical measurements are separate from fresh runs against the replacement asset.
 
 ## Executable conformance
 
