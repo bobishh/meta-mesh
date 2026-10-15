@@ -75,6 +75,11 @@ pub struct WasmStateCore;
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    #[wasm_bindgen(js_name = causalAdmissionPolicyId)]
+    pub fn causal_admission_policy_id() -> String {
+        meta_mesh_core::causal_admission::CAUSAL_ADMISSION_POLICY_ID.into()
+    }
+
     #[wasm_bindgen(js_name = evaluateCausalAdmission)]
     pub fn evaluate_causal_admission(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::causal_admission::CausalAdmissionInput =

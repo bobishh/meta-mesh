@@ -23,7 +23,7 @@ export type WorkspaceGrant = SignedEnvelope<{
   role: WorkspaceRole
   accessEpoch?: number
   automation?: {
-    version: 1
+    version: 1 | 2
     boardId: string
     columns: { lead: string; applied?: string; interview: string; rejected: string }
     fieldIds: string[]

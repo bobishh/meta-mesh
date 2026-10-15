@@ -443,14 +443,21 @@ impl BrowserWebRtcStream {
             .await
     }
 
-    pub async fn read_to_end(&self) -> Result<Vec<u8>, JsValue> {
-        let mut out = Vec::new();
-        loop {
-            let Some(chunk) = self.read_chunk().await? else {
-                return Ok(out);
-            };
-            out.extend_from_slice(&chunk);
+    pub async fn reset(&self) -> Result<(), JsValue> {
+        if let Some(stream) = self.node.runtime.take_stream_for_reset(&self.stream_key)? {
+            stream.reset().await;
         }
+        Ok(())
+    }
+
+    pub async fn read_to_end(&self, maximum_bytes: usize) -> Result<Vec<u8>, JsValue> {
+        let stream = self.node.runtime.stream_for_read(&self.stream_key)?;
+        let result = stream.read_to_end(maximum_bytes).await;
+        if result.is_err() {
+            // The read stopped both directions; also retire its runtime handle.
+            let _ = self.node.runtime.take_stream_for_reset(&self.stream_key);
+        }
+        result.map_err(|error| JsValue::from_str(&error))
     }
 
     pub async fn read_chunk(&self) -> Result<Option<Vec<u8>>, JsValue> {

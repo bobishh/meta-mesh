@@ -53,7 +53,7 @@ impl AutomationGrantScope {
             .len()
             == columns.len();
         if !distinct
-            || self.version != 1
+            || !matches!(self.version, 1 | 2)
             || self.board_id.is_empty()
             || columns.iter().any(|id| id.is_empty())
             || columns[0] == columns[1]
@@ -340,13 +340,14 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         validate_authority(&raw.genesis_owner)?;
         validate_authority(&raw.expected_current_owner)?;
         let by_hash = document_hashes(&raw.document)?;
-        let (current_owner, historical_owners, _) = verified_ownership_chain_with_graph(
-            raw,
-            now_ms,
-            &std::collections::HashSet::new(),
-            true,
-            &by_hash,
-        )?;
+        let (current_owner, historical_owners, ownership_frontiers) =
+            verified_ownership_chain_with_graph(
+                raw,
+                now_ms,
+                &std::collections::HashSet::new(),
+                true,
+                &by_hash,
+            )?;
         if current_owner.person_id != raw.expected_current_owner.person_id
             || current_owner.public_key != raw.expected_current_owner.public_key
         {
@@ -354,8 +355,17 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         }
         let mut authorities = historical_owners.clone();
         authorities.push(current_owner.clone());
-        let revocation_boundaries =
-            verified_revocation_boundaries(raw, &authorities, now_ms, &by_hash)?;
+        let revocation_boundaries = verified_revocation_boundaries(
+            raw,
+            &authorities,
+            &current_owner.person_id,
+            &ownership_frontiers,
+            now_ms,
+            &by_hash,
+        )?;
+        // The final pass builds the retained frontiers after checking revocations.
+        // Release this history-sized temporary before allocating its replacement.
+        drop(ownership_frontiers);
         let revoked_people = revocation_boundaries
             .keys()
             .cloned()
@@ -368,14 +378,26 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
         >::new();
         for evidence in &raw.device_revocations {
             validate_authority(&evidence.signer)?;
-            let signed_by_owner = crate::authority::verify_workspace_device_revocation(
-                &evidence.record,
-                &raw.workspace_id,
-                &current_owner.person_id,
-                &current_owner,
-                now_ms,
-            )
-            .is_ok();
+            let signed_by_owner = std::iter::once(&current_owner)
+                .chain(historical_owners.iter())
+                .any(|authority| {
+                    authority.person_id == evidence.signer.person_id
+                        && authority.public_key == evidence.signer.public_key
+                        && owner_control_frontier_allowed(
+                            &authority.person_id,
+                            &current_owner.person_id,
+                            &evidence.record.payload.workspace_heads,
+                            &historical_hashes,
+                        )
+                        && crate::authority::verify_workspace_device_revocation(
+                            &evidence.record,
+                            &raw.workspace_id,
+                            &authority.person_id,
+                            &evidence.signer,
+                            now_ms,
+                        )
+                        .is_ok()
+                });
             let signed_by_subject = !signed_by_owner
                 && crate::authority::verify_workspace_device_revocation(
                     &evidence.record,
@@ -766,6 +788,8 @@ fn document_hashes(
 fn verified_revocation_boundaries(
     raw: &WorkspaceWriteAuthorizationSnapshot,
     authorities: &[WorkspaceAuthority],
+    current_owner_id: &str,
+    ownership_frontiers: &std::collections::HashMap<String, std::collections::HashSet<String>>,
     now_ms: i128,
     by_hash: &DocumentGraph,
 ) -> Result<std::collections::HashMap<String, Vec<RevocationBoundary>>, String> {
@@ -775,6 +799,14 @@ fn verified_revocation_boundaries(
             .iter()
             .find(|authority| authority.person_id == record.payload.owner_person_id)
             .ok_or_else(|| "Workspace revocation has an unknown owner".to_string())?;
+        if !owner_control_frontier_allowed(
+            &authority.person_id,
+            current_owner_id,
+            &record.payload.workspace_heads,
+            ownership_frontiers,
+        ) {
+            return Err("Workspace revocation exceeds historical Owner authority".into());
+        }
         crate::authority::verify_workspace_revocation(
             record,
             &raw.workspace_id,
@@ -791,6 +823,18 @@ fn verified_revocation_boundaries(
             });
     }
     Ok(boundaries)
+}
+
+fn owner_control_frontier_allowed(
+    person_id: &str,
+    current_owner_id: &str,
+    heads: &[String],
+    ownership_frontiers: &std::collections::HashMap<String, std::collections::HashSet<String>>,
+) -> bool {
+    person_id == current_owner_id
+        || ownership_frontiers
+            .get(person_id)
+            .is_some_and(|allowed| heads.iter().all(|head| allowed.contains(head)))
 }
 
 fn verified_departure_boundaries(
@@ -889,6 +933,7 @@ pub fn verify_workspace_grant(
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod history_control;
     use crate::{
         DeviceCertificatePayload, certificate_hash, public_key_from_seed, sign_device_certificate,
         sign_json_envelope,

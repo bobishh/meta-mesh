@@ -8,7 +8,17 @@
     "./protocol": "./src/protocol.ts",
     "./automerge": "./src/automerge.ts",
     "./gossip": "./src/gossip.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./replica-engine": "./src/replicaEngine.ts",
+    "./history-archive": "./src/historyArchive.ts",
+    "./history-archive-store": "./src/historyArchiveStore.ts",
+    "./history-archive-crypto": "./src/historyArchiveCrypto.ts",
+    "./history-archive-locators": "./src/historyArchiveLocators.ts",
+    "./history-archive-locator-preparation": "./src/historyArchiveLocatorPreparation.ts",
+    "./history-archive-remote": "./src/historyArchiveRemote.ts",
+    "./history-archive-coverage": "./src/historyArchiveCoverage.ts",
+    "./history-archive-coverage-set": "./src/historyArchiveCoverageSet.ts",
+    "./history-preparation-journal": "./src/historyPreparationJournal.ts"
   },
   "dependencies": {
     "@meta-uber/mesh-identity": "*"

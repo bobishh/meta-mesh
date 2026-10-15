@@ -1,6 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use automerge::{AutoCommit, Change, ROOT, ReadDoc, ScalarValue, hydrate::Value as HydratedValue};
+use automerge::{
+    AutoCommit, Change, ObjId, Prop, ROOT, ReadDoc, ScalarValue, hydrate::Value as HydratedValue,
+};
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD as BASE64, URL_SAFE_NO_PAD},
@@ -31,6 +33,10 @@ pub struct CausalAdmissionInput {
     /// author timestamps to prove when an automation change was created.
     pub now_ms: i128,
 }
+
+/// Retained archive observations name these rules explicitly. Changes to causal
+/// admission semantics require a new policy ID and reader compatibility review.
+pub const CAUSAL_ADMISSION_POLICY_ID: &str = "mesh-causal-admission@2";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -277,6 +283,8 @@ pub fn evaluate_causal_admission(
             )
         })
         .collect::<HashMap<_, _>>();
+    let mut application_source_creations = HashMap::<String, (Vec<String>, Option<ObjId>)>::new();
+    let mut entities_map_rebindings = HashMap::<String, ObjId>::new();
 
     // Resolve repeatedly; serialized arrival order cannot decide whether a
     // dependency was classified before its child.
@@ -335,7 +343,41 @@ pub fn evaluate_causal_admission(
                 )
             }) {
                 let own_status = if let Some(role) = roles.get(&node.hash).copied() {
-                    if role == WorkspaceRole::Editor && node.dependencies.is_empty() {
+                    if let Some(previous_entities_id) = workspace_entities_map_rebound(
+                        admission_document(&mut raw, &input.snapshot.document)?,
+                        node,
+                    ) {
+                        entities_map_rebindings.insert(node.hash.clone(), previous_entities_id);
+                    }
+                    let source_result = {
+                        let raw_document = admission_document(&mut raw, &input.snapshot.document)?;
+                        if application_source_change_may_touch(raw_document, node) {
+                            application_source_change_allowed(
+                                raw_document,
+                                node,
+                                role,
+                                &input.snapshot.workspace_id,
+                                automation_scopes.get(&node.hash),
+                            )
+                        } else {
+                            Ok(Vec::new())
+                        }
+                    };
+                    if let Ok(created_ids) = &source_result {
+                        if !created_ids.is_empty() {
+                            let entities_id = workspace_entities_object_at_frontier(
+                                admission_document(&mut raw, &input.snapshot.document)?,
+                                std::slice::from_ref(&node.hash),
+                            );
+                            application_source_creations
+                                .insert(node.hash.clone(), (created_ids.clone(), entities_id));
+                        }
+                    }
+                    if let Err(reason) = source_result {
+                        CausalAdmissionStatus::Quarantined {
+                            reason: reason.into(),
+                        }
+                    } else if role == WorkspaceRole::Editor && node.dependencies.is_empty() {
                         CausalAdmissionStatus::Quarantined {
                             reason: "Editors cannot create the initial workspace change".into(),
                         }
@@ -387,6 +429,39 @@ pub fn evaluate_causal_admission(
             *status = CausalAdmissionStatus::Pending {
                 reason: "Change dependency chain is unresolved".into(),
             };
+        }
+    }
+
+    let conflicted_sources = if application_source_creations.is_empty() {
+        BTreeSet::new()
+    } else {
+        raw.as_mut()
+            .map(application_source_conflicts)
+            .unwrap_or_default()
+    };
+    for (hash, (created_ids, _)) in &application_source_creations {
+        if created_ids.iter().any(|id| conflicted_sources.contains(id)) {
+            statuses.insert(
+                hash.clone(),
+                CausalAdmissionStatus::Quarantined {
+                    reason:
+                        "Concurrent application source creation conflicts on the same record id"
+                            .into(),
+                },
+            );
+        }
+    }
+    for (hash, previous_entities_id) in entities_map_rebindings {
+        let rebind_conflicts_with_source = application_source_creations
+            .values()
+            .any(|(_, source_base_id)| source_base_id.as_ref() == Some(&previous_entities_id));
+        if rebind_conflicts_with_source {
+            statuses.insert(
+                hash,
+                CausalAdmissionStatus::Quarantined {
+                    reason: "Workspace entities map rebind conflicts with an application source created from that map".into(),
+                },
+            );
         }
     }
 
@@ -661,6 +736,593 @@ fn change_root_views(
     Ok((before, after))
 }
 
+const MAX_APPLICATION_SOURCE_RECORDS: usize = 20_000;
+const MAX_APPLICATION_SOURCE_BYTES: usize = 65_536;
+
+/// Admit immutable source observations at the signed change boundary. The
+/// materialized root is read at this change's causal frontier, so concurrent
+/// independent records remain independent while edits cannot masquerade as
+/// creation on a later branch.
+fn application_source_change_allowed(
+    raw: &mut AutoCommit,
+    node: &ChangeNode,
+    role: WorkspaceRole,
+    workspace_id: &str,
+    automation_scope: Option<&AutomationGrantScope>,
+) -> Result<Vec<String>, &'static str> {
+    let (before, after) = change_root_views(raw, node)
+        .map_err(|_| "Application source change views are unavailable")?;
+    let (HydratedValue::Map(mut before_root), HydratedValue::Map(mut after_root)) = (before, after)
+    else {
+        return Err("Application source workspace root is not a map");
+    };
+    let before_entities = before_root
+        .remove("entities")
+        .and_then(|value| match value.value {
+            HydratedValue::Map(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let after_entities = after_root
+        .remove("entities")
+        .and_then(|value| match value.value {
+            HydratedValue::Map(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    let candidates = before_entities
+        .keys()
+        .chain(after_entities.keys())
+        .filter(|id| {
+            id.starts_with("application-source:")
+                || before_entities
+                    .get(*id)
+                    .and_then(map_value)
+                    .and_then(|map| scalar_string(map.get("kind")))
+                    .as_deref()
+                    == Some("application_source")
+                || after_entities
+                    .get(*id)
+                    .and_then(map_value)
+                    .and_then(|map| scalar_string(map.get("kind")))
+                    .as_deref()
+                    == Some("application_source")
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if candidates.len() > MAX_APPLICATION_SOURCE_RECORDS {
+        return Err("Application source record limit exceeded");
+    }
+
+    let mut created_ids = Vec::new();
+    for id in candidates {
+        let before_value = before_entities.get(&id);
+        let after_value = after_entities.get(&id);
+        let protected = id.starts_with("application-source:")
+            || before_value
+                .and_then(map_value)
+                .and_then(|map| scalar_string(map.get("kind")))
+                .as_deref()
+                == Some("application_source")
+            || after_value
+                .and_then(map_value)
+                .and_then(|map| scalar_string(map.get("kind")))
+                .as_deref()
+                == Some("application_source");
+        let before_conflict = map_entry_conflict(&before_entities, &id);
+        let after_conflict = map_entry_conflict(&after_entities, &id);
+        if !protected && !before_conflict && !after_conflict {
+            continue;
+        }
+        if before_value == after_value && before_conflict == after_conflict {
+            continue;
+        }
+        if before_value.is_some() {
+            return Err("Application source records cannot be edited, deleted, moved, or archived");
+        }
+        if !matches!(role, WorkspaceRole::Owner | WorkspaceRole::Editor)
+            && !(role == WorkspaceRole::Automation
+                && automation_scope.is_some_and(|scope| scope.version == 2))
+        {
+            return Err("This workspace role cannot create application source records");
+        }
+        let Some(entity) = after_value else {
+            continue;
+        };
+        if after_conflict {
+            return Err("Application source record creation has a same-id conflict");
+        }
+        validate_application_source_entity(&id, entity, &after_entities, workspace_id)?;
+        created_ids.push(id);
+    }
+    Ok(created_ids)
+}
+
+/// Inspect this signed change's operations and their historical parent paths.
+/// Never expand recursive document patches: an unrelated title edit must not
+/// decode the card's unchanged narrative or other visible board content.
+fn application_source_change_may_touch(raw: &mut AutoCommit, node: &ChangeNode) -> bool {
+    use automerge::legacy::{Key, ObjectId, OpType};
+    let hash = node.change.hash();
+    if raw.get_change_by_hash(&hash).is_none() {
+        return true;
+    }
+    // Expanded legacy operations allocate per-character structs for browser
+    // Text. Large changes use the complete source transition check directly,
+    // which reads materialized text rather than expanding its operation log.
+    if node.change.len() > 32_768 {
+        return true;
+    }
+    let expanded = node.change.decode();
+    let mut checked_objects = HashSet::new();
+    for operation in &expanded.operations {
+        if matches!(&operation.key, Key::Map(key) if key.starts_with("application-source:"))
+            || matches!(&operation.action, OpType::Put(ScalarValue::Str(text)) if text == "application_source")
+        {
+            return true;
+        }
+        let ObjectId::Id(id) = &operation.obj else {
+            continue;
+        };
+        if !checked_objects.insert(operation.obj.clone()) {
+            continue;
+        }
+        let Ok(object) = raw.import_obj(&format!("{}@{}", id.counter(), id.actor())) else {
+            return true;
+        };
+        let created_here = id.actor() == &expanded.actor_id
+            && id.counter() >= expanded.start_op.get()
+            && id.counter()
+                < expanded
+                    .start_op
+                    .get()
+                    .saturating_add(expanded.operations.len() as u64);
+        let after_heads = [hash];
+        if matches!(&operation.key, Key::Map(key) if key == "kind")
+            && application_source_kind_at(raw, &object, &after_heads)
+        {
+            return true;
+        }
+        let frontiers: &[&[automerge::ChangeHash]] = if created_here {
+            &[&after_heads]
+        } else {
+            &[node.change.deps(), &after_heads]
+        };
+        for heads in frontiers {
+            let Ok(mut parents) = raw.parents_at(&object, heads) else {
+                return true;
+            };
+            if parents.any(|parent| match parent.prop {
+                Prop::Map(key) => {
+                    key.starts_with("application-source:")
+                        || key == "kind"
+                            && application_source_kind_at(raw, &parent.obj, &after_heads)
+                }
+                _ => false,
+            }) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn application_source_kind_at(
+    raw: &AutoCommit,
+    object: &ObjId,
+    heads: &[automerge::ChangeHash],
+) -> bool {
+    match raw.get_at(object, "kind", heads) {
+        Ok(Some((automerge::Value::Scalar(value), _))) => {
+            matches!(value.as_ref(), ScalarValue::Str(text) if text == "application_source")
+        }
+        Ok(Some((automerge::Value::Object(automerge::ObjType::Text), id))) => {
+            raw.length_at(&id, heads) == 18
+                && raw
+                    .text_at(&id, heads)
+                    .is_ok_and(|text| text == "application_source")
+        }
+        _ => false,
+    }
+}
+
+fn map_entry_conflict(map: &automerge::hydrate::Map, id: &str) -> bool {
+    map.iter().any(|(key, value)| key == id && value.conflict)
+}
+
+fn application_source_conflicts(raw: &mut AutoCommit) -> BTreeSet<String> {
+    let Ok(HydratedValue::Map(root)) = raw.hydrate(&ROOT, None) else {
+        return BTreeSet::new();
+    };
+    let Some(HydratedValue::Map(entities)) = root.get("entities") else {
+        return BTreeSet::new();
+    };
+    entities
+        .iter()
+        .filter_map(|(id, value)| {
+            let source_candidate = id.starts_with("application-source:")
+                || map_value(&value.value)
+                    .and_then(|map| scalar_string(map.get("kind")))
+                    .as_deref()
+                    == Some("application_source");
+            (source_candidate && (value.conflict || hydrated_map_has_conflict(&value.value)))
+                .then(|| id.clone())
+        })
+        .collect()
+}
+
+fn workspace_entities_map_rebound(raw: &mut AutoCommit, node: &ChangeNode) -> Option<ObjId> {
+    let Ok(Some((before_value, before_id))) = raw.get_at(ROOT, "entities", node.change.deps())
+    else {
+        return None;
+    };
+    if !matches!(
+        before_value,
+        automerge::Value::Object(automerge::ObjType::Map)
+    ) {
+        return None;
+    }
+    let hash = node.change.hash();
+    match raw.get_at(ROOT, "entities", &[hash]) {
+        Ok(Some((automerge::Value::Object(automerge::ObjType::Map), after_id)))
+            if before_id == after_id =>
+        {
+            None
+        }
+        Ok(_) => Some(before_id),
+        Err(_) => None,
+    }
+}
+
+fn workspace_entities_object_at_frontier(raw: &mut AutoCommit, heads: &[String]) -> Option<ObjId> {
+    let hashes = heads
+        .iter()
+        .map(|hash| hash.parse().ok())
+        .collect::<Option<Vec<_>>>()?;
+    let (value, id) = raw.get_at(ROOT, "entities", &hashes).ok()??;
+    matches!(value, automerge::Value::Object(automerge::ObjType::Map)).then_some(id)
+}
+
+fn hydrated_map_has_conflict(value: &HydratedValue) -> bool {
+    match value {
+        HydratedValue::Map(map) => map
+            .iter()
+            .any(|(_, entry)| entry.conflict || hydrated_map_has_conflict(&entry.value)),
+        _ => false,
+    }
+}
+
+fn validate_application_source_entity(
+    entity_id: &str,
+    value: &HydratedValue,
+    entities: &automerge::hydrate::Map,
+    workspace_id: &str,
+) -> Result<(), &'static str> {
+    let Some(entity) = map_value(value) else {
+        return Err("Application source entity is malformed");
+    };
+    let Some(record_id) = entity_id.strip_prefix("application-source:") else {
+        return Err("Application source id must use its reserved prefix");
+    };
+    if record_id.is_empty()
+        || record_id.len() > 128
+        || !record_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err("Application source id is malformed");
+    }
+    if entity.len() != 8
+        || scalar_string(entity.get("id")).as_deref() != Some(entity_id)
+        || scalar_string(entity.get("kind")).as_deref() != Some("application_source")
+        || scalar_string(entity.get("title")).as_deref() != Some("Application source")
+        || !matches!(
+            entity.get("archivedAt"),
+            Some(HydratedValue::Scalar(ScalarValue::Null))
+        )
+    {
+        return Err("Application source entity fields are malformed");
+    }
+    let created_at = scalar_string(entity.get("createdAt"))
+        .ok_or("Application source creation time is missing")?;
+    let updated_at = scalar_string(entity.get("updatedAt"))
+        .ok_or("Application source update time is missing")?;
+    if created_at != updated_at || !canonical_rfc3339(&created_at) {
+        return Err("Application source timestamps must be equal canonical ISO values");
+    }
+    let placement = entity
+        .get("placement")
+        .and_then(map_value)
+        .ok_or("Application source placement is missing")?;
+    if placement.len() != 2 || scalar_string(placement.get("rank")).as_deref() != Some("0/1") {
+        return Err("Application source placement is malformed");
+    }
+    let card_id = scalar_string(placement.get("parentId"))
+        .ok_or("Application source parent card is missing")?;
+    if !valid_js_identifier(&card_id) {
+        return Err("Application source parent card id is outside bounds");
+    }
+    let Some(card) = entities.get(&card_id).and_then(map_value) else {
+        return Err("Application source parent card does not exist");
+    };
+    if scalar_string(card.get("id")).as_deref() != Some(card_id.as_str())
+        || card.get("kind").is_some()
+        || !is_item_map(card)
+    {
+        return Err("Application source parent must be a kindless item card");
+    }
+    let data = scalar_string(entity.get("data")).ok_or("Application source data is missing")?;
+    if data.len() > MAX_APPLICATION_SOURCE_BYTES {
+        return Err("Application source data exceeds size limit");
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&data).map_err(|_| "Application source data is not valid JSON")?;
+    if crate::identity::canonicalize_json(&parsed).as_deref() != Ok(data.as_str()) {
+        return Err("Application source data must use canonical JSON encoding");
+    }
+    let object = parsed
+        .as_object()
+        .ok_or("Application source data must be a JSON object")?;
+    if !exact_keys(
+        object,
+        &[
+            "kind",
+            "version",
+            "recordId",
+            "workspaceId",
+            "cardId",
+            "applicationId",
+            "observation",
+        ],
+    ) || object.get("kind").and_then(serde_json::Value::as_str)
+        != Some("application-source-observation")
+        || object.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+        || object.get("recordId").and_then(serde_json::Value::as_str) != Some(record_id)
+        || object
+            .get("workspaceId")
+            .and_then(serde_json::Value::as_str)
+            != Some(workspace_id)
+        || object.get("cardId").and_then(serde_json::Value::as_str) != Some(card_id.as_str())
+        || !valid_js_identifier(workspace_id)
+        || !valid_js_identifier(card_id.as_str())
+        || !object
+            .get("applicationId")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|application_id| js_units(application_id) <= 513)
+        || object
+            .get("applicationId")
+            .and_then(serde_json::Value::as_str)
+            != Some(format!("{workspace_id}:{card_id}").as_str())
+    {
+        return Err("Application source data scope or schema is invalid");
+    }
+    validate_application_source_observation(
+        object
+            .get("observation")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("Application source observation is missing")?,
+        record_id,
+        workspace_id,
+        &card_id,
+        &format!("{workspace_id}:{card_id}"),
+        entities,
+    )
+}
+
+fn validate_application_source_observation(
+    observation: &serde_json::Map<String, serde_json::Value>,
+    record_id: &str,
+    workspace_id: &str,
+    card_id: &str,
+    application_id: &str,
+    entities: &automerge::hydrate::Map,
+) -> Result<(), &'static str> {
+    const FIELDS: &[&str] = &[
+        "phase",
+        "origin",
+        "status",
+        "observedAt",
+        "jobUrl",
+        "originalRecordId",
+        "company",
+        "title",
+        "text",
+        "extractorVersion",
+        "contentDigest",
+        "reason",
+    ];
+    if observation
+        .keys()
+        .any(|key| !FIELDS.contains(&key.as_str()))
+    {
+        return Err("Application source observation has unknown fields");
+    }
+    let phase = json_string(observation, "phase")?;
+    let origin = json_string(observation, "origin")?;
+    let status = json_string(observation, "status")?;
+    if !matches!(phase, "original" | "refresh" | "legacy")
+        || !matches!(origin, "website" | "email" | "manual" | "legacy")
+        || !matches!(
+            status,
+            "available" | "pending" | "not-found" | "unavailable" | "missing-evidence"
+        )
+    {
+        return Err("Application source observation enum is invalid");
+    }
+    let observed_at = json_string(observation, "observedAt")?;
+    if !canonical_rfc3339(observed_at) {
+        return Err("Application source observation time is not canonical ISO");
+    }
+    if let Some(url) = observation.get("jobUrl") {
+        let raw = url.as_str().ok_or("Application source URL must be text")?;
+        let parsed = url::Url::parse(raw).map_err(|_| "Application source URL is invalid")?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || js_units(raw) > 4096
+        {
+            return Err("Application source URL must use HTTPS without credentials");
+        }
+    }
+    let available_fields = [
+        "company",
+        "title",
+        "text",
+        "extractorVersion",
+        "contentDigest",
+    ];
+    if status == "available" {
+        if observation.contains_key("reason") {
+            return Err("Available application source cannot contain a reason");
+        }
+        let company = json_string(observation, "company")?;
+        let title = json_string(observation, "title")?;
+        let text = json_string(observation, "text")?;
+        let extractor = json_string(observation, "extractorVersion")?;
+        let digest = json_string(observation, "contentDigest")?;
+        if company.trim().is_empty()
+            || js_units(company) > 512
+            || title.trim().is_empty()
+            || js_units(title) > 2048
+            || text.trim().is_empty()
+            || js_units(text) > 48_000
+            || extractor.trim().is_empty()
+            || js_units(extractor) > 128
+        {
+            return Err("Available application source content is outside bounds");
+        }
+        let decoded = URL_SAFE_NO_PAD
+            .decode(digest)
+            .map_err(|_| "Application source digest is malformed")?;
+        if decoded.len() != 32 || URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes())) != digest
+        {
+            return Err("Application source digest does not match its text");
+        }
+    } else if available_fields
+        .iter()
+        .any(|field| observation.contains_key(*field))
+    {
+        return Err("Non-available application source cannot contain extracted content");
+    }
+    if let Some(reason) = observation.get("reason") {
+        let reason = reason
+            .as_str()
+            .ok_or("Application source reason must be text")?;
+        if js_units(reason) > 2048 {
+            return Err("Application source reason exceeds size limit");
+        }
+    }
+    match phase {
+        "refresh" => {
+            let original_id = json_string(observation, "originalRecordId")?;
+            if original_id == record_id || !valid_source_record_id(original_id) {
+                return Err("Application refresh source reference is invalid");
+            }
+            let key = format!("application-source:{original_id}");
+            let Some(original) = entities.get(&key).and_then(map_value) else {
+                return Err("Application refresh source record is missing");
+            };
+            let source_data = scalar_string(original.get("data"))
+                .ok_or("Application refresh source record is malformed")?;
+            let source: serde_json::Value = serde_json::from_str(&source_data)
+                .map_err(|_| "Application refresh source record is malformed")?;
+            if source
+                .get("applicationId")
+                .and_then(serde_json::Value::as_str)
+                != Some(application_id)
+                || source
+                    .get("workspaceId")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(workspace_id)
+                || source.get("cardId").and_then(serde_json::Value::as_str) != Some(card_id)
+                || source.get("recordId").and_then(serde_json::Value::as_str) != Some(original_id)
+                || source
+                    .pointer("/observation/phase")
+                    .and_then(serde_json::Value::as_str)
+                    != Some("original")
+            {
+                return Err(
+                    "Application refresh reference must name an original from the same application",
+                );
+            }
+            // Check the target phase before full validation: validating another refresh
+            // recursively follows its reference and would permit a cyclic chain to exhaust
+            // the stack on hostile input.
+            validate_application_source_entity(
+                &key,
+                &HydratedValue::Map(original.clone()),
+                entities,
+                workspace_id,
+            )?;
+        }
+        "original" | "legacy" if observation.contains_key("originalRecordId") => {
+            return Err("Only refresh observations can reference an original record");
+        }
+        _ => {}
+    }
+    if phase == "legacy" {
+        if origin != "legacy" || status != "missing-evidence" {
+            return Err("Legacy application source must be marked missing-evidence");
+        }
+    } else if origin == "legacy" || status == "missing-evidence" {
+        return Err("Non-legacy application source cannot use legacy markers");
+    }
+    Ok(())
+}
+
+fn valid_source_record_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn js_units(value: &str) -> usize {
+    value.encode_utf16().count()
+}
+
+fn valid_js_identifier(value: &str) -> bool {
+    !value.is_empty() && js_units(value) <= 256
+}
+
+fn exact_keys(map: &serde_json::Map<String, serde_json::Value>, expected: &[&str]) -> bool {
+    map.len() == expected.len() && expected.iter().all(|key| map.contains_key(*key))
+}
+
+fn json_string<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<&'a str, &'static str> {
+    object
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .ok_or("Application source observation field is missing or malformed")
+}
+
+fn canonical_rfc3339(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 24
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'.'
+        || bytes[23] != b'Z'
+    {
+        return false;
+    }
+    let Ok(parsed) =
+        time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
+    else {
+        return false;
+    };
+    parsed.offset() == time::UtcOffset::UTC && parsed.nanosecond() % 1_000_000 == 0
+}
+
 fn visitor_profile_change_only(
     raw: &mut AutoCommit,
     node: &ChangeNode,
@@ -798,10 +1460,18 @@ fn automation_change_allowed(
         .collect::<std::collections::BTreeSet<_>>();
     let mut changed_items = Vec::new();
     let mut rank_siblings = Vec::new();
+    let mut source_append = None;
     for id in ids {
         let left = left_entities.get(&id);
         let right = right_entities.get(&id);
         if left == right {
+            continue;
+        }
+        if id.starts_with("application-source:") {
+            if scope.version != 2 || left.is_some() || source_append.is_some() {
+                return Err("Automation source append requires v2 and one new immutable record");
+            }
+            source_append = Some(right.ok_or("Automation cannot delete application sources")?);
             continue;
         }
         if let (Some(left), Some(right)) = (left, right) {
@@ -811,6 +1481,20 @@ fn automation_change_allowed(
             }
         }
         changed_items.push((id, left, right));
+    }
+    // A source-only refresh still has exactly one bound card. This does not
+    // permit an original to be retroactively invented for an existing card.
+    if changed_items.is_empty() {
+        if let Some(source) = source_append {
+            let card_id = map_value(source)
+                .and_then(placement_parent)
+                .ok_or("Automation source card is missing")?;
+            changed_items.push((
+                card_id.clone(),
+                left_entities.get(&card_id),
+                right_entities.get(&card_id),
+            ));
+        }
     }
     if changed_items.len() != 1 {
         return Err("Automation change must affect one job card");
@@ -823,6 +1507,9 @@ fn automation_change_allowed(
     }
     if scalar_string(after_map.get("id")).as_deref() != Some(item_id.as_str()) {
         return Err("Automation item ID does not match its entity key");
+    }
+    if let Some(source) = source_append {
+        check_automation_source_append(source, &item_id, before_item.is_some(), &left_entities)?;
     }
     let after_parent = placement_parent(after_map).ok_or("Automation item placement is invalid")?;
     let source_parent;
@@ -847,7 +1534,10 @@ fn automation_change_allowed(
             return Err("Automation can move cards only to approved application columns");
         }
         check_item_delta(before_map, after_map, &scope.field_ids)?;
-        if old_parent == after_parent && before_map.get("values") == after_map.get("values") {
+        if old_parent == after_parent
+            && before_map.get("values") == after_map.get("values")
+            && source_append.is_none()
+        {
             return Err("Automation change has no approved card effect");
         }
         if before_map.get("workflow") != after_map.get("workflow") {
@@ -927,6 +1617,38 @@ fn automation_change_allowed(
     })
 }
 
+fn check_automation_source_append(
+    source: &HydratedValue,
+    card_id: &str,
+    existing_card: bool,
+    before_entities: &automerge::hydrate::Map,
+) -> Result<(), &'static str> {
+    let source = map_value(source).ok_or("Automation source is invalid")?;
+    if placement_parent(source).as_deref() != Some(card_id) {
+        return Err("Automation source must belong to its one affected card");
+    }
+    let encoded = scalar_string(source.get("data")).ok_or("Automation source data is missing")?;
+    let data: serde_json::Value =
+        serde_json::from_str(&encoded).map_err(|_| "Automation source data is invalid")?;
+    let observation = data
+        .get("observation")
+        .ok_or("Automation source observation is missing")?;
+    let phase = observation.get("phase").and_then(serde_json::Value::as_str);
+    if !existing_card && phase == Some("original") {
+        return Ok(());
+    }
+    if existing_card && phase == Some("refresh") {
+        let original = observation
+            .get("originalRecordId")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("Automation refresh reference is missing")?;
+        if before_entities.contains_key(&format!("application-source:{original}")) {
+            return Ok(());
+        }
+    }
+    Err("Automation requires an original with a new card or a refresh of a prior original")
+}
+
 fn is_archived(value: Option<&HydratedValue>) -> bool {
     scalar_string(value).is_some()
 }
@@ -982,10 +1704,10 @@ fn placement_parent(map: &automerge::hydrate::Map) -> Option<String> {
 
 fn entity_has_child(entities: &automerge::hydrate::Map, id: &str) -> bool {
     entities.values().any(|entity| {
-        map_value(&entity.value)
-            .and_then(placement_parent)
-            .as_deref()
-            == Some(id)
+        map_value(&entity.value).is_some_and(|map| {
+            scalar_string(map.get("kind")).as_deref() != Some("application_source")
+                && placement_parent(map).as_deref() == Some(id)
+        })
     })
 }
 

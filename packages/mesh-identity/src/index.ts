@@ -65,7 +65,7 @@ export type DeviceCertificate = SignedEnvelope<{
   deviceId: DeviceId
   devicePublicKey: string
   issuerCertificateHash: string | null
-  canEnrollDevices: true
+  canEnrollDevices: boolean
 }>
 
 export type LocalProfile = {
@@ -463,6 +463,23 @@ type SerializedProfile = {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+export type IdentityAdoptionCommitPlan = {
+  storageKey: string
+  previousProfile: string | null
+  candidateProfile: string
+  publicProfile: Pick<LocalProfile, "identity" | "device" | "certificate">
+  backup?: { key: string; value: string }
+}
+
+export type IdentityAdoptionCommit = (
+  plan: IdentityAdoptionCommitPlan,
+  ensureCurrent: () => void,
+) => Promise<void>
+
 export function canonicalizeJson(value: unknown): string {
   if (value === null || typeof value !== "object") {
     if (typeof value === "number" && !Number.isFinite(value)) {
@@ -622,6 +639,67 @@ export class BrowserIdentityStore {
     this.booting = null
   }
 
+  /** A replaced cached identity must invalidate operations still holding its previous profile. */
+  isCurrentProfile(profile: LocalProfile): boolean { return this.profile === profile }
+
+  /** Refresh presentation labels after a trusted app transaction updates durable local metadata. */
+  async refreshPresentation(expectedRaw?: string): Promise<LocalProfile> {
+    const current = this.profile
+    if (!current) throw new Error("Identity must be bootstrapped before presentation refresh")
+    const active = current
+    const privateKeys = { ...current.privateKeys }
+    const baseline: LocalProfile = {
+      identity: structuredClone(current.identity),
+      device: structuredClone(current.device),
+      certificate: structuredClone(current.certificate),
+      privateKeys,
+    }
+    const currentPublic = canonicalizeJson({ identity: baseline.identity, device: baseline.device, certificate: baseline.certificate })
+    const ensureCurrent = () => {
+      if (this.profile !== active || active.privateKeys.devicePrivateKey !== privateKeys.devicePrivateKey ||
+        active.privateKeys.identityPrivateKey !== privateKeys.identityPrivateKey ||
+        canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+        throw new Error("Identity changed during presentation refresh")
+      }
+    }
+
+    const baselineSerialized = JSON.parse(await this.serialize(baseline)) as SerializedProfile
+    ensureCurrent()
+    const raw = await this.get(this.options.storageKey)
+    ensureCurrent()
+    if (expectedRaw !== undefined && raw !== expectedRaw) {
+      throw new Error("Durable identity presentation changed since it was captured")
+    }
+    if (raw === null) throw new Error("Durable identity profile is missing")
+
+    let saved: unknown
+    try { saved = JSON.parse(raw) as unknown }
+    catch { throw new Error("Durable identity profile is malformed") }
+    if (!isRecord(saved) || !isRecord(saved.identity) || !isRecord(saved.device) ||
+      typeof saved.identity.displayName !== "string" || saved.identity.displayName.length === 0 || saved.identity.displayName.length > 256 ||
+      typeof saved.device.displayName !== "string" || saved.device.displayName.length === 0 || saved.device.displayName.length > 256) {
+      throw new Error("Durable identity presentation is invalid")
+    }
+    const expected: SerializedProfile = {
+      ...baselineSerialized,
+      identity: { ...baselineSerialized.identity, displayName: saved.identity.displayName },
+      device: { ...baselineSerialized.device, displayName: saved.device.displayName },
+    }
+    if (canonicalizeJson(saved) !== canonicalizeJson(expected)) {
+      throw new Error("Durable identity changed outside presentation metadata")
+    }
+
+    const refreshed: LocalProfile = {
+      identity: { ...baseline.identity, displayName: saved.identity.displayName },
+      device: { ...baseline.device, displayName: saved.device.displayName },
+      certificate: baseline.certificate,
+      privateKeys,
+    }
+    ensureCurrent()
+    this.profile = refreshed
+    return refreshed
+  }
+
   reset() {
     this.clearMemory()
     void this.remove(this.options.storageKey)
@@ -704,22 +782,26 @@ export class BrowserIdentityStore {
     }
   }
 
+  private async serialize(profile: LocalProfile): Promise<string> {
+    const serialized: SerializedProfile = {
+      identity: profile.identity,
+      device: profile.device,
+      certificate: profile.certificate,
+      privateKeys: {
+        identityPrivateKeyPkcs8: profile.privateKeys.identityPrivateKey
+          ? toBase64Url(new Uint8Array(await crypto.subtle.exportKey("pkcs8", profile.privateKeys.identityPrivateKey)))
+          : undefined,
+        devicePrivateKeyPkcs8: toBase64Url(
+          new Uint8Array(await crypto.subtle.exportKey("pkcs8", profile.privateKeys.devicePrivateKey)),
+        ),
+      },
+    }
+    return JSON.stringify(serialized)
+  }
+
   private async persist(profile: LocalProfile, strict = false) {
     try {
-      const serialized: SerializedProfile = {
-        identity: profile.identity,
-        device: profile.device,
-        certificate: profile.certificate,
-        privateKeys: {
-          identityPrivateKeyPkcs8: profile.privateKeys.identityPrivateKey
-            ? toBase64Url(new Uint8Array(await crypto.subtle.exportKey("pkcs8", profile.privateKeys.identityPrivateKey)))
-            : undefined,
-          devicePrivateKeyPkcs8: toBase64Url(
-            new Uint8Array(await crypto.subtle.exportKey("pkcs8", profile.privateKeys.devicePrivateKey)),
-          ),
-        },
-      }
-      await this.set(this.options.storageKey, JSON.stringify(serialized), strict)
+      await this.set(this.options.storageKey, await this.serialize(profile), strict)
     } catch (error) {
       if (strict || this.options.requirePersistence) throw error
     }
@@ -788,17 +870,62 @@ export class BrowserIdentityStore {
     return profile
   }
 
-  async adopt(identity: PublicIdentity, certificate: DeviceCertificate): Promise<LocalProfile> {
+  async adopt(identity: PublicIdentity, certificate: DeviceCertificate, commit?: IdentityAdoptionCommit): Promise<LocalProfile> {
+    const submittedIdentity = structuredClone(identity)
+    const submittedCertificate = structuredClone(certificate)
     const current = await this.bootstrap()
+    const active = this.profile
+    const keys = { ...current.privateKeys }
+    const currentPublic = canonicalizeJson({ identity: current.identity, device: current.device, certificate: current.certificate })
+    const ensureCurrent = () => {
+      if (!active || this.profile !== active || active.privateKeys.devicePrivateKey !== keys.devicePrivateKey ||
+        active.privateKeys.identityPrivateKey !== keys.identityPrivateKey ||
+        canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+        throw new Error("Identity changed during adoption")
+      }
+    }
     const previous = await this.get(this.options.storageKey)
+    ensureCurrent()
+    const saved = previous ? JSON.parse(previous) as SerializedProfile : null
+    if (!saved || canonicalizeJson({ identity: saved.identity, device: saved.device, certificate: saved.certificate }) !== currentPublic) {
+      if (this.profile === current) this.clearMemory()
+      throw new Error("Durable identity changed before adoption")
+    }
+    if (commit) {
+      const profile: LocalProfile = {
+        identity: submittedIdentity,
+        certificate: submittedCertificate,
+        device: structuredClone(current.device),
+        privateKeys: current.identity.personId === submittedIdentity.personId
+          ? keys
+          : { devicePrivateKey: keys.devicePrivateKey },
+      }
+      const candidateProfile = await this.serialize(profile)
+      const plan: IdentityAdoptionCommitPlan = {
+        storageKey: this.options.storageKey,
+        previousProfile: previous,
+        candidateProfile,
+        publicProfile: {
+          identity: structuredClone(profile.identity),
+          device: structuredClone(profile.device),
+          certificate: structuredClone(profile.certificate),
+        },
+        ...(previous ? { backup: { key: `${this.options.storageKey}.backup.${current.identity.personId}`, value: previous } } : {}),
+      }
+      ensureCurrent()
+      await commit(structuredClone(plan), ensureCurrent)
+      ensureCurrent()
+      this.profile = profile
+      return profile
+    }
     if (previous) await this.set(`${this.options.storageKey}.backup.${current.identity.personId}`, previous, true)
     const profile: LocalProfile = {
-      identity,
-      certificate,
+      identity: submittedIdentity,
+      certificate: submittedCertificate,
       device: current.device,
-      privateKeys: current.identity.personId === identity.personId
-        ? current.privateKeys
-        : { devicePrivateKey: current.privateKeys.devicePrivateKey },
+      privateKeys: current.identity.personId === submittedIdentity.personId
+        ? keys
+        : { devicePrivateKey: keys.devicePrivateKey },
     }
     await this.persist(profile, true)
     this.profile = profile
@@ -806,10 +933,53 @@ export class BrowserIdentityStore {
   }
 
   /** Updates local presentation metadata without changing the identity keys. */
-  async rename(displayName: string): Promise<LocalProfile> {
+  async rename(displayName: string, commit?: IdentityAdoptionCommit): Promise<LocalProfile> {
     const clean = displayName.trim()
     if (!clean || clean.length > 256) throw new Error("Identity name must be between 1 and 256 characters")
     const current = await this.bootstrap()
+    if (commit) {
+      const active = this.profile
+      const keys = { ...current.privateKeys }
+      const currentPublic = canonicalizeJson({ identity: current.identity, device: current.device, certificate: current.certificate })
+      const ensureCurrent = () => {
+        if (!active || this.profile !== active || active.privateKeys.devicePrivateKey !== keys.devicePrivateKey ||
+          active.privateKeys.identityPrivateKey !== keys.identityPrivateKey ||
+          canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+          throw new Error("Identity changed during rename")
+        }
+      }
+      const previous = await this.get(this.options.storageKey)
+      ensureCurrent()
+      const saved = previous ? JSON.parse(previous) as SerializedProfile : null
+      if (!saved || canonicalizeJson({ identity: saved.identity, device: saved.device, certificate: saved.certificate }) !== currentPublic) {
+        if (this.profile === current) this.clearMemory()
+        throw new Error("Durable identity changed before rename")
+      }
+      const defaultDeviceName = `${current.identity.displayName}'s device`
+      const profile: LocalProfile = {
+        ...current,
+        identity: { ...current.identity, displayName: clean },
+        device: {
+          ...current.device,
+          ...(current.device.displayName === defaultDeviceName ? { displayName: `${clean}'s device` } : {}),
+        },
+      }
+      const plan: IdentityAdoptionCommitPlan = {
+        storageKey: this.options.storageKey,
+        previousProfile: previous,
+        candidateProfile: await this.serialize(profile),
+        publicProfile: {
+          identity: structuredClone(profile.identity),
+          device: structuredClone(profile.device),
+          certificate: structuredClone(profile.certificate),
+        },
+      }
+      ensureCurrent()
+      await commit(structuredClone(plan), ensureCurrent)
+      ensureCurrent()
+      this.profile = profile
+      return profile
+    }
     const defaultDeviceName = `${current.identity.displayName}'s device`
     const profile: LocalProfile = {
       ...current,

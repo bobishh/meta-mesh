@@ -185,25 +185,16 @@ impl BrowserRuntimeNode {
             "reading Iroh stream chunk"
         );
         if stream.closed_recv.load(Ordering::SeqCst) {
-            return Ok(BrowserStreamReceiveOutcome {
-                done: true,
-                chunk: None,
-            });
+            return Err(BrowserRuntimeError::closed());
         }
         let mut recv = stream.recv.lock().await;
         if stream.closed_recv.load(Ordering::SeqCst) {
-            return Ok(BrowserStreamReceiveOutcome {
-                done: true,
-                chunk: None,
-            });
+            return Err(BrowserRuntimeError::closed());
         }
         let mut chunk = vec![0u8; limit];
         let len = tokio::select! {
             _ = stream.recv_cancel.notified() => {
-                return Ok(BrowserStreamReceiveOutcome {
-                    done: true,
-                    chunk: None,
-                });
+                return Err(BrowserRuntimeError::closed());
             }
             result = recv.read(&mut chunk) => result.map_err(|err| {
                 tracing::debug!(
@@ -292,6 +283,17 @@ impl BrowserRuntimeNode {
         Ok(BrowserStreamCloseSendOutcome { closed: true })
     }
 
+    pub(in crate::browser_runtime) fn take_stream_for_reset(
+        &self,
+        stream_key: BrowserStreamKey,
+    ) -> Option<Arc<BrowserStreamState>> {
+        self.inner
+            .lock()
+            .expect("browser runtime node mutex poisoned")
+            .streams
+            .remove(&stream_key)
+    }
+
     fn insert_stream(
         &self,
         send: SendStream,
@@ -315,7 +317,7 @@ impl BrowserRuntimeNode {
         Ok(stream_key)
     }
 
-    fn stream_handle(
+    pub(in crate::browser_runtime) fn stream_handle(
         &self,
         stream_key: BrowserStreamKey,
     ) -> BrowserRuntimeResult<Arc<BrowserStreamState>> {

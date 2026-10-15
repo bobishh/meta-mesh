@@ -1,4 +1,5 @@
 export type RustStateCore = {
+  causalAdmissionPolicyId(): string
   evaluateCausalAdmission(input: unknown): unknown
   createCoownershipGenesisPayload(input: unknown): unknown
   validateCoownershipLedger(ledger: unknown): unknown

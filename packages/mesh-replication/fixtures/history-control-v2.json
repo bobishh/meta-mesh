@@ -1,0 +1,707 @@
+{
+  "cases": [
+    {
+      "allowed": true,
+      "control": {
+        "departures": [],
+        "deviceRevocations": [
+          {
+            "record": {
+              "payload": {
+                "deviceId": "ojkpRNgkZrcSR4sl2VpWMxEbx2fAMSGq2ifb00hAaAE",
+                "kind": "workspace-device-revocation",
+                "personId": "DAY0rAYiDwwjBcictVumhQ5r_A-2T4LIx9qE44zYjIg",
+                "revokedAt": "1970-01-01T00:00:00.000Z",
+                "version": 1,
+                "workspaceHeads": [
+                  "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+                ],
+                "workspaceId": "workspace"
+              },
+              "signature": "iU-i6BXHFKEm7UAb3zBBoicqp8nhz_Yf0iztG9B7FxmVEwTmC2Mirpb4CxyFEpVIXse8N_5Mlc3WoRR81UNaCQ",
+              "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+            },
+            "signer": {
+              "certificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                    "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                    "version": 1
+                  },
+                  "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+                  "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+                }
+              ],
+              "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+            }
+          }
+        ],
+        "expectedCurrentOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                "version": 1
+              },
+              "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+              "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+            }
+          ],
+          "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+          "publicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms"
+        },
+        "genesisEpoch": 1,
+        "genesisOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "version": 1
+              },
+              "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+              "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+            }
+          ],
+          "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+          "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+        },
+        "ownershipTransfers": [
+          {
+            "payload": {
+              "epoch": 2,
+              "formerOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "former-owner",
+                  "kind": "workspace-grant",
+                  "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                  "role": "editor",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_TA9Uf5-lGp-jVLXWx59uSiC0Y0HDd5h5kxf7z03FCNNpy2hI-XG-PlDI-0QcxSb3h_zNf2WNBMHwV3eINKYCQ",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "fromOwnerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "kind": "workspace-ownership-transfer",
+              "toOwnerCertificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                    "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                    "version": 1
+                  },
+                  "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+                  "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+                }
+              ],
+              "toOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "next-owner",
+                  "kind": "workspace-grant",
+                  "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                  "role": "owner",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_Azw4GRSPiEXHf8ch-9U79LXfn8miL7-Lzu10_jZKawjDpeIpL0DNH165eFnHcY5wJ7fJ_cVGK8x7nIXWVRVDA",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "toOwnerPersonId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+              "toOwnerPublicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms",
+              "transferredAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "az9nALo_7xIS1z4vBqcXnswSs_kgLy3kX0Vy5czppr34p14PeNLrW52BRg2c8o3SO-URAMQb5gMdKWiO1D_sDw",
+            "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+          }
+        ],
+        "revocations": [],
+        "successionClaims": [],
+        "workspaceId": "workspace"
+      },
+      "document": "hW9Kg-75ZP4AfAEQiYmJiYmJiYmJiYmJiYmJiQG-ic1LTvNrANpPLJh_g-5w5qSjFvMZRTADhkz4eu5jEgcBAgMCEwIjAkADQwJWAgcVDiECIwM0AUICVgKAAQICAAIBAgECAH4AAX8AAgd-BWFmdGVyBmJlZm9yZQIAfgJ_AgIBAgICAAE",
+      "name": "owner-device-removal-before-transfer"
+    },
+    {
+      "allowed": false,
+      "control": {
+        "departures": [],
+        "deviceRevocations": [
+          {
+            "record": {
+              "payload": {
+                "deviceId": "ojkpRNgkZrcSR4sl2VpWMxEbx2fAMSGq2ifb00hAaAE",
+                "kind": "workspace-device-revocation",
+                "personId": "DAY0rAYiDwwjBcictVumhQ5r_A-2T4LIx9qE44zYjIg",
+                "revokedAt": "1970-01-01T00:00:00.000Z",
+                "version": 1,
+                "workspaceHeads": [
+                  "be89cd4b4ef36b00da4f2c987f83ee70e6a4a316f319453003864cf87aee6312"
+                ],
+                "workspaceId": "workspace"
+              },
+              "signature": "0-Yjx3dEtZOhfWDHH0GNJhRtUSVtLv7DDywa4KAZsLQ8i9N34Ycp2dJzGkBk4HJ5Y_N386FoTM8B93Ce8-GGCQ",
+              "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+            },
+            "signer": {
+              "certificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                    "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                    "version": 1
+                  },
+                  "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+                  "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+                }
+              ],
+              "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+            }
+          }
+        ],
+        "expectedCurrentOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                "version": 1
+              },
+              "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+              "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+            }
+          ],
+          "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+          "publicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms"
+        },
+        "genesisEpoch": 1,
+        "genesisOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "version": 1
+              },
+              "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+              "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+            }
+          ],
+          "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+          "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+        },
+        "ownershipTransfers": [
+          {
+            "payload": {
+              "epoch": 2,
+              "formerOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "former-owner",
+                  "kind": "workspace-grant",
+                  "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                  "role": "editor",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_TA9Uf5-lGp-jVLXWx59uSiC0Y0HDd5h5kxf7z03FCNNpy2hI-XG-PlDI-0QcxSb3h_zNf2WNBMHwV3eINKYCQ",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "fromOwnerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "kind": "workspace-ownership-transfer",
+              "toOwnerCertificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                    "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                    "version": 1
+                  },
+                  "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+                  "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+                }
+              ],
+              "toOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "next-owner",
+                  "kind": "workspace-grant",
+                  "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                  "role": "owner",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_Azw4GRSPiEXHf8ch-9U79LXfn8miL7-Lzu10_jZKawjDpeIpL0DNH165eFnHcY5wJ7fJ_cVGK8x7nIXWVRVDA",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "toOwnerPersonId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+              "toOwnerPublicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms",
+              "transferredAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "az9nALo_7xIS1z4vBqcXnswSs_kgLy3kX0Vy5czppr34p14PeNLrW52BRg2c8o3SO-URAMQb5gMdKWiO1D_sDw",
+            "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+          }
+        ],
+        "revocations": [],
+        "successionClaims": [],
+        "workspaceId": "workspace"
+      },
+      "document": "hW9Kg-75ZP4AfAEQiYmJiYmJiYmJiYmJiYmJiQG-ic1LTvNrANpPLJh_g-5w5qSjFvMZRTADhkz4eu5jEgcBAgMCEwIjAkADQwJWAgcVDiECIwM0AUICVgKAAQICAAIBAgECAH4AAX8AAgd-BWFmdGVyBmJlZm9yZQIAfgJ_AgIBAgICAAE",
+      "name": "former-owner-device-removal-after-transfer"
+    },
+    {
+      "allowed": false,
+      "control": {
+        "departures": [],
+        "deviceRevocations": [],
+        "expectedCurrentOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                "version": 1
+              },
+              "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+              "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+            }
+          ],
+          "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+          "publicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms"
+        },
+        "genesisEpoch": 1,
+        "genesisOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "version": 1
+              },
+              "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+              "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+            }
+          ],
+          "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+          "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+        },
+        "ownershipTransfers": [
+          {
+            "payload": {
+              "epoch": 2,
+              "formerOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "former-owner",
+                  "kind": "workspace-grant",
+                  "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                  "role": "editor",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_TA9Uf5-lGp-jVLXWx59uSiC0Y0HDd5h5kxf7z03FCNNpy2hI-XG-PlDI-0QcxSb3h_zNf2WNBMHwV3eINKYCQ",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "fromOwnerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "kind": "workspace-ownership-transfer",
+              "toOwnerCertificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                    "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                    "version": 1
+                  },
+                  "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+                  "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+                }
+              ],
+              "toOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "next-owner",
+                  "kind": "workspace-grant",
+                  "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                  "role": "owner",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_Azw4GRSPiEXHf8ch-9U79LXfn8miL7-Lzu10_jZKawjDpeIpL0DNH165eFnHcY5wJ7fJ_cVGK8x7nIXWVRVDA",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "toOwnerPersonId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+              "toOwnerPublicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms",
+              "transferredAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "az9nALo_7xIS1z4vBqcXnswSs_kgLy3kX0Vy5czppr34p14PeNLrW52BRg2c8o3SO-URAMQb5gMdKWiO1D_sDw",
+            "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+          }
+        ],
+        "revocations": [
+          {
+            "payload": {
+              "epoch": 2,
+              "kind": "workspace-revocation",
+              "ownerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "personId": "DAY0rAYiDwwjBcictVumhQ5r_A-2T4LIx9qE44zYjIg",
+              "revokedAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "be89cd4b4ef36b00da4f2c987f83ee70e6a4a316f319453003864cf87aee6312"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "fT5nyzESogcFlemc4SQDzVaOJZq4O780goSnl2TsU5i90VUI4Afodw2db_v611CT9zOZuUU63Rs1JK2r_Af1CA",
+            "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+          }
+        ],
+        "successionClaims": [],
+        "workspaceId": "workspace"
+      },
+      "document": "hW9Kg-75ZP4AfAEQiYmJiYmJiYmJiYmJiYmJiQG-ic1LTvNrANpPLJh_g-5w5qSjFvMZRTADhkz4eu5jEgcBAgMCEwIjAkADQwJWAgcVDiECIwM0AUICVgKAAQICAAIBAgECAH4AAX8AAgd-BWFmdGVyBmJlZm9yZQIAfgJ_AgIBAgICAAE",
+      "name": "former-owner-person-removal-after-transfer"
+    },
+    {
+      "allowed": true,
+      "control": {
+        "departures": [],
+        "deviceRevocations": [],
+        "expectedCurrentOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                "version": 1
+              },
+              "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+              "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+            }
+          ],
+          "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+          "publicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms"
+        },
+        "genesisEpoch": 1,
+        "genesisOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "version": 1
+              },
+              "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+              "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+            }
+          ],
+          "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+          "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+        },
+        "ownershipTransfers": [
+          {
+            "payload": {
+              "epoch": 2,
+              "formerOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "former-owner",
+                  "kind": "workspace-grant",
+                  "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                  "role": "editor",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_TA9Uf5-lGp-jVLXWx59uSiC0Y0HDd5h5kxf7z03FCNNpy2hI-XG-PlDI-0QcxSb3h_zNf2WNBMHwV3eINKYCQ",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "fromOwnerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "kind": "workspace-ownership-transfer",
+              "toOwnerCertificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                    "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                    "version": 1
+                  },
+                  "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+                  "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+                }
+              ],
+              "toOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "next-owner",
+                  "kind": "workspace-grant",
+                  "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                  "role": "owner",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_Azw4GRSPiEXHf8ch-9U79LXfn8miL7-Lzu10_jZKawjDpeIpL0DNH165eFnHcY5wJ7fJ_cVGK8x7nIXWVRVDA",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "toOwnerPersonId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+              "toOwnerPublicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms",
+              "transferredAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "az9nALo_7xIS1z4vBqcXnswSs_kgLy3kX0Vy5czppr34p14PeNLrW52BRg2c8o3SO-URAMQb5gMdKWiO1D_sDw",
+            "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+          }
+        ],
+        "revocations": [
+          {
+            "payload": {
+              "epoch": 2,
+              "kind": "workspace-revocation",
+              "ownerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "personId": "DAY0rAYiDwwjBcictVumhQ5r_A-2T4LIx9qE44zYjIg",
+              "revokedAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "5M1scE3dsE2zKvTbRDlcjLdKaeP8EM234r0wimGFVkoPEpX6OAFZllSMbHB6WY284_TA2jIG9NuxoyJlgLMxCg",
+            "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+          }
+        ],
+        "successionClaims": [],
+        "workspaceId": "workspace"
+      },
+      "document": "hW9Kg-75ZP4AfAEQiYmJiYmJiYmJiYmJiYmJiQG-ic1LTvNrANpPLJh_g-5w5qSjFvMZRTADhkz4eu5jEgcBAgMCEwIjAkADQwJWAgcVDiECIwM0AUICVgKAAQICAAIBAgECAH4AAX8AAgd-BWFmdGVyBmJlZm9yZQIAfgJ_AgIBAgICAAE",
+      "name": "owner-person-removal-before-transfer"
+    },
+    {
+      "allowed": true,
+      "control": {
+        "departures": [],
+        "deviceRevocations": [
+          {
+            "record": {
+              "payload": {
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "kind": "workspace-device-revocation",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "revokedAt": "1970-01-01T00:00:00.000Z",
+                "version": 1,
+                "workspaceHeads": [
+                  "be89cd4b4ef36b00da4f2c987f83ee70e6a4a316f319453003864cf87aee6312"
+                ],
+                "workspaceId": "workspace"
+              },
+              "signature": "Fd-NTZzNTcLMSUreTETVucv-bXGyAwuIVnkC59c3dggG5BeQ9Z_1wOH6vNngfR-MNlGzlQO4qA9refaItrgRCg",
+              "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+            },
+            "signer": {
+              "certificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                    "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                    "version": 1
+                  },
+                  "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+                  "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+                }
+              ],
+              "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+            }
+          }
+        ],
+        "expectedCurrentOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                "version": 1
+              },
+              "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+              "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+            }
+          ],
+          "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+          "publicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms"
+        },
+        "genesisEpoch": 1,
+        "genesisOwner": {
+          "certificates": [
+            {
+              "payload": {
+                "canEnrollDevices": true,
+                "deviceId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE",
+                "devicePublicKey": "Pm6nrLpZVoxfNqy0GBb7FqsrJ6sTq9OLCSTKJpGtZZk",
+                "issuerCertificateHash": null,
+                "kind": "device-certificate",
+                "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                "version": 1
+              },
+              "signature": "4bofvYk6zfDTXI2VNn3ye9T4gWhGNIIB2FsqS2MnKKepX3vxKPES8pgjhQjI_gxHSka3BdSJJUCYPXnEgP4LAw",
+              "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+            }
+          ],
+          "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+          "publicKey": "1238bj1eePRsVOlCHJedzcDZ0DmBthqGWrICsYCNzpA"
+        },
+        "ownershipTransfers": [
+          {
+            "payload": {
+              "epoch": 2,
+              "formerOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "former-owner",
+                  "kind": "workspace-grant",
+                  "personId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+                  "role": "editor",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_TA9Uf5-lGp-jVLXWx59uSiC0Y0HDd5h5kxf7z03FCNNpy2hI-XG-PlDI-0QcxSb3h_zNf2WNBMHwV3eINKYCQ",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "fromOwnerPersonId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo",
+              "kind": "workspace-ownership-transfer",
+              "toOwnerCertificates": [
+                {
+                  "payload": {
+                    "canEnrollDevices": true,
+                    "deviceId": "Is09kQbKVvvUD19BJlw15HZ7oJor-6vZqQPgzbiExtM",
+                    "devicePublicKey": "Zz1rovpIznbs8YEJDNpgeUDFBSBEoDd_FZxZzPpUrSQ",
+                    "issuerCertificateHash": null,
+                    "kind": "device-certificate",
+                    "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                    "version": 1
+                  },
+                  "signature": "iVDlNwGLSzDWI7qJhZAC4Lq1g6bKxvo0ei26JY18EPvtpzUacmmo-pmkkSvrnYXg4IWzVkIpY-QjrdrpEZ4DCQ",
+                  "signerKeyId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU"
+                }
+              ],
+              "toOwnerGrant": {
+                "payload": {
+                  "accessEpoch": 2,
+                  "grantId": "next-owner",
+                  "kind": "workspace-grant",
+                  "personId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+                  "role": "owner",
+                  "version": 1,
+                  "workspaceId": "workspace"
+                },
+                "signature": "_Azw4GRSPiEXHf8ch-9U79LXfn8miL7-Lzu10_jZKawjDpeIpL0DNH165eFnHcY5wJ7fJ_cVGK8x7nIXWVRVDA",
+                "signerKeyId": "SERmgx3eJ_Rl8OaxRkgGufK2Rc5o1QE0OWoHDDQ_nMo"
+              },
+              "toOwnerPersonId": "kb3jkjl_8z1i7XnQjZ-RgXNAZL9izJaTL-iKdNAEkWU",
+              "toOwnerPublicKey": "EAupC1U8yyP_E9UIwforM8grK9aFiaBAOfoFLxpwLms",
+              "transferredAt": "1970-01-01T00:00:00.000Z",
+              "version": 1,
+              "workspaceHeads": [
+                "dd595872489c81dc1f115c815592c7344bf33b9ddfaf8dbd9d5ce42d0c91fd48"
+              ],
+              "workspaceId": "workspace"
+            },
+            "signature": "az9nALo_7xIS1z4vBqcXnswSs_kgLy3kX0Vy5czppr34p14PeNLrW52BRg2c8o3SO-URAMQb5gMdKWiO1D_sDw",
+            "signerKeyId": "SJK0ylvyypmr3vgHpQp-Y3IpP5UzNUFcsjMO7sW2_tE"
+          }
+        ],
+        "revocations": [],
+        "successionClaims": [],
+        "workspaceId": "workspace"
+      },
+      "document": "hW9Kg-75ZP4AfAEQiYmJiYmJiYmJiYmJiYmJiQG-ic1LTvNrANpPLJh_g-5w5qSjFvMZRTADhkz4eu5jEgcBAgMCEwIjAkADQwJWAgcVDiECIwM0AUICVgKAAQICAAIBAgECAH4AAX8AAgd-BWFmdGVyBmJlZm9yZQIAfgJ_AgIBAgICAAE",
+      "name": "former-owner-removes-own-device-after-transfer"
+    }
+  ],
+  "kind": "history-control-fixture",
+  "policy": "mesh-causal-admission@2",
+  "version": 1
+}

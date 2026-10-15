@@ -1,0 +1,26 @@
+{
+  "scope": {
+    "scopeId": "opaque-fixture-scope",
+    "keyEpoch": 3
+  },
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "binding": {
+    "workspaceId": "fixture-workspace",
+    "historyEpoch": 7,
+    "indexId": "original-proofs",
+    "objectId": "CBAqLNjGFydDU0uwb-D6TvT0PtWYexLq4hnPRPnpFtM",
+    "objectKind": "part",
+    "partIndex": 2,
+    "partCount": 4
+  },
+  "plaintext": "IHsgInNpZ25hdHVyZSI6ICJyZXRhaW5lZCIsICJvcmlnaW5hbCI6ICLQmNGB0YXQvtC00L3QuNC6IPCfmIAiIH0K",
+  "aad": "TUVTSC1ISVNUT1JZLzEvYXJjaGl2ZS1vYmplY3QAeyJoaXN0b3J5RXBvY2giOjcsImluZGV4SWQiOiJvcmlnaW5hbC1wcm9vZnMiLCJrZXlFcG9jaCI6Mywib2JqZWN0SWQiOiJDQkFxTE5qR0Z5ZERVMHV3Yi1ENlR2VDBQdFdZZXhMcTRoblBSUG5wRnRNIiwib2JqZWN0S2luZCI6InBhcnQiLCJwYXJ0Q291bnQiOjQsInBhcnRJbmRleCI6MiwicHVycG9zZSI6ImFyY2hpdmUiLCJzY29wZUlkIjoib3BhcXVlLWZpeHR1cmUtc2NvcGUiLCJ3b3Jrc3BhY2VJZCI6ImZpeHR1cmUtd29ya3NwYWNlIn0",
+  "object": {
+    "version": 1,
+    "scopeId": "opaque-fixture-scope",
+    "keyEpoch": 3,
+    "nonce": "oKGio6Slpqeoqaqr",
+    "ciphertext": "xmNcDzaiZdEDEfKhYlj6_lLePGTz3iwJ-CwKpl3EB2i1HymewwBpHX1MnBmIqwYp-cvymN8Aoq77fvvBPPCnkMm2Zd9vD9xNsHGTVxZC8xv56A"
+  },
+  "ciphertextId": "dkOmkO1n9hSRRPINyDP1FwlKfhOSYP1NMFUCFGIdmvc"
+}

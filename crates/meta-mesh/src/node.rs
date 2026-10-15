@@ -149,13 +149,24 @@ impl BrowserStream {
     }
 
     #[wasm_bindgen(js_name = read)]
-    pub async fn read(&self) -> Result<Vec<u8>, JsValue> {
-        self.inner.read_to_end().await
+    pub async fn read(&self, maximum_bytes: Option<usize>) -> Result<Vec<u8>, JsValue> {
+        self.inner
+            .read_to_end(maximum_bytes.unwrap_or(usize::MAX))
+            .await
     }
 
     #[wasm_bindgen(js_name = closeSend)]
     pub async fn close_send(&self) -> Result<(), JsValue> {
         self.inner.close_send().await
+    }
+
+    #[wasm_bindgen(js_name = reset, unchecked_return_type = "Promise<void>")]
+    pub fn reset(&self) -> js_sys::Promise {
+        let stream = self.inner.clone();
+        wasm_bindgen_futures::future_to_promise(async move {
+            stream.reset().await?;
+            Ok(JsValue::UNDEFINED)
+        })
     }
 }
 
