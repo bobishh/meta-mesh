@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_compact::{KeyPair, PublicKey, Seed, Signature};
@@ -9,6 +10,39 @@ use sha2::{Digest, Sha256};
 
 pub const DEFAULT_SIGNATURE_DOMAIN: &str = "MATCH/1";
 pub const MAX_CERTIFICATE_CHAIN_LENGTH: usize = 32;
+const VERIFIED_SIGNATURE_CACHE_LIMIT: usize = 512;
+
+#[derive(Default)]
+struct VerifiedSignatureCache {
+    digests: HashSet<[u8; 32]>,
+    order: VecDeque<[u8; 32]>,
+}
+
+impl VerifiedSignatureCache {
+    fn insert(&mut self, digest: [u8; 32]) {
+        if self.digests.contains(&digest) {
+            return;
+        }
+        if self.order.len() == VERIFIED_SIGNATURE_CACHE_LIMIT {
+            if let Some(oldest) = self.order.pop_front() {
+                self.digests.remove(&oldest);
+            }
+        }
+        self.digests.insert(digest);
+        self.order.push_back(digest);
+    }
+}
+
+std::thread_local! {
+    // Only immutable Ed25519 relations; every caller still validates current
+    // certificate ancestry, signer identity, scope, expiry and revocation policy.
+    static VERIFIED_SIGNATURES: RefCell<VerifiedSignatureCache> = RefCell::new(VerifiedSignatureCache::default());
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static SIGNATURE_VERIFICATION_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -161,9 +195,25 @@ pub fn verify_signed_envelope<T: Serialize>(
     let key = PublicKey::from_slice(&decode_public_key(public_key)?)
         .map_err(|_| "Invalid public key".to_string())?;
     let canonical = canonicalize_json(&payload)?;
-    Ok(key
-        .verify(signature_input(kind, &canonical, domain), &signature)
-        .is_ok())
+    let input = signature_input(kind, &canonical, domain);
+    // Fixed-width key/signature followed by the exact domain-separated message
+    // prevents reusing a result for another key, signature, kind or payload.
+    let mut digest = Sha256::new();
+    digest.update(b"meta-mesh/verified-ed25519/v1\0");
+    digest.update(key.as_ref());
+    digest.update(signature.as_ref());
+    digest.update(&input);
+    let digest: [u8; 32] = digest.finalize().into();
+    if VERIFIED_SIGNATURES.with(|cache| cache.borrow().digests.contains(&digest)) {
+        return Ok(true);
+    }
+    #[cfg(test)]
+    SIGNATURE_VERIFICATION_COUNT.with(|count| count.set(count.get() + 1));
+    let verified = key.verify(input, &signature).is_ok();
+    if verified {
+        VERIFIED_SIGNATURES.with(|cache| cache.borrow_mut().insert(digest));
+    }
+    Ok(verified)
 }
 
 pub fn certificate_hash(certificate: &DeviceCertificate) -> Result<String, String> {
@@ -247,6 +297,115 @@ fn decode_public_key(public_key: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn repeated_valid_signature_reuses_only_its_exact_crypto_relation() {
+        VERIFIED_SIGNATURES.with(|cache| *cache.borrow_mut() = VerifiedSignatureCache::default());
+        SIGNATURE_VERIFICATION_COUNT.with(|count| count.set(0));
+        let key = public_key_from_seed(&[71; 32]).unwrap();
+        let signed = sign_json_envelope(
+            &[71; 32],
+            json!({"kind": "cache-proof", "value": 1}),
+            "device",
+            "CACHE/1",
+        )
+        .unwrap();
+        assert!(verify_signed_envelope(&signed, &key, "CACHE/1").unwrap());
+        assert!(verify_signed_envelope(&signed, &key, "CACHE/1").unwrap());
+        assert_eq!(SIGNATURE_VERIFICATION_COUNT.with(|count| count.get()), 1);
+
+        let mut changed = signed.clone();
+        changed.payload["value"] = json!(2);
+        assert!(!verify_signed_envelope(&changed, &key, "CACHE/1").unwrap());
+        assert!(!verify_signed_envelope(&signed, &key, "CACHE/2").unwrap());
+        assert!(
+            !verify_signed_envelope(
+                &signed,
+                &public_key_from_seed(&[72; 32]).unwrap(),
+                "CACHE/1"
+            )
+            .unwrap()
+        );
+        changed = signed.clone();
+        changed.signature = URL_SAFE_NO_PAD.encode([0; 64]);
+        assert!(!verify_signed_envelope(&changed, &key, "CACHE/1").unwrap());
+        // Failed verification never becomes a cached positive.
+        assert!(!verify_signed_envelope(&changed, &key, "CACHE/1").unwrap());
+        assert_eq!(SIGNATURE_VERIFICATION_COUNT.with(|count| count.get()), 6);
+    }
+
+    #[test]
+    fn malformed_signature_inputs_keep_their_original_errors_after_a_valid_hit() {
+        let key = public_key_from_seed(&[73; 32]).unwrap();
+        let signed = sign_json_envelope(
+            &[73; 32],
+            json!({"kind": "cache-errors"}),
+            "device",
+            "CACHE/1",
+        )
+        .unwrap();
+        assert!(verify_signed_envelope(&signed, &key, "CACHE/1").unwrap());
+        let mut changed = signed.clone();
+        changed.signature = "invalid!".into();
+        assert_eq!(
+            verify_signed_envelope(&changed, &key, "CACHE/1"),
+            Err("Invalid signature".into())
+        );
+        assert_eq!(
+            verify_signed_envelope(&signed, "invalid!", "CACHE/1"),
+            Err("Invalid public key".into())
+        );
+        changed = signed;
+        changed.payload = json!({"kind": ""});
+        assert_eq!(
+            verify_signed_envelope(&changed, &key, "CACHE/1"),
+            Err("Signed payload kind missing".into())
+        );
+    }
+
+    #[test]
+    fn signature_cache_retains_a_bounded_fifo_of_successful_verifications() {
+        VERIFIED_SIGNATURES.with(|cache| *cache.borrow_mut() = VerifiedSignatureCache::default());
+        SIGNATURE_VERIFICATION_COUNT.with(|count| count.set(0));
+        let key = public_key_from_seed(&[74; 32]).unwrap();
+        let first = sign_json_envelope(
+            &[74; 32],
+            json!({"kind": "cache-bound", "index": 0}),
+            "device",
+            "CACHE/1",
+        )
+        .unwrap();
+        for index in 0..=VERIFIED_SIGNATURE_CACHE_LIMIT {
+            let signed = sign_json_envelope(
+                &[74; 32],
+                json!({"kind": "cache-bound", "index": index}),
+                "device",
+                "CACHE/1",
+            )
+            .unwrap();
+            assert!(verify_signed_envelope(&signed, &key, "CACHE/1").unwrap());
+            VERIFIED_SIGNATURES.with(|cache| {
+                let cache = cache.borrow();
+                assert!(cache.digests.len() <= VERIFIED_SIGNATURE_CACHE_LIMIT);
+                assert_eq!(cache.digests.len(), cache.order.len());
+            });
+        }
+        assert_eq!(
+            SIGNATURE_VERIFICATION_COUNT.with(|count| count.get()),
+            VERIFIED_SIGNATURE_CACHE_LIMIT + 1
+        );
+        // Eviction affects cost only; the original proof still verifies again.
+        assert!(verify_signed_envelope(&first, &key, "CACHE/1").unwrap());
+        assert_eq!(
+            SIGNATURE_VERIFICATION_COUNT.with(|count| count.get()),
+            VERIFIED_SIGNATURE_CACHE_LIMIT + 2
+        );
+        assert!(verify_signed_envelope(&first, &key, "CACHE/1").unwrap());
+        assert_eq!(
+            SIGNATURE_VERIFICATION_COUNT.with(|count| count.get()),
+            VERIFIED_SIGNATURE_CACHE_LIMIT + 2
+        );
+    }
 
     #[test]
     fn signature_matches_typescript_webcrypto_golden_vector() {
@@ -338,6 +497,20 @@ mod tests {
             )
             .unwrap(),
             leaf_public_key
+        );
+
+        // The root signature is warm, but certificate signer identity is still
+        // checked by the chain policy on every verification.
+        let mut wrong_signer = root.clone();
+        wrong_signer.signer_key_id = "another-person".into();
+        assert!(
+            verify_device_certificate_chain(
+                &identity,
+                &leaf_device_id,
+                &[leaf.clone(), wrong_signer],
+                DEFAULT_SIGNATURE_DOMAIN,
+            )
+            .is_err()
         );
 
         let mut forged = leaf;
