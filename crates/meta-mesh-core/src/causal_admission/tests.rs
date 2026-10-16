@@ -325,6 +325,108 @@ fn automation_scope() -> AutomationGrantScope {
     }
 }
 
+fn board_only_automation_roots() -> (serde_json::Value, serde_json::Value) {
+    let mut entities = serde_json::Map::new();
+    entities.insert(
+        "board".into(),
+        serde_json::json!({"id":"board","kind":"board","archivedAt":null,"archiveColumnId":null}),
+    );
+    for id in ["lead", "interview", "rejected", "other"] {
+        entities.insert(
+            id.into(),
+            serde_json::json!({"id":id,"kind":"column","archivedAt":null,"placement":{"parentId":"board","rank":"0/1"}}),
+        );
+    }
+    entities.insert(
+        "source".into(),
+        serde_json::json!({"id":"source","kind":"field","placement":{"parentId":"board","rank":"0/1"}}),
+    );
+    let before = serde_json::json!({"entities":entities});
+    let mut after = before.clone();
+    after["entities"]["new-card"] = serde_json::json!({
+        "id":"new-card", "title":"Company", "body":"Job description",
+        "values":{"source":"website"}, "placement":{"parentId":"lead","rank":"0/1"},
+        "archivedAt":null
+    });
+    (before, after)
+}
+
+#[test]
+fn public_board_only_automation_validator_reuses_transition_policy() {
+    let (before, after) = board_only_automation_roots();
+    assert!(
+        crate::validate_automation_board_transition(&before, &after, &automation_scope()).is_ok(),
+        "a valid Lead creation must pass without Automerge history"
+    );
+
+    let mut changed_workspace_settings = after.clone();
+    changed_workspace_settings["title"] = serde_json::json!("tampered workspace");
+    let error = crate::validate_automation_board_transition(
+        &before,
+        &changed_workspace_settings,
+        &automation_scope(),
+    )
+    .unwrap_err();
+    assert!(error.contains("workspace settings or schema"));
+
+    let mut before_move = before.clone();
+    before_move["entities"]["existing-card"] = serde_json::json!({
+        "id":"existing-card", "title":"Company", "body":"Job description",
+        "values":{"source":"website"}, "placement":{"parentId":"other","rank":"0/1"},
+        "archivedAt":null
+    });
+    let mut changed_card = before_move.clone();
+    changed_card["entities"]["existing-card"]["placement"]["parentId"] =
+        serde_json::json!("interview");
+    changed_card["entities"]["existing-card"]["title"] = serde_json::json!("rewritten");
+    let error = crate::validate_automation_board_transition(
+        &before_move,
+        &changed_card,
+        &automation_scope(),
+    )
+    .unwrap_err();
+    assert!(error.contains("content outside approved fields"));
+}
+
+#[test]
+fn board_only_automation_validator_accepts_coalesced_safe_cards_and_rejects_mixed_effects() {
+    let (before, _) = board_only_automation_roots();
+    let mut after = before.clone();
+    for id in ["first-card", "second-card"] {
+        after["entities"][id] = serde_json::json!({
+            "id":id, "title":"Company", "body":"Job description",
+            "values":{"source":"website"}, "placement":{"parentId":"lead","rank":"0/1"},
+            "archivedAt":null
+        });
+    }
+    assert!(crate::validate_automation_board_transitions(&before, &after, &automation_scope()).is_ok());
+
+    let card = |id: &str, rank: &str| serde_json::json!({
+        "id":id, "title":"Company", "body":"Job description",
+        "values":{"source":"website"}, "placement":{"parentId":"other","rank":rank},
+        "archivedAt":null
+    });
+    let mut before_move = before.clone();
+    before_move["entities"]["moving-card"] = card("moving-card", "0/1");
+    before_move["entities"]["sibling-card"] = card("sibling-card", "1/1");
+    let mut after_move = before_move.clone();
+    after_move["entities"]["moving-card"]["placement"]["parentId"] = serde_json::json!("interview");
+    after_move["entities"]["sibling-card"]["placement"]["rank"] = serde_json::json!("0/1");
+    assert!(crate::validate_automation_board_transitions(&before_move, &after_move, &automation_scope()).is_ok());
+
+    let mut before_with_existing = before.clone();
+    before_with_existing["entities"]["existing-card"] = serde_json::json!({
+        "id":"existing-card", "title":"Company", "body":"Job description",
+        "values":{"source":"website"}, "placement":{"parentId":"other","rank":"0/1"},
+        "archivedAt":null
+    });
+    let mut mixed = after;
+    mixed["entities"]["existing-card"] = before_with_existing["entities"]["existing-card"].clone();
+    mixed["entities"]["existing-card"]["placement"]["parentId"] = serde_json::json!("interview");
+    mixed["entities"]["existing-card"]["body"] = serde_json::json!("rewritten narrative");
+    assert!(crate::validate_automation_board_transitions(&before_with_existing, &mixed, &automation_scope()).is_err());
+}
+
 #[test]
 fn automation_semantics_allow_lead_creation_and_reject_root_mutation() {
     for (change_root, expected) in [(false, true), (true, false)] {

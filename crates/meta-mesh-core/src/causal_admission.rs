@@ -1484,6 +1484,238 @@ fn automation_change_allowed(
 ) -> Result<AutomationEffect, &'static str> {
     let (before_value, after_value) =
         change_root_views(raw, node).map_err(|_| "Automation change views are unavailable")?;
+    automation_transition_allowed(before_value, after_value, scope)
+}
+
+/// Validate one board-only before/after projection using the same immutable
+/// Automation transition policy as causal admission. The JSON roots must have
+/// an `entities` map keyed by entity ID; no workspace history or keys are used.
+pub fn validate_automation_board_transition(
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+    scope: &AutomationGrantScope,
+) -> Result<(), String> {
+    let before = hydrated_json_value(before).map_err(str::to_string)?;
+    let after = hydrated_json_value(after).map_err(str::to_string)?;
+    automation_transition_allowed(before, after, scope)
+        .map(|_| ())
+        .map_err(str::to_string)
+}
+
+/// Validate several independently coalesced card effects by decomposing them
+/// into one-card steps and applying the causal admission validator to each.
+/// Board settings, schema entities and other entity classes cannot be changed.
+pub fn validate_automation_board_transitions(
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+    scope: &AutomationGrantScope,
+) -> Result<(), String> {
+    let (before_root, before_entities) = board_projection_parts(before)?;
+    let (after_root, after_entities) = board_projection_parts(after)?;
+    let mut before_root_only = before_root.clone();
+    let mut after_root_only = after_root.clone();
+    before_root_only.remove("entities");
+    after_root_only.remove("entities");
+    if before_root_only != after_root_only {
+        return Err("Automation cannot change workspace settings or schema".into());
+    }
+
+    let changed_ids = before_entities
+        .keys()
+        .chain(after_entities.keys())
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut card_ids = std::collections::BTreeSet::new();
+    let mut source_ids = std::collections::BTreeSet::new();
+    let mut rank_ids = std::collections::BTreeSet::new();
+    for id in changed_ids {
+        let left = before_entities.get(&id);
+        let right = after_entities.get(&id);
+        if left == right {
+            continue;
+        }
+        if id.starts_with("application-source:") {
+            source_ids.insert(id);
+        } else if left.is_some_and(json_item_map) || right.is_some_and(json_item_map) {
+            if left.zip(right).is_some_and(|(left, right)| json_rank_only_item(left, right)) {
+                rank_ids.insert(id);
+            } else {
+                card_ids.insert(id);
+            }
+        } else {
+            return Err("Automation cannot change board structure, fields, or other entity types".into());
+        }
+    }
+
+    for source_id in &source_ids {
+        let card_id = after_entities
+            .get(source_id)
+            .and_then(json_placement_parent)
+            .or_else(|| before_entities.get(source_id).and_then(json_placement_parent))
+            .ok_or("Automation source card is missing")?;
+        card_ids.insert(card_id);
+    }
+    if card_ids.is_empty() {
+        return Err("Automation change must affect one job card".into());
+    }
+
+    let mut current = before.clone();
+    let mut assigned_ranks = std::collections::BTreeSet::new();
+    for card_id in card_ids {
+        let current_entities = current
+            .get("entities")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("Automation entity map is missing")?;
+        let mut next = current.clone();
+        let next_entities = next
+            .get_mut("entities")
+            .and_then(serde_json::Value::as_object_mut)
+            .ok_or("Automation entity map is missing")?;
+        match after_entities.get(&card_id) {
+            Some(value) => {
+                next_entities.insert(card_id.clone(), value.clone());
+            }
+            None => {
+                next_entities.remove(&card_id);
+            }
+        }
+        for source_id in &source_ids {
+            let source_card_id = after_entities
+                .get(source_id)
+                .and_then(json_placement_parent)
+                .or_else(|| before_entities.get(source_id).and_then(json_placement_parent));
+            if source_card_id.as_deref() == Some(card_id.as_str()) {
+                match after_entities.get(source_id) {
+                    Some(value) => {
+                        next_entities.insert(source_id.clone(), value.clone());
+                    }
+                    None => {
+                        next_entities.remove(source_id);
+                    }
+                }
+            }
+        }
+
+        let old_parent = current_entities.get(&card_id).and_then(json_placement_parent);
+        let new_parent = after_entities.get(&card_id).and_then(json_placement_parent);
+        for rank_id in &rank_ids {
+            if assigned_ranks.contains(rank_id) {
+                continue;
+            }
+            let left_parent = current_entities.get(rank_id).and_then(json_placement_parent);
+            let right_parent = after_entities.get(rank_id).and_then(json_placement_parent);
+            let relevant = [old_parent.as_deref(), new_parent.as_deref()]
+                .into_iter()
+                .flatten()
+                .any(|parent| left_parent.as_deref() == Some(parent) || right_parent.as_deref() == Some(parent));
+            if relevant {
+                match after_entities.get(rank_id) {
+                    Some(value) => {
+                        next_entities.insert(rank_id.clone(), value.clone());
+                    }
+                    None => {
+                        next_entities.remove(rank_id);
+                    }
+                }
+                assigned_ranks.insert(rank_id.clone());
+            }
+        }
+        validate_automation_board_transition(&current, &next, scope)?;
+        current = next;
+    }
+    if current != *after {
+        return Err("Automation transition cannot be safely decomposed into approved card effects".into());
+    }
+    Ok(())
+}
+
+fn board_projection_parts(
+    value: &serde_json::Value,
+) -> Result<(&serde_json::Map<String, serde_json::Value>, &serde_json::Map<String, serde_json::Value>), String> {
+    let root = value.as_object().ok_or("Automation board projection root is invalid")?;
+    let entities = root
+        .get("entities")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("Automation entity map is missing")?;
+    Ok((root, entities))
+}
+
+fn json_item_map(value: &serde_json::Value) -> bool {
+    value.get("body").is_some_and(serde_json::Value::is_string)
+        && value.get("values").is_some_and(serde_json::Value::is_object)
+}
+
+fn json_placement_parent(value: &serde_json::Value) -> Option<String> {
+    value.get("placement")?.get("parentId")?.as_str().map(str::to_string)
+}
+
+fn json_rank_only_item(before: &serde_json::Value, after: &serde_json::Value) -> bool {
+    if !json_item_map(before)
+        || !json_item_map(after)
+        || json_placement_parent(before) != json_placement_parent(after)
+    {
+        return false;
+    }
+    let (Some(before_placement), Some(after_placement)) = (
+        before.get("placement").and_then(serde_json::Value::as_object),
+        after.get("placement").and_then(serde_json::Value::as_object),
+    ) else {
+        return false;
+    };
+    let mut left = before.clone();
+    let mut right = after.clone();
+    let (Some(left_map), Some(right_map)) = (left.as_object_mut(), right.as_object_mut()) else {
+        return false;
+    };
+    left_map.remove("placement");
+    right_map.remove("placement");
+    let mut left_placement = before_placement.clone();
+    let mut right_placement = after_placement.clone();
+    let left_rank = left_placement.remove("rank");
+    let right_rank = right_placement.remove("rank");
+    left == right && left_placement == right_placement && left_rank != right_rank
+}
+
+fn hydrated_json_value(value: &serde_json::Value) -> Result<HydratedValue, &'static str> {
+    use automerge::hydrate::{List, Map};
+
+    match value {
+        serde_json::Value::Null => Ok(HydratedValue::Scalar(ScalarValue::Null)),
+        serde_json::Value::Bool(value) => Ok(HydratedValue::Scalar(ScalarValue::Boolean(*value))),
+        serde_json::Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Ok(HydratedValue::Scalar(ScalarValue::Int(value)))
+            } else if let Some(value) = value.as_u64() {
+                Ok(HydratedValue::Scalar(ScalarValue::Uint(value)))
+            } else if let Some(value) = value.as_f64() {
+                Ok(HydratedValue::Scalar(ScalarValue::F64(value)))
+            } else {
+                Err("Automation board projection contains an unsupported number")
+            }
+        }
+        serde_json::Value::String(value) => Ok(HydratedValue::Scalar(ScalarValue::Str(
+            value.clone().into(),
+        ))),
+        serde_json::Value::Array(values) => Ok(HydratedValue::List(List::from(
+            values
+                .iter()
+                .map(hydrated_json_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        ))),
+        serde_json::Value::Object(values) => Ok(HydratedValue::Map(Map::from(
+            values
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), hydrated_json_value(value)?)))
+                .collect::<Result<std::collections::HashMap<_, _>, &'static str>>()?,
+        ))),
+    }
+}
+
+fn automation_transition_allowed(
+    before_value: HydratedValue,
+    after_value: HydratedValue,
+    scope: &AutomationGrantScope,
+) -> Result<AutomationEffect, &'static str> {
     let (HydratedValue::Map(mut left_root), HydratedValue::Map(mut right_root)) =
         (before_value, after_value)
     else {

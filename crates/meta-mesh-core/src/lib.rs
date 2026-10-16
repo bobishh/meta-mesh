@@ -93,6 +93,9 @@ pub use bundle_reuse::{BundleReuseInput, can_reuse_member_bundle};
 pub use catalog::{
     MeshCatalog, merge_verified_peer_catalog, validate_mesh_catalog, validate_mesh_catalog_at,
 };
+pub use causal_admission::{
+    validate_automation_board_transition, validate_automation_board_transitions,
+};
 pub use change_admission_flow::{
     ChangeAdmissionChange, ChangeAdmissionFlowInput, ChangeAdmissionFlowPlan,
     plan_change_admission_flow, unsigned_change_error,
