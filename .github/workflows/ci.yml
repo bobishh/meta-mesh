@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: meta-mesh-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   resource-sdk:
     runs-on: ubuntu-latest

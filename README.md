@@ -252,3 +252,5 @@ use size optimization, thin LTO and one code generation unit to deduplicate
 protocol code. Native consumers retain their own release profiles. For symbolized local debugging,
 run `wasm-bindgen` on `target/wasm32-unknown-unknown/release/meta_mesh.wasm`
 without `--remove-name-section` into a separate local output directory.
+
+Resource connections and explicit service capabilities: [`@meta-uber/mesh-resource`](packages/mesh-resource/README.md). Its shared native/WASM validator is `meta_mesh_core::resource_access`; application approval UI and durable authority storage are host-owned.

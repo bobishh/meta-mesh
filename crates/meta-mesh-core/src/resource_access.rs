@@ -548,3 +548,131 @@ pub fn evaluate_resource_access(input: Value) -> Result<Value, String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        DeviceCertificatePayload, public_key_from_seed, sign_device_certificate, sign_json_envelope,
+    };
+
+    fn signer(root: u8, device: u8) -> (PublicIdentity, DeviceCertificate, [u8; 32]) {
+        let root_seed = [root; 32];
+        let seed = [device; 32];
+        let public_key = public_key_from_seed(&root_seed).unwrap();
+        let person_id = public_key_id(&public_key).unwrap();
+        let device_public_key = public_key_from_seed(&seed).unwrap();
+        let device_id = public_key_id(&device_public_key).unwrap();
+        let identity = PublicIdentity {
+            person_id: person_id.clone(),
+            public_key,
+            display_name: "Fixture".into(),
+        };
+        let certificate = sign_device_certificate(
+            &root_seed,
+            DeviceCertificatePayload {
+                kind: "device-certificate".into(),
+                version: 1,
+                person_id: person_id.clone(),
+                device_id,
+                device_public_key,
+                issuer_certificate_hash: None,
+                can_enroll_devices: true,
+            },
+            person_id,
+            "MATCH/1",
+        )
+        .unwrap();
+        (identity, certificate, seed)
+    }
+    fn signed(payload: Value, signer: &(PublicIdentity, DeviceCertificate, [u8; 32])) -> Value {
+        let envelope = sign_json_envelope(
+            &signer.2,
+            payload,
+            &signer.1.payload.device_id,
+            RESOURCE_SIGNATURE_DOMAIN,
+        )
+        .unwrap();
+        json!({"payload":envelope.payload,"signerKeyId":envelope.signer_key_id,"signature":envelope.signature,
+            "identity":signer.0,"deviceId":signer.1.payload.device_id,"certificates":[signer.1]})
+    }
+    fn fixture() -> (
+        Value,
+        Value,
+        Value,
+        Value,
+        (PublicIdentity, DeviceCertificate, [u8; 32]),
+        i64,
+    ) {
+        let owner = signer(11, 12);
+        let node = signer(21, 22);
+        let now = 1_800_000_000_000;
+        let r = json!({"kind":"mesh-resource","version":1,"id":"board-a","title":"Board A","issuer":owner.0,
+            "audience":"https://board.example","epoch":1,"actions":["read","create"],"readScope":"Entire Board A"});
+        let challenge = signed(
+            evaluate_resource_access(json!({"operation":"challengePayload","resource":r,
+            "subjectPersonId":node.0.person_id,"requestId":"request-one","actions":["read"],
+            "requestedExpiresAt":now+60_000,"nonce":URL_SAFE_NO_PAD.encode([31;32]),"now":now}))
+            .unwrap(),
+            &owner,
+        );
+        let connection = signed(evaluate_resource_access(json!({"operation":"connectionPayload","resource":r,"challenge":challenge,
+            "subjectPersonId":node.0.person_id,"requestId":"request-one","actions":["read"],"requestedExpiresAt":now+60_000,"now":now})).unwrap(), &node);
+        let grant = signed(evaluate_resource_access(json!({"operation":"grantPayload","resource":r,"challenge":challenge,"request":connection,
+            "actions":["read"],"expiresAt":now+60_000,"grantId":"grant-one","now":now})).unwrap(), &owner);
+        (r, challenge, connection, grant, node, now)
+    }
+    #[test]
+    fn resource_access_native_authorizes_only_exact_signed_operation() {
+        let (resource, _, _, grant, node, now) = fixture();
+        let body = URL_SAFE_NO_PAD.encode(Sha256::digest(b"body"));
+        let proof = signed(
+            evaluate_resource_access(json!({"operation":"operationPayload","grant":grant,
+            "action":"read","bodyDigest":body,"nonce":URL_SAFE_NO_PAD.encode([41;32]),"now":now}))
+            .unwrap(),
+            &node,
+        );
+        let command = json!({"operation":"authorize","resource":resource,"grant":grant,"proof":proof,"action":"read",
+            "bodyDigest":body,"now":now,"revokedGrants":[],"revokedDevices":[]});
+        assert_eq!(
+            evaluate_resource_access(command.clone()).unwrap()["subjectPersonId"],
+            node.0.person_id
+        );
+        for (key, value) in [
+            ("action", json!("create")),
+            ("bodyDigest", json!(URL_SAFE_NO_PAD.encode([1; 32]))),
+            ("now", json!(now + 61_000)),
+            ("revokedGrants", json!(["grant-one"])),
+            ("revokedDevices", json!([node.1.payload.device_id])),
+        ] {
+            let mut changed = command.clone();
+            changed[key] = value;
+            assert!(
+                evaluate_resource_access(changed).is_err(),
+                "accepted changed {key}"
+            );
+        }
+        let mut changed = command.clone();
+        changed["resource"]["epoch"] = json!(2);
+        assert!(evaluate_resource_access(changed).is_err());
+        let mut changed = command;
+        changed["grant"]["payload"]["actions"] = json!(["read", "create"]);
+        assert!(evaluate_resource_access(changed).is_err());
+    }
+    #[test]
+    fn resource_access_native_rejects_foreign_issuer_and_approval_expansion() {
+        let (resource, challenge, request, grant, _, now) = fixture();
+        let command = json!({"operation":"grantPayload","resource":resource,"challenge":challenge,"request":request,
+            "actions":["create"],"expiresAt":now+60_000,"grantId":"grant-other","now":now});
+        assert!(evaluate_resource_access(command).is_err());
+        let mut resource = resource;
+        resource["issuer"] = json!(signer(51, 52).0);
+        assert!(
+            evaluate_resource_access(
+                json!({"operation":"verifyGrant","resource":resource,"grant":grant,
+            "now":now,"revokedGrants":[],"revokedDevices":[]})
+            )
+            .is_err()
+        );
+    }
+}

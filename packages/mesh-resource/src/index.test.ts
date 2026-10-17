@@ -100,3 +100,54 @@ describe("resource connection and authorization", () => {
     expect(f.approvals()).toBe(1)
   })
 })
+
+it("Given an owner approval waiting across provider restart, when the owner decides later, then resume the exact pending connection", async () => {
+  const f = await setup(), durable = store()
+  let provider = new ResourceProvider({ profile: f.owner, store: durable, now: f.now })
+  const resource = await provider.addResource({ id: "restart-board", title: "Restart board", audience: "https://board.example", actions: ["read"], readScope: "Whole board" })
+  let lost = true
+  const client = new ResourceClient({ profile: f.node, now: f.now, transport: async message => {
+    const response = await provider.handleConnection(message)
+    if (response.kind === "pending" && lost) { lost = false; throw new Error("Tab closed while waiting") }
+    return response
+  } })
+  await expect(client.connectResource({ resource, actions: ["read"], requestId: "pending-owner-decision" })).rejects.toThrow(/Tab closed/)
+  provider = new ResourceProvider({ profile: f.owner, store: durable, now: f.now })
+  const requests = await provider.listPendingRequests(resource.id)
+  expect(requests).toHaveLength(1)
+  expect(requests[0]!.subject.personId).toBe(f.node.identity.personId)
+  await provider.approveConnection(resource.id, requests[0]!.requestId, { actions: ["read"], expiresAt: f.now() + 60_000 })
+  const connected = await client.connectResource({ resource, actions: ["read"], requestId: "pending-owner-decision" })
+  expect(connected.grant.payload.subjectPersonId).toBe(f.node.identity.personId)
+})
+
+it("Given a resource epoch update, when an old grant is used, then reject it without changing either identity", async () => {
+  const f = await setup()
+  const { grant } = await f.client.connectResource({ resource: f.resource, actions: ["read"] })
+  const current = await f.provider.updateResource({ id: f.resource.id, title: "Renamed board", audience: f.resource.audience,
+    actions: ["read"], readScope: f.resource.readScope })
+  expect(current.epoch).toBe(2)
+  const proof = await f.client.signOperation(grant, { action: "read", bodyDigest: await digest() })
+  await expect(f.provider.authorize({ grant, proof, resourceId: current.id, action: "read", bodyDigest: await digest() })).rejects.toThrow()
+  expect(f.client.identity.personId).toBe(f.node.identity.personId)
+})
+
+it("Given a subject-bound connection code, when a different identity redeems it, then issue no grant", async () => {
+  const f = await setup()
+  const code = await f.provider.createInvitation({ resourceId: f.resource.id, subjectPersonId: f.node.identity.personId, actions: ["read"], expiresAt: f.now()+60_000 })
+  const thief = new ResourceClient({ profile: f.owner, now: f.now, transport: message => f.provider.handleConnection(message) })
+  await expect(thief.redeemInvitation(code, f.resource)).rejects.toThrow()
+  await expect(f.client.redeemInvitation(code, f.resource)).resolves.toHaveProperty("grant")
+})
+
+it("Given the HTTP SDK and an exact origin policy, when connecting through Requests and Responses, then complete real signed approval and reject an unapproved origin", async () => {
+  const { createHttpResourceTransport, createResourceConnectionHandler } = await import("./http")
+  const f = await setup(), handler = createResourceConnectionHandler(f.provider, ["https://automation.example"])
+  const transport = createHttpResourceTransport("https://board.example/connect", async (url, init) => {
+    return handler(new Request(url, { ...init, headers: { ...init?.headers, Origin: "https://automation.example" } }))
+  })
+  const client = new ResourceClient({ profile: f.node, now: f.now, transport })
+  await expect(client.connectResource({ resource: f.resource, actions: ["read"] })).resolves.toHaveProperty("grant")
+  const denied = await handler(new Request("https://board.example/connect", { method: "POST", headers: { Origin: "https://foreign.example", "Content-Type": "application/json" }, body: "{}" }))
+  expect(denied.status).toBe(403)
+})
