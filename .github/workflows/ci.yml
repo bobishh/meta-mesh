@@ -9,6 +9,19 @@ permissions:
   contents: read
 
 jobs:
+  resource-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify resource connection contract
+        run: npm exec -- vitest run packages/mesh-resource/src/index.test.ts
+
   formal-models:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -51,10 +64,17 @@ jobs:
         run: |
           ./scripts/generate-mobile-bindings.sh
           git diff --exit-code -- crates/meta-mesh-mobile/generated
-      - name: Verify generated browser WASM bindings
-        run: |
-          ./scripts/build-wasm.sh
-          ./scripts/check-wasm-api.sh
+      - name: Generate browser WASM bindings
+        run: ./scripts/build-wasm.sh
+      - name: Save CI-built browser SDK artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-sdk-wasm
+          path: |
+            packages/mesh-transport/wasm/
+            packages/mesh-transport/transport-wasm/
+      - name: Verify generated browser WASM API
+        run: ./scripts/check-wasm-api.sh
       - run: npm run check
       - run: npm test
 
