@@ -18,12 +18,13 @@ async function setup() {
   let now = 1_800_000_000_000
   let approvals = 0
   let allow = true
-  const provider = new ResourceProvider({ profile: owner, store: store(), now: () => now,
+  const durable = store()
+  const provider = new ResourceProvider({ profile: owner, store: durable, now: () => now,
     approve: async request => { approvals++; return allow ? { actions: request.actions, expiresAt: now + 60_000 } : null } })
   const resource = await provider.addResource({ id: "board-a", title: "Board A", audience: "https://board.example",
     actions: ["read", "create", "update"], readScope: "Entire Board A" })
   const client = new ResourceClient({ profile: node, now: () => now, transport: message => provider.handleConnection(message) })
-  return { owner, node, provider, client, resource, now: () => now, advance: (ms: number) => { now += ms },
+  return { owner, node, provider, client, resource, durable, now: () => now, advance: (ms: number) => { now += ms },
     approvals: () => approvals, deny: () => { allow = false } }
 }
 const digest = () => sha256Base64Url(new TextEncoder().encode("bounded request body"))
@@ -180,6 +181,21 @@ it("Given full device revocation storage, when repeating an existing revocation,
 function fixtureDeviceId(index: number): string {
   return index.toString(16).padStart(43, "A")
 }
+
+it("Given revoked grants whose lifetime ended, when another connection starts, then retire obsolete revocations and retain current ones", async () => {
+  const f = await setup()
+  const first = await f.client.connectResource({ resource: f.resource, actions: ["read"] })
+  await f.provider.revokeGrant(f.resource.id, first.grant.payload.grantId)
+  f.advance(30_000)
+  const second = await f.client.connectResource({ resource: f.resource, actions: ["read"] })
+  await f.provider.revokeGrant(f.resource.id, second.grant.payload.grantId)
+  f.advance(31_000)
+  await f.client.connectResource({ resource: f.resource, actions: ["read"] })
+  const row = await f.durable.read(`mesh-resource:${f.owner.identity.personId}:${f.resource.id}`)
+  expect(row!.revokedGrants).toEqual([second.grant.payload.grantId])
+  const proof = await f.client.signOperation(second.grant, { action: "read", bodyDigest: await digest() })
+  await expect(f.provider.authorize({ resourceId: f.resource.id, action: "read", bodyDigest: await digest(), grant: second.grant, proof })).rejects.toThrow(/revok/i)
+})
 
 it("Given an issued invitation grant whose response was lost, when the client restarts after code expiry, then recover the exact grant without redeeming again", async () => {
   const f = await setup()

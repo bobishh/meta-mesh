@@ -145,6 +145,8 @@ export class ResourceProvider {
         return { kind: "challenge", challenge: retained.challenge } as ResourceConnectionResponse
       }
       current.connections = Object.fromEntries(Object.entries(current.connections).filter(([, c]) => (c.grant?.payload.expiresAt ?? c.challenge.payload.expiresAt) > this.now()))
+      const retainedGrants = new Set(Object.values(current.connections).flatMap(c => c.grant ? [c.grant.payload.grantId] : []))
+      current.revokedGrants = current.revokedGrants.filter(id => retainedGrants.has(id))
       if (Object.keys(current.connections).length >= 256) throw new Error("Resource connection capacity reached")
       current.connections = { ...current.connections, [input.requestId]: { optionsHash, challenge, status: "open", ...(input.invitation ? { invitationId: input.invitation.invitationId } : {}) } }
       return { kind: "challenge", challenge } as ResourceConnectionResponse
