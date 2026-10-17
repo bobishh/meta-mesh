@@ -39,6 +39,7 @@ pub mod persistence;
 pub mod proof_transfer;
 pub mod recovery;
 pub mod replication;
+pub mod resource_access;
 pub mod runtime;
 pub mod scope_authority;
 pub mod scope_runtime;

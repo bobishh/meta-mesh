@@ -243,6 +243,7 @@ export class WasmPairingCodec {
 }
 
 export class WasmStateCore {
+    static resourceAccess(raw: any): any;
     private constructor();
     free(): void;
     [Symbol.dispose](): void;

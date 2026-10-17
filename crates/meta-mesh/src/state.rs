@@ -516,6 +516,14 @@ fn verify_peer_history(signed_json: &[u8], document: &[u8], trusted_scope_raw: J
 
 #[wasm_bindgen]
 impl WasmStateCore {
+    /// Shared native capability validation; the host owns durable authority and replay storage.
+    #[wasm_bindgen(js_name = resourceAccess)]
+    pub fn resource_access(raw: JsValue) -> Result<JsValue, JsValue> {
+        let input: serde_json::Value = strict_protocol_value(raw)?;
+        let output = meta_mesh_core::resource_access::evaluate_resource_access(input).map_err(js_error)?;
+        to_value(&output)
+    }
+
     /// Run full Native causal admission and bind it to the current Owner's
     /// complete device certificate chain. The returned token cannot be built
     /// from a host-claimed admission result.
