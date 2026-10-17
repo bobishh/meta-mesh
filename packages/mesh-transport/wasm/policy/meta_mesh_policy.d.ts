@@ -243,7 +243,6 @@ export class WasmPairingCodec {
 }
 
 export class WasmStateCore {
-    static resourceAccess(raw: any): any;
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -329,6 +328,10 @@ export class WasmStateCore {
     static prepareWriteEvidence(raw: any): any;
     static reconcileReplicaSets(left: any, right: any): any;
     static requireChangeAuthorizationCoverage(change_hashes: any, records: any): void;
+    /**
+     * Shared native capability validation; the host owns durable authority and replay storage.
+     */
+    static resourceAccess(raw: any): any;
     static selectMeshHandshakeBundle(candidates: any, local_device_id: string, local_instance_id: string): any;
     static selectOwnershipTransfer(raw: any): any;
     static selectScopedNeighbors(local_device_id: string, candidates: any, bounds: any, now_ms: number, rotation: number): string[];
@@ -784,6 +787,7 @@ export interface InitOutput {
     readonly wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
     readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
     readonly wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
+    readonly wasmstatecore_resourceAccess: (a: any) => [number, number, number];
     readonly wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmstatecore_selectOwnershipTransfer: (a: any) => [number, number, number];
     readonly wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
@@ -869,9 +873,9 @@ export interface InitOutput {
     readonly wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmmeshauthenticatedsessions_new: () => number;
-    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
     readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

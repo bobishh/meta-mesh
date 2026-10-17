@@ -24,7 +24,8 @@ export class ResourceProvider {
       ...structuredClone(input), kind: "mesh-resource", version: 1, issuer: this.profile.identity, epoch: 1 } })
     const key = this.key(resource.id), existing = await this.store.read(key)
     if (existing) {
-      if (canonicalizeJson(existing.resource) !== canonicalizeJson({ ...resource, epoch: existing.resource.epoch })) throw new Error("Resource already registered with different authority")
+      const expected = { ...resource, issuer: { ...resource.issuer, displayName: existing.resource.issuer.displayName }, epoch: existing.resource.epoch }
+      if (canonicalizeJson(existing.resource) !== canonicalizeJson(expected)) throw new Error("Resource already registered with different authority")
       return structuredClone(existing.resource)
     }
     const initial: ResourceState = { version: 1, resource, revokedGrants: [], revokedDevices: [], connections: {}, invitations: {}, replays: {} }
@@ -63,8 +64,9 @@ export class ResourceProvider {
   async revokeDevice(resourceId: string, deviceId: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]{43}$/.test(deviceId)) throw new Error("Invalid resource device ID")
     await this.mutate(resourceId, row => {
+      if (row.revokedDevices.includes(deviceId)) return undefined
       if (row.revokedDevices.length >= 256) throw new Error("Resource device revocation capacity reached")
-      if (!row.revokedDevices.includes(deviceId)) row.revokedDevices.push(deviceId)
+      row.revokedDevices.push(deviceId)
       return undefined
     })
   }

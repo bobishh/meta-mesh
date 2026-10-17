@@ -2,6 +2,8 @@
 
 `@meta-uber/mesh-resource` connects existing independent identities to explicit resources. The shared Rust core validates certified signatures, grants, audience, capabilities, time bounds and resource epochs. The TypeScript SDK owns the challenge/approval/retry lifecycle over injected storage and transport. No board schema, jobs logic, log-reader role or private owner key enters the protocol.
 
+Initialize the matching meta-mesh policy WASM and install its runtime before calling this package, as for the identity/replication SDK. The native equivalent is `meta_mesh_core::resource_access::evaluate_resource_access`. There is no separate JavaScript authorization fallback.
+
 A provider registers resources it controls:
 
 ```ts

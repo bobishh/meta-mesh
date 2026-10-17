@@ -144,10 +144,60 @@ it("Given the HTTP SDK and an exact origin policy, when connecting through Reque
   const { createHttpResourceTransport, createResourceConnectionHandler } = await import("./http")
   const f = await setup(), handler = createResourceConnectionHandler(f.provider, ["https://automation.example"])
   const transport = createHttpResourceTransport("https://board.example/connect", async (url, init) => {
-    return handler(new Request(url, { ...init, headers: { ...init?.headers, Origin: "https://automation.example" } }))
+    const headers = new Headers(init?.headers)
+    headers.set("Origin", "https://automation.example")
+    return handler(new Request(url, { ...init, headers }))
   })
   const client = new ResourceClient({ profile: f.node, now: f.now, transport })
   await expect(client.connectResource({ resource: f.resource, actions: ["read"] })).resolves.toHaveProperty("grant")
   const denied = await handler(new Request("https://board.example/connect", { method: "POST", headers: { Origin: "https://foreign.example", "Content-Type": "application/json" }, body: "{}" }))
   expect(denied.status).toBe(403)
+})
+
+it("Given a registered resource, when the same issuer changes its display name, then registration retains existing authority and epoch", async () => {
+  const f = await setup(), durable = store()
+  const input = { id: "stable-board", title: "Stable board", audience: "https://board.example", actions: ["read"], readScope: "Whole board" }
+  const first = new ResourceProvider({ profile: f.owner, store: durable, now: f.now })
+  const registered = await first.addResource(input)
+  const renamed = { ...f.owner, identity: { ...f.owner.identity, displayName: "New display name" } }
+  const second = new ResourceProvider({ profile: renamed, store: durable, now: f.now })
+  await expect(second.addResource(input)).resolves.toEqual(registered)
+  await expect(second.addResource({ ...input, actions: ["read", "write"] })).rejects.toThrow(/different authority/)
+})
+
+it("Given full device revocation storage, when repeating an existing revocation, then succeed without admitting another device", async () => {
+  const f = await setup(), durable = store()
+  const provider = new ResourceProvider({ profile: f.owner, store: durable, now: f.now })
+  await provider.addResource({ id: "revocations", title: "Revocations", audience: "https://board.example", actions: ["read"], readScope: "Whole board" })
+  const key = `mesh-resource:${f.owner.identity.personId}:revocations`
+  const row = (await durable.read(key))!
+  row.revokedDevices = Array.from({ length: 256 }, (_, index) => fixtureDeviceId(index))
+  await durable.compareAndSwap(key, row.version, { ...row, version: row.version + 1 })
+  await expect(provider.revokeDevice("revocations", row.revokedDevices[0]!)).resolves.toBeUndefined()
+  await expect(provider.revokeDevice("revocations", f.node.device.deviceId)).rejects.toThrow(/capacity/)
+})
+
+function fixtureDeviceId(index: number): string {
+  return index.toString(16).padStart(43, "A")
+}
+
+it("Given an issued invitation grant whose response was lost, when the client restarts after code expiry, then recover the exact grant without redeeming again", async () => {
+  const f = await setup()
+  const rows = new Map<string, import("./index").PendingConnection>()
+  const pending = { load: async (key: string) => structuredClone(rows.get(key)),
+    save: async (key: string, value: import("./index").PendingConnection) => { rows.set(key, structuredClone(value)) },
+    remove: async (key: string) => { rows.delete(key) } }
+  const code = await f.provider.createInvitation({ resourceId: f.resource.id, subjectPersonId: f.node.identity.personId,
+    actions: ["read"], expiresAt: f.now() + 1_000, grantExpiresAt: f.now() + 60_000 })
+  let issued: unknown
+  const first = new ResourceClient({ profile: f.node, now: f.now, store: pending, transport: async message => {
+    const result = await f.provider.handleConnection(message)
+    if (result.kind === "connected") { issued = result.grant; throw new Error("Response lost") }
+    return result
+  } })
+  await expect(first.redeemInvitation(code, f.resource)).rejects.toThrow(/Response lost/)
+  f.advance(2_000)
+  const resumed = new ResourceClient({ profile: f.node, now: f.now, store: pending, transport: message => f.provider.handleConnection(message) })
+  await expect(resumed.redeemInvitation(code, f.resource)).resolves.toHaveProperty("grant", issued)
+  await expect(resumed.redeemInvitation(code, f.resource)).rejects.toThrow()
 })

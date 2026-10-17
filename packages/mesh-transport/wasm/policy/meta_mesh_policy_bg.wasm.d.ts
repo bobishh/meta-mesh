@@ -256,6 +256,7 @@ export const wasmstatecore_prepareWorkspaceHistoryFromBasis: (a: any, b: any, c:
 export const wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
 export const wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
 export const wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
+export const wasmstatecore_resourceAccess: (a: any) => [number, number, number];
 export const wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmstatecore_selectOwnershipTransfer: (a: any) => [number, number, number];
 export const wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
@@ -341,9 +342,9 @@ export const wasmworkspacejoinhandshake_rejectAcceptedResponse: (a: number, b: n
 export const wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
 export const wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
 export const wasmmeshauthenticatedsessions_new: () => number;
-export const __wbg_wasminvitations_free: (a: number, b: number) => void;
-export const __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
 export const __wbg_wasmstatecore_free: (a: number, b: number) => void;
+export const __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+export const __wbg_wasminvitations_free: (a: number, b: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;

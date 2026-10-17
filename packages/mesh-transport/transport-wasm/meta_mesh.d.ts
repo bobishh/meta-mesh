@@ -428,6 +428,10 @@ export class WasmStateCore {
     static prepareWriteEvidence(raw: any): any;
     static reconcileReplicaSets(left: any, right: any): any;
     static requireChangeAuthorizationCoverage(change_hashes: any, records: any): void;
+    /**
+     * Shared native capability validation; the host owns durable authority and replay storage.
+     */
+    static resourceAccess(raw: any): any;
     static selectMeshHandshakeBundle(candidates: any, local_device_id: string, local_instance_id: string): any;
     static selectOwnershipTransfer(raw: any): any;
     static selectScopedNeighbors(local_device_id: string, candidates: any, bounds: any, now_ms: number, rotation: number): string[];
@@ -929,6 +933,7 @@ export interface InitOutput {
     readonly wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
     readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
     readonly wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
+    readonly wasmstatecore_resourceAccess: (a: any) => [number, number, number];
     readonly wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmstatecore_selectOwnershipTransfer: (a: any) => [number, number, number];
     readonly wasmstatecore_selectScopedNeighbors: (a: number, b: number, c: any, d: any, e: number, f: number) => [number, number, number, number];
@@ -1014,9 +1019,9 @@ export interface InitOutput {
     readonly wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmmeshauthenticatedsessions_new: () => number;
-    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
     readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingbytesource_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsink_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
@@ -1031,18 +1036,18 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: any) => any;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_238e2318f8aa2c48___JsError___true_: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined___js_sys_819ae6a217ca9e54___Function_fn_wasm_bindgen_238e2318f8aa2c48___JsValue_____wasm_bindgen_238e2318f8aa2c48___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___wasm_bindgen_238e2318f8aa2c48___JsValue______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_CloseEvent__CloseEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_MessageEvent__MessageEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke___web_sys_ec1304e0a48af29f___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true_: (a: number, b: number) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__1_: (a: number, b: number) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__2_: (a: number, b: number) => void;
-    readonly wasm_bindgen_238e2318f8aa2c48___convert__closures_____invoke_______true__3_: (a: number, b: number) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___wasm_bindgen_1fb3ebbb37e29c1d___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_1fb3ebbb37e29c1d___JsError___true_: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___js_sys_8adbdc0d3359cec___Function_fn_wasm_bindgen_1fb3ebbb37e29c1d___JsValue_____wasm_bindgen_1fb3ebbb37e29c1d___sys__Undefined___js_sys_8adbdc0d3359cec___Function_fn_wasm_bindgen_1fb3ebbb37e29c1d___JsValue_____wasm_bindgen_1fb3ebbb37e29c1d___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___wasm_bindgen_1fb3ebbb37e29c1d___JsValue______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___web_sys_2e86745aa82dd0d3___features__gen_CloseEvent__CloseEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___web_sys_2e86745aa82dd0d3___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___web_sys_2e86745aa82dd0d3___features__gen_MessageEvent__MessageEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___web_sys_2e86745aa82dd0d3___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__5: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke___web_sys_2e86745aa82dd0d3___features__gen_RtcDataChannelEvent__RtcDataChannelEvent______true__6: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke_______true_: (a: number, b: number) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke_______true__1_: (a: number, b: number) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke_______true__2_: (a: number, b: number) => void;
+    readonly wasm_bindgen_1fb3ebbb37e29c1d___convert__closures_____invoke_______true__3_: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

@@ -27,8 +27,8 @@ export class ResourceClient {
   async redeemInvitation(code: string, resource: ResourceDescriptor, signal?: AbortSignal): Promise<ConnectionResult> {
     const invitation = parseInvitation(code)
     if (invitation.subjectPersonId !== this.profile.identity.personId || invitation.resourceId !== resource.id ||
-        invitation.issuerPersonId !== resource.issuer.personId || invitation.audience !== resource.audience || invitation.expiresAt <= this.now()) {
-      throw new Error("Resource connection code belongs to another identity, resource or time")
+        invitation.issuerPersonId !== resource.issuer.personId || invitation.audience !== resource.audience) {
+      throw new Error("Resource connection code belongs to another identity or resource")
     }
     return this.connect({ resource: structuredClone(resource), actions: [], requestId: crypto.randomUUID() }, signal, invitation)
   }
@@ -53,6 +53,7 @@ export class ResourceClient {
   private async finishConnection(options: ConnectResourceOptions, key: string, signal?: AbortSignal, invitation?: Invitation): Promise<ConnectionResult> {
     core({ operation: "validateDescriptor", resource: options.resource })
     let pending = await this.store.load(key)
+    if (invitation && invitation.expiresAt <= this.now() && !pending?.request) throw new Error("Resource connection code expired")
     if (pending && (pending.options.subjectPersonId !== this.profile.identity.personId || canonicalizeJson(pending.resource) !== canonicalizeJson(options.resource) ||
         !invitation && canonicalizeJson(pending.options.actions) !== canonicalizeJson(options.actions) ||
         options.expiresAt !== undefined && pending.options.requestedExpiresAt !== options.expiresAt)) throw new Error("Resource connection request ID was reused with different options")

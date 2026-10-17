@@ -3380,6 +3380,18 @@ export class WasmStateCore {
         }
     }
     /**
+     * Shared native capability validation; the host owns durable authority and replay storage.
+     * @param {any} raw
+     * @returns {any}
+     */
+    static resourceAccess(raw) {
+        const ret = wasm.wasmstatecore_resourceAccess(raw);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {any} candidates
      * @param {string} local_device_id
      * @param {string} local_instance_id
