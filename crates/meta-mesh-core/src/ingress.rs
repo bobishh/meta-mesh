@@ -16,9 +16,9 @@ pub const MAX_LOGICAL_TRANSFER_BYTES: usize = 24 * 1024 * 1024;
 pub const MAX_GOSSIP_PAYLOAD_BYTES: usize = 256 * 1024;
 /// JSON/base64 envelope allowance for a 256-KiB Automerge message and metadata.
 pub const MAX_AUTOMERGE_WIRE_PAYLOAD_BYTES: usize = 512 * 1024;
-/// Maximum bytes reserved by concurrent frame reads on one authenticated connection.
+/// Maximum bytes reserved by concurrent frame reads on one authenticated peer.
 pub const MAX_IN_FLIGHT_BYTES_PER_CONNECTION: usize = 32 * 1024 * 1024;
-/// Maximum concurrent frame reads on one authenticated connection.
+/// Maximum concurrent frame reads on one authenticated peer.
 pub const MAX_CONCURRENT_FRAMES_PER_CONNECTION: usize = 2;
 /// Upper bound on pages in one logical transfer.
 pub const MAX_TRANSFER_PAGES: usize = 256;

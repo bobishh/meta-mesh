@@ -237,10 +237,12 @@ payload bytes; raw readers use a separate API and do not require pairing framing
 `ceil(256 KiB / 3) * 4 + 4096` bytes per 256-KiB attachment chunk, then verifies
 the returned frame length. Native readers use bounded scratch buffers, reset
 only the affected stream on oversize or timeout, and preserve the connection.
-Each authenticated connection also reserves at most two concurrent frame reads
-and 32 MiB for those reads. One pending logical control or owner-offer
-reassembly is capped separately at 24 MiB, 256 pages, and 600 seconds; owner offers above one frame use the
-authenticated `owner-workspace-paging-v1` capability and bounded pages. A peer
+Each authenticated endpoint reserves at most two concurrent frame reads and
+32 MiB across its active connections. The native registry tracks at most 1,024
+live endpoint entries and removes idle entries as new peers connect. One pending
+logical control or owner-offer reassembly is capped separately at 24 MiB, 256
+pages, and 600 seconds; owner offers above one frame use the authenticated
+`owner-workspace-paging-v1` capability and bounded pages. A peer
 without that capability is rejected before an oversized offer is sent. The
 browser transport requires the matching WASM profile and bounded pairing-read
 API; a stale adapter fails closed instead of ignoring a requested bound.
