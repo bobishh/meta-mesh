@@ -1,6 +1,6 @@
-import { expect, it, vi } from "vitest"
+import { readFile } from "node:fs/promises"
+import { beforeAll, expect, it, vi } from "vitest"
 import { signEnvelope, publicKeyId, toBase64Url } from "@meta-uber/mesh-identity"
-import wasmModule from "../../mesh-transport/wasm/policy/meta_mesh_policy_bg.wasm"
 import { initSync, WasmIdentityCrypto, WasmStateCore } from "@meta-uber/mesh-transport/wasm"
 import { emptyReplicaState, ReplicaEngine, type ReplicaState } from "@meta-uber/mesh-replication/replica-engine"
 import { readArchiveBytes, writeArchiveBytes, type ArchiveObjectStore, type ArchiveTreeContext } from "@meta-uber/mesh-replication/history-archive"
@@ -20,7 +20,10 @@ import {
   type RustyStorageReceipt,
 } from "@meta-uber/mesh-replication/rusty-replica"
 
-initSync({ module: wasmModule })
+beforeAll(async () => {
+  const wasmModule = new Uint8Array(await readFile(new URL("../../mesh-transport/wasm/policy/meta_mesh_policy_bg.wasm", import.meta.url)))
+  initSync({ module: wasmModule })
+})
 
 function keys(): Promise<CryptoKeyPair> {
   return crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]) as Promise<CryptoKeyPair>
