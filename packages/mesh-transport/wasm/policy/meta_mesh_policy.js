@@ -844,6 +844,94 @@ export class WasmIdentityCrypto {
 }
 if (Symbol.dispose) WasmIdentityCrypto.prototype[Symbol.dispose] = WasmIdentityCrypto.prototype.free;
 
+export class WasmIngressBudgetProfile {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmIngressBudgetProfileFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmingressbudgetprofile_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    maxConcurrentFramesPerConnection() {
+        const ret = wasm.wasmingressbudgetprofile_maxConcurrentFramesPerConnection(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {string} frame_type
+     * @returns {number}
+     */
+    maxFrameBytes(frame_type) {
+        const ptr0 = passStringToWasm0(frame_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmingressbudgetprofile_maxFrameBytes(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    maxHeaderBytes() {
+        const ret = wasm.wasmingressbudgetprofile_maxHeaderBytes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    maxInFlightBytesPerConnection() {
+        const ret = wasm.wasmingressbudgetprofile_maxInFlightBytesPerConnection(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    maxLogicalTransferBytes() {
+        const ret = wasm.wasmingressbudgetprofile_maxLogicalTransferBytes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {string} frame_type
+     * @returns {number}
+     */
+    maxPayloadBytes(frame_type) {
+        const ptr0 = passStringToWasm0(frame_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmingressbudgetprofile_maxPayloadBytes(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    maxTransferDeadlineMs() {
+        const ret = wasm.wasmingressbudgetprofile_maxTransferDeadlineMs(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    maxTransferPages() {
+        const ret = wasm.wasmingressbudgetprofile_maxTransferPages(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    constructor() {
+        const ret = wasm.wasmingressbudgetprofile_new();
+        this.__wbg_ptr = ret >>> 0;
+        WasmIngressBudgetProfileFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) WasmIngressBudgetProfile.prototype[Symbol.dispose] = WasmIngressBudgetProfile.prototype.free;
+
 export class WasmInvitations {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -1010,6 +1098,9 @@ export class WasmLiveWorkspaceSession {
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v2;
     }
+    clearPendingTransfers() {
+        wasm.wasmliveworkspacesession_clearPendingTransfers(this.__wbg_ptr);
+    }
     commitDocument() {
         const ret = wasm.wasmliveworkspacesession_commitDocument(this.__wbg_ptr);
         if (ret[1]) {
@@ -1044,9 +1135,7 @@ export class WasmLiveWorkspaceSession {
      * @returns {any}
      */
     decodeAutomergePayload(payload) {
-        const ptr0 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmliveworkspacesession_decodeAutomergePayload(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.wasmliveworkspacesession_decodeAutomergePayload(this.__wbg_ptr, payload);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1073,15 +1162,13 @@ export class WasmLiveWorkspaceSession {
     encode(frame_type, payload) {
         const ptr0 = passStringToWasm0(frame_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmliveworkspacesession_encode(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        const ret = wasm.wasmliveworkspacesession_encode(this.__wbg_ptr, ptr0, len0, payload);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }
-        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v3;
+        return v2;
     }
     /**
      * @param {any} frame
@@ -1110,6 +1197,17 @@ export class WasmLiveWorkspaceSession {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * @param {Uint8Array} payload
+     * @returns {any}
+     */
+    encodeOwnerWorkspaceOfferPages(payload) {
+        const ret = wasm.wasmliveworkspacesession_encodeOwnerWorkspaceOfferPages(this.__wbg_ptr, payload);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * @param {Uint8Array} control_snapshot
@@ -1229,9 +1327,7 @@ export class WasmLiveWorkspaceSession {
      * @returns {any}
      */
     receive(frame) {
-        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmliveworkspacesession_receive(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.wasmliveworkspacesession_receive(this.__wbg_ptr, frame);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1242,9 +1338,7 @@ export class WasmLiveWorkspaceSession {
      * @returns {any}
      */
     receiveWithPlan(frame) {
-        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmliveworkspacesession_receiveWithPlan(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.wasmliveworkspacesession_receiveWithPlan(this.__wbg_ptr, frame);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -2340,19 +2434,17 @@ export class WasmPairingCodec {
      * @returns {Uint8Array}
      */
     decode(frame, expected_type, expected_secret) {
-        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
+        const ptr0 = passStringToWasm0(expected_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(expected_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(expected_secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passStringToWasm0(expected_secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmpairingcodec_decode(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        const ret = wasm.wasmpairingcodec_decode(this.__wbg_ptr, frame, ptr0, len0, ptr1, len1);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }
-        var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v4;
+        return v3;
     }
     /**
      * @param {string} frame_type
@@ -2365,24 +2457,20 @@ export class WasmPairingCodec {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passStringToWasm0(secret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passArray8ToWasm0(payload, wasm.__wbindgen_malloc);
-        const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmpairingcodec_encode(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        const ret = wasm.wasmpairingcodec_encode(this.__wbg_ptr, ptr0, len0, ptr1, len1, payload);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }
-        var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v4;
+        return v3;
     }
     /**
      * @param {Uint8Array} frame
      * @returns {any}
      */
     inspect(frame) {
-        const ptr0 = passArray8ToWasm0(frame, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmpairingcodec_inspect(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.wasmpairingcodec_inspect(this.__wbg_ptr, frame);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -5120,8 +5208,20 @@ function __wbg_get_imports() {
             const ret = arg0.next;
             return ret;
         },
+        __wbg_now_e7c6795a7f81e10f: function(arg0) {
+            const ret = arg0.now();
+            return ret;
+        },
+        __wbg_performance_3fcf6e32a7e1ed0a: function(arg0) {
+            const ret = arg0.performance;
+            return ret;
+        },
         __wbg_prototypesetcall_a6b02eb00b0f4ce2: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+        },
+        __wbg_push_471a5b068a5295f6: function(arg0, arg1) {
+            const ret = arg0.push(arg1);
+            return ret;
         },
         __wbg_set_022bee52d0b05b19: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = Reflect.set(arg0, arg1, arg2);
@@ -5139,6 +5239,26 @@ function __wbg_get_imports() {
         },
         __wbg_size_cec5cae0e9d95a0b: function(arg0) {
             const ret = arg0.size;
+            return ret;
+        },
+        __wbg_static_accessor_GLOBAL_8cfadc87a297ca02: function() {
+            const ret = typeof global === 'undefined' ? null : global;
+            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+        },
+        __wbg_static_accessor_GLOBAL_THIS_602256ae5c8f42cf: function() {
+            const ret = typeof globalThis === 'undefined' ? null : globalThis;
+            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+        },
+        __wbg_static_accessor_SELF_e445c1c7484aecc3: function() {
+            const ret = typeof self === 'undefined' ? null : self;
+            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+        },
+        __wbg_static_accessor_WINDOW_f20e8576ef1e0f17: function() {
+            const ret = typeof window === 'undefined' ? null : window;
+            return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
+        },
+        __wbg_subarray_f8ca46a25b1f5e0d: function(arg0, arg1, arg2) {
+            const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
             return ret;
         },
         __wbg_value_ee3a06f4579184fa: function(arg0) {
@@ -5196,6 +5316,9 @@ const WasmGossipLifecycleStateFinalization = (typeof FinalizationRegistry === 'u
 const WasmIdentityCryptoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmidentitycrypto_free(ptr >>> 0, 1));
+const WasmIngressBudgetProfileFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmingressbudgetprofile_free(ptr >>> 0, 1));
 const WasmInvitationsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasminvitations_free(ptr >>> 0, 1));

@@ -44,6 +44,8 @@ export class BrowserStream {
     [Symbol.dispose](): void;
     closeSend(): Promise<void>;
     read(maximum_bytes?: number | null): Promise<Uint8Array>;
+    readPairingFrame(maximum_bytes?: number | null): Promise<Uint8Array>;
+    readPairingOrRawPrefix(raw_prefix: Uint8Array, maximum_raw_bytes?: number | null): Promise<Uint8Array>;
     reset(): Promise<void>;
     send(bytes: Uint8Array): Promise<void>;
 }
@@ -174,6 +176,20 @@ export class WasmIdentityCrypto {
     static verifyWorkspaceGrant(grant: any, workspace_id: string, member_person_id: string, owner: any, owner_certificates: any): string;
 }
 
+export class WasmIngressBudgetProfile {
+    free(): void;
+    [Symbol.dispose](): void;
+    maxConcurrentFramesPerConnection(): number;
+    maxFrameBytes(frame_type: string): number;
+    maxHeaderBytes(): number;
+    maxInFlightBytesPerConnection(): number;
+    maxLogicalTransferBytes(): number;
+    maxPayloadBytes(frame_type: string): number;
+    maxTransferDeadlineMs(): number;
+    maxTransferPages(): number;
+    constructor();
+}
+
 export class WasmInvitations {
     private constructor();
     free(): void;
@@ -191,6 +207,7 @@ export class WasmLiveWorkspaceSession {
     [Symbol.dispose](): void;
     abortDocument(): void;
     acknowledgeSaved(bytes: Uint8Array): Uint8Array;
+    clearPendingTransfers(): void;
     commitDocument(): void;
     controlChanged(snapshot: Uint8Array): boolean;
     controlFrames(snapshot: Uint8Array): any;
@@ -199,6 +216,7 @@ export class WasmLiveWorkspaceSession {
     encode(frame_type: string, payload: Uint8Array): Uint8Array;
     encodeAutomergeFrame(frame: any): Uint8Array;
     encodeControl(authorization: any, chat: any, mesh: any): Uint8Array;
+    encodeOwnerWorkspaceOfferPages(payload: Uint8Array): any;
     finishPublish(control_snapshot: Uint8Array, all_frames_sent: boolean): void;
     generateDocument(document: Uint8Array, proof: any): Uint8Array | undefined;
     markControlSent(snapshot: Uint8Array): void;
@@ -681,6 +699,8 @@ export interface InitOutput {
     readonly browsernode_start: (a: number, b: number) => any;
     readonly browserstream_closeSend: (a: number) => any;
     readonly browserstream_read: (a: number, b: number) => any;
+    readonly browserstream_readPairingFrame: (a: number, b: number) => any;
+    readonly browserstream_readPairingOrRawPrefix: (a: number, b: number, c: number, d: number) => any;
     readonly browserstream_reset: (a: number) => any;
     readonly browserstream_send: (a: number, b: number, c: number) => any;
     readonly mesh_version: () => [number, number];
@@ -748,6 +768,15 @@ export interface InitOutput {
     readonly wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number, c: number, d: any, e: number, f: number) => [number, number, number, number];
     readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
+    readonly wasmingressbudgetprofile_maxConcurrentFramesPerConnection: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxFrameBytes: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmingressbudgetprofile_maxHeaderBytes: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxInFlightBytesPerConnection: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxLogicalTransferBytes: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxPayloadBytes: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmingressbudgetprofile_maxTransferDeadlineMs: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxTransferPages: (a: number) => number;
+    readonly wasmingressbudgetprofile_new: () => number;
     readonly wasminvitations_createDeviceEnrollment: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: number) => [number, number, number];
     readonly wasminvitations_createWorkspaceJoin: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any, i: number, j: number, k: number) => [number, number, number];
     readonly wasminvitations_invitationUrl: (a: number, b: number, c: any) => [number, number, number, number];
@@ -756,14 +785,16 @@ export interface InitOutput {
     readonly wasminvitations_parsePairingInvite: (a: number, b: number) => [number, number, number];
     readonly wasmliveworkspacesession_abortDocument: (a: number) => void;
     readonly wasmliveworkspacesession_acknowledgeSaved: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmliveworkspacesession_clearPendingTransfers: (a: number) => void;
     readonly wasmliveworkspacesession_commitDocument: (a: number) => [number, number];
     readonly wasmliveworkspacesession_controlChanged: (a: number, b: number, c: number) => number;
     readonly wasmliveworkspacesession_controlFrames: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmliveworkspacesession_decodeAutomergePayload: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmliveworkspacesession_decodeAutomergePayload: (a: number, b: any) => [number, number, number];
     readonly wasmliveworkspacesession_decodeControl: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmliveworkspacesession_encode: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmliveworkspacesession_encode: (a: number, b: number, c: number, d: any) => [number, number, number, number];
     readonly wasmliveworkspacesession_encodeAutomergeFrame: (a: number, b: any) => [number, number, number, number];
     readonly wasmliveworkspacesession_encodeControl: (a: number, b: any, c: any, d: any) => [number, number, number, number];
+    readonly wasmliveworkspacesession_encodeOwnerWorkspaceOfferPages: (a: number, b: any) => [number, number, number];
     readonly wasmliveworkspacesession_finishPublish: (a: number, b: number, c: number, d: number) => void;
     readonly wasmliveworkspacesession_generateDocument: (a: number, b: number, c: number, d: any) => [number, number, number, number];
     readonly wasmliveworkspacesession_markControlSent: (a: number, b: number, c: number) => void;
@@ -772,8 +803,8 @@ export interface InitOutput {
     readonly wasmliveworkspacesession_prepareDocument: (a: number, b: number, c: number, d: number, e: number, f: any) => [number, number, number];
     readonly wasmliveworkspacesession_preparePublish: (a: number, b: number, c: number, d: any, e: any, f: any, g: any) => [number, number, number];
     readonly wasmliveworkspacesession_prepareSnapshotPublish: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmliveworkspacesession_receive: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmliveworkspacesession_receiveWithPlan: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmliveworkspacesession_receive: (a: number, b: any) => [number, number, number];
+    readonly wasmliveworkspacesession_receiveWithPlan: (a: number, b: any) => [number, number, number];
     readonly wasmliveworkspacesession_resetDocument: (a: number) => void;
     readonly wasmliveworkspacesession_startDocumentSync: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmliveworkspacesession_verifyHeartbeatAck: (a: number, b: number, c: number) => [number, number];
@@ -857,10 +888,9 @@ export interface InitOutput {
     readonly wasmmeshsessionlifecycle_publishRecovery: (a: number, b: any, c: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_register: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly wasmmeshsessionlifecycle_reportFailure: (a: number, b: any, c: number) => [number, number, number];
-    readonly wasmpairingcodec_decode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly wasmpairingcodec_inspect: (a: number, b: number, c: number) => [number, number, number];
-    readonly wasmpairingcodec_new: () => number;
+    readonly wasmpairingcodec_decode: (a: number, b: any, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly wasmpairingcodec_encode: (a: number, b: number, c: number, d: number, e: number, f: any) => [number, number, number, number];
+    readonly wasmpairingcodec_inspect: (a: number, b: any) => [number, number, number];
     readonly wasmstatecore_admitMeshPeer: (a: any, b: any, c: number, d: number, e: number) => [number, number, number];
     readonly wasmstatecore_admitWorkspaceChangeAuthorization: (a: any, b: any, c: any, d: number) => [number, number, number];
     readonly wasmstatecore_admitWorkspaceChangeAuthorizations: (a: any, b: any, c: any, d: number) => [number, number, number];
@@ -1018,10 +1048,12 @@ export interface InitOutput {
     readonly wasmworkspacejoinhandshake_rejectAcceptedResponse: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmpairingcodec_new: () => number;
     readonly wasmmeshauthenticatedsessions_new: () => number;
     readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
     readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
     readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
+    readonly __wbg_wasmingressbudgetprofile_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingbytesource_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsink_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
