@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
-import { meshNetworkConnection, MeshNetworkError, type IrohConnection, type IrohStream } from "./index"
+import { meshNetworkConnection, MeshNetworkError, type IrohConnection, type IrohStream, type MeshIngressBudgetProfile } from "./index"
+
+const profile: MeshIngressBudgetProfile = {
+  maxHeaderBytes: () => 4096, maxFrameBytes: () => 1024, maxPayloadBytes: () => 1024,
+  maxLogicalTransferBytes: () => 1024, maxTransferPages: () => 1, maxTransferDeadlineMs: () => 1000,
+  maxInFlightBytesPerConnection: () => 1024, maxConcurrentFramesPerConnection: () => 1,
+}
 
 class ResettableStream {
   resetCount = 0
@@ -9,6 +15,7 @@ class ResettableStream {
 
   async send(_bytes: Uint8Array) {}
   async read() { return new Uint8Array() }
+  async readPairingFrame(maximumBytes?: number) { return this.read().slice(0, maximumBytes) }
   async closeSend() {}
 }
 
@@ -16,6 +23,7 @@ class GetterResettableStream {
   resetCount = 0
   async send(_bytes: Uint8Array) {}
   async read() { return new Uint8Array() }
+  async readPairingFrame(maximumBytes?: number) { return this.read().slice(0, maximumBytes) }
   async closeSend() {}
   get reset() {
     return async () => { this.resetCount += 1 }
@@ -34,7 +42,7 @@ describe("mesh transport stream reset", () => {
         close: vi.fn(async () => undefined),
       } satisfies IrohConnection
 
-      const wrappedConnection = meshNetworkConnection(originalConnection)
+      const wrappedConnection = meshNetworkConnection(originalConnection, profile)
       const wrappedStream = await wrappedConnection[acquisition]() as IrohStream & { reset?: () => Promise<void> }
 
       await wrappedStream.reset?.()
@@ -55,7 +63,7 @@ describe("mesh transport stream reset", () => {
       close: async () => undefined,
     } satisfies IrohConnection
 
-    const wrappedStream = await meshNetworkConnection(connection).acceptStream() as IrohStream & { reset?: () => Promise<void> }
+    const wrappedStream = await meshNetworkConnection(connection, profile).acceptStream() as IrohStream & { reset?: () => Promise<void> }
     await wrappedStream.reset?.()
 
     expect(stream.resetCount).toBe(1)
@@ -69,7 +77,7 @@ describe("mesh transport stream reset", () => {
       acceptStream: async () => stream as unknown as IrohStream,
       close: async () => undefined,
     } satisfies IrohConnection
-    const wrappedStream = await meshNetworkConnection(connection).openStream() as IrohStream & { reset?: () => Promise<void> }
+    const wrappedStream = await meshNetworkConnection(connection, profile).openStream() as IrohStream & { reset?: () => Promise<void> }
 
     await expect(wrappedStream.reset?.()).rejects.toBeInstanceOf(MeshNetworkError)
     await expect(wrappedStream.reset?.()).resolves.toBeUndefined()
@@ -80,6 +88,7 @@ describe("mesh transport stream reset", () => {
       reset: () => { throw new Error("synchronous reset failure") },
       send: async () => undefined,
       read: async () => new Uint8Array(),
+      readPairingFrame: async () => new Uint8Array(),
       closeSend: async () => undefined,
     } satisfies IrohStream
     const connection = {
@@ -87,15 +96,60 @@ describe("mesh transport stream reset", () => {
       acceptStream: async () => stream,
       close: async () => undefined,
     } satisfies IrohConnection
-    const wrappedStream = await meshNetworkConnection(connection).acceptStream()
+    const wrappedStream = await meshNetworkConnection(connection, profile).acceptStream()
 
     await expect(wrappedStream.reset?.()).rejects.toBeInstanceOf(MeshNetworkError)
+  })
+
+  it("Given one peer stalls, when reset is pending, then its next bounded read waits for cancellation", async () => {
+    vi.useFakeTimers()
+    try {
+      const stalled = new ResettableStream()
+      stalled.readPairingFrame = () => new Promise<Uint8Array>(() => {})
+      let finishReset!: () => void
+      const resetStarted = vi.fn(() => new Promise<void>(resolve => { finishReset = resolve }))
+      stalled.reset = resetStarted
+      const stalledConnection = {
+        remoteEndpointId: "peer-shared",
+        openStream: async () => stalled as IrohStream,
+        acceptStream: async () => stalled as IrohStream,
+        close: vi.fn(async () => undefined),
+      } satisfies IrohConnection
+      const healthy = new ResettableStream()
+      const healthyRead = vi.fn(async () => new Uint8Array([7]))
+      healthy.readPairingFrame = healthyRead
+      const healthyConnection = {
+        remoteEndpointId: "peer-shared",
+        openStream: async () => healthy as IrohStream,
+        acceptStream: async () => healthy as IrohStream,
+        close: vi.fn(async () => undefined),
+      } satisfies IrohConnection
+      const limits = { ...profile, maxTransferDeadlineMs: () => 10 }
+      const stalledStream = await meshNetworkConnection(stalledConnection, limits).openStream()
+      const stalledRead = stalledStream.read()
+      const healthyStream = await meshNetworkConnection(healthyConnection, limits).openStream()
+      const healthyResult = healthyStream.read()
+      expect(healthyRead).not.toHaveBeenCalled()
+      const rejected = expect(stalledRead).rejects.toThrow(/deadline/i)
+      await vi.advanceTimersByTimeAsync(10)
+      expect(resetStarted).toHaveBeenCalledOnce()
+      expect(healthyRead).not.toHaveBeenCalled()
+      finishReset()
+      await rejected
+      await expect(healthyResult).resolves.toEqual(new Uint8Array([7]))
+      expect(healthyRead).toHaveBeenCalledOnce()
+      expect(stalledConnection.close).not.toHaveBeenCalled()
+      expect(healthyConnection.close).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("Given a legacy stream has no reset method, when wrapped, then it remains usable without reset", async () => {
     const stream: IrohStream = {
       send: vi.fn(async () => undefined),
       read: vi.fn(async () => new Uint8Array([1, 2, 3])),
+      readPairingFrame: vi.fn(async () => new Uint8Array([1, 2, 3])),
       closeSend: vi.fn(async () => undefined),
     }
     const connection = {
@@ -104,7 +158,7 @@ describe("mesh transport stream reset", () => {
       close: async () => undefined,
     } satisfies IrohConnection
 
-    const wrappedStream = await meshNetworkConnection(connection).openStream() as IrohStream & { reset?: () => Promise<void> }
+    const wrappedStream = await meshNetworkConnection(connection, profile).openStream() as IrohStream & { reset?: () => Promise<void> }
 
     expect(wrappedStream.reset).toBeUndefined()
     await expect(wrappedStream.read()).resolves.toEqual(new Uint8Array([1, 2, 3]))

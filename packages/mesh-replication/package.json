@@ -9,6 +9,7 @@
     "./automerge": "./src/automerge.ts",
     "./gossip": "./src/gossip.ts",
     "./runtime": "./src/runtime.ts",
+    "./rusty-replica": "./src/rustyReplica.ts",
     "./replica-engine": "./src/replicaEngine.ts",
     "./history-archive": "./src/historyArchive.ts",
     "./history-archive-store": "./src/historyArchiveStore.ts",
@@ -22,6 +23,9 @@
   },
   "dependencies": {
     "@meta-uber/mesh-identity": "*"
+  },
+  "devDependencies": {
+    "@meta-uber/mesh-transport": "*"
   },
   "peerDependencies": {
     "@automerge/automerge": "^3.4.1"

@@ -7,8 +7,8 @@ use crate::{
 };
 use serde_json::Value;
 
-const MAX_OWNER_OFFER_BYTES: usize = 24 * 1024 * 1024;
-const MAX_GOSSIP_PACKET_BYTES: usize = 256 * 1024;
+const MAX_OWNER_OFFER_BYTES: usize = crate::MAX_LOGICAL_TRANSFER_BYTES;
+const MAX_GOSSIP_PACKET_BYTES: usize = crate::MAX_GOSSIP_PAYLOAD_BYTES;
 fn wire_proof(document: &[u8], value: Value) -> Result<Value, String> {
     if value.get("authority").is_some()
         && (value.get("records").is_some() || value.get("pages").is_some())
@@ -173,6 +173,13 @@ impl LiveWorkspaceSession {
                 }
                 LiveSessionAction::OwnerWorkspaceOffer(payload)
             }
+            "mesh-owner-workspace-offer-page-v1" => match self
+                .control_receiver
+                .receive_kind(&payload, "owner-offer")?
+            {
+                Some(bytes) => LiveSessionAction::OwnerWorkspaceOffer(bytes),
+                None => return Ok(None),
+            },
             "mesh-iroh-gossip" => {
                 if payload.len() > MAX_GOSSIP_PACKET_BYTES {
                     return Err("Gossip packet exceeds size limit".to_string());
@@ -193,6 +200,10 @@ impl LiveWorkspaceSession {
             }
         };
         Ok(Some(action))
+    }
+
+    pub fn clear_pending_transfers(&mut self) {
+        self.control_receiver.clear_pending();
     }
 
     /// Selects host effects and their order for one authenticated incoming frame.
@@ -284,6 +295,7 @@ impl LiveWorkspaceSession {
             | "sync-heartbeat-ack"
             | "mesh-control-sync"
             | "mesh-owner-workspace-offer"
+            | "mesh-owner-workspace-offer-page-v1"
             | "mesh-iroh-gossip"
             | "mesh-automerge-sync"
             | "sync-update" => PairingCodec::encode(frame_type, &self.secret, payload),
@@ -291,7 +303,38 @@ impl LiveWorkspaceSession {
         }
     }
 
+    pub fn payload_limit(&self, frame_type: &str) -> Result<usize, String> {
+        crate::pairing_payload_limit(frame_type, &self.secret)
+    }
+
+    /// Encodes a large owner offer as bounded authenticated control pages.
+    pub fn encode_owner_workspace_offer_pages(
+        &self,
+        payload: &[u8],
+    ) -> Result<Vec<Vec<u8>>, String> {
+        if payload.len() <= self.payload_limit("mesh-owner-workspace-offer")?
+            || payload.len() > MAX_OWNER_OFFER_BYTES
+        {
+            return Err("Owner workspace offer paging size is invalid".into());
+        }
+        let digest = Sha256::digest(payload);
+        let transfer_id = format!("owner-sha256-{}", URL_SAFE_NO_PAD.encode(digest));
+        let pages = control_frames(&self.workspace_id, &transfer_id, payload)?;
+        if pages.is_empty() || pages.len() > crate::MAX_TRANSFER_PAGES {
+            return Err("Owner workspace offer page count exceeds limit".into());
+        }
+        pages
+            .iter()
+            .map(|page| {
+                PairingCodec::encode("mesh-owner-workspace-offer-page-v1", &self.secret, page)
+            })
+            .collect()
+    }
+
     pub fn encode_automerge_frame(&self, frame: &AutomergeSyncFrame) -> Result<Vec<u8>, String> {
+        if frame.message.len() > crate::DEFAULT_MAX_AUTOMERGE_FRAME_BYTES {
+            return Err("Automerge message exceeds size limit".into());
+        }
         let mut value =
             serde_json::to_value(frame).map_err(|_| "Invalid Automerge sync frame".to_string())?;
         value
@@ -319,6 +362,9 @@ impl LiveWorkspaceSession {
         let bytes = URL_SAFE_NO_PAD
             .decode(message)
             .map_err(|_| "Invalid Automerge sync frame".to_string())?;
+        if bytes.len() > crate::DEFAULT_MAX_AUTOMERGE_FRAME_BYTES {
+            return Err("Automerge message exceeds size limit".into());
+        }
         object.insert(
             "message".to_string(),
             serde_json::to_value(bytes).map_err(|_| "Invalid Automerge sync frame".to_string())?,
@@ -744,6 +790,44 @@ mod tests {
                 .effects,
             vec![LiveSessionEffect::UnsupportedControl]
         );
+    }
+
+    #[test]
+    fn owner_offer_payload_limit_pages_valid_large_offer_without_changing_bytes() {
+        let sender = LiveWorkspaceSession::new("workspace-set", "secret").unwrap();
+        let mut receiver = LiveWorkspaceSession::new("workspace-set", "secret").unwrap();
+        let one_frame_limit = sender.payload_limit("mesh-owner-workspace-offer").unwrap();
+        let payload = vec![b'x'; crate::MAX_RPC_FRAME_BYTES + 1];
+        assert!(
+            sender
+                .encode("mesh-owner-workspace-offer", &payload[..one_frame_limit])
+                .is_ok()
+        );
+        assert!(
+            sender
+                .encode(
+                    "mesh-owner-workspace-offer",
+                    &payload[..one_frame_limit + 1]
+                )
+                .is_err()
+        );
+
+        for offered in [&payload[..one_frame_limit + 1], payload.as_slice()] {
+            let pages = sender.encode_owner_workspace_offer_pages(offered).unwrap();
+            assert!(pages.len() > 1);
+            assert!(pages.len() <= crate::MAX_TRANSFER_PAGES);
+            let mut action = None;
+            for page in pages {
+                let received = receiver.receive(&page).unwrap();
+                if received.is_some() {
+                    action = received;
+                }
+            }
+            assert_eq!(
+                action,
+                Some(LiveSessionAction::OwnerWorkspaceOffer(offered.to_vec()))
+            );
+        }
     }
 
     #[test]

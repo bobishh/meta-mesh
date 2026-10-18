@@ -11,6 +11,23 @@ Rust layout:
 
 The npm workspace is marked `private` so root-package publishing cannot happen accidentally. Packages are consumed from a pinned Git submodule until their API stabilizes. Repository visibility is a separate GitHub setting.
 
+## Independent Rusty replica clients
+
+`@meta-uber/mesh-replication/rusty-replica` exports the shared Rusty origin,
+bounded HTTP, opaque encryption/AAD, object hash and pinned storage-receipt
+contracts. `uploadRustyObject` verifies the signed receipt against the exact
+scope, epoch, object, request and policy before returning. A storage receipt
+establishes durable ciphertext storage; it does not authorize product changes.
+The existing `replica-engine` and `history-archive*` exports remain the engine and
+archive contracts. They do not depend on a consuming application's source tree.
+
+Hosts own credentials, durable CAS, lifetime guards and product admission. Save
+the exact pending ciphertext and request ID before sending; after an uncertain
+reply, restart and retry those bytes rather than encrypting a replacement. Hosts
+must recheck current authority and commit accepted progress before acknowledging
+or publishing saved state. The independent-consumer CI job exercises public
+exports with the policy WASM built from the same source revision.
+
 See [replication protocol](docs/replication.md) for identity boundaries, route lifecycle, delivery guarantees, browser-instance behavior, security checks, and operational traces.
 See [verification measurements](docs/measurements.md) for current topology, byte, duplicate, reconnect, and limitation evidence.
 See [protocol models](formal/README.md) for bounded TLA+ checks of authority epochs, session generations, and durable batch acknowledgements.
@@ -207,16 +224,26 @@ complete file within the existing maximum.
 
 ### Bounded peer reads and stream reset
 
-`MeshStream.read(maximumBytes?)` accepts an optional u32 byte limit; omission
-preserves the original zero-argument read for existing callers. The transport
-wrapper rejects invalid limits, and current browser WASM reads bounded responses
-incrementally. `mesh-blob` requests at most
+The shared core ingress profile sets a 4-KiB maximum pairing header (including
+the newline), a 16-MiB maximum complete ordinary pairing frame (header and
+payload), and a finite 16-MiB default for raw stream reads when callers omit a
+limit. A caller limit can only tighten that default. Existing stricter per-kind
+limits remain in force: control, owner-offer-page, gossip, and Automerge
+payloads stay at 256 KiB; Automerge's serialized JSON/base64 envelope is capped
+at 512 KiB so its inner 256-KiB message fits with metadata. Proof frames retain
+their existing 256-KiB complete-wire limit. Pairing readers inspect the bounded header before retaining
+payload bytes; raw readers use a separate API and do not require pairing framing.
+`mesh-blob` requests at most
 `ceil(256 KiB / 3) * 4 + 4096` bytes per 256-KiB attachment chunk, then verifies
-the returned frame length. The native reader uses an inline `[u8; 16 KiB]`
-scratch buffer and checks `remaining + 1` before appending; excess data resets and
-retires only that stream before waiting for EOF. `MeshStream.reset()` cancels both directions
-without closing the connection. Older cached adapters may ignore the optional
-read bound, so the memory guarantee requires compatible adapters.
+the returned frame length. Native readers use bounded scratch buffers, reset
+only the affected stream on oversize or timeout, and preserve the connection.
+Each authenticated connection also reserves at most two concurrent frame reads
+and 32 MiB for those reads. One pending logical control or owner-offer
+reassembly is capped separately at 24 MiB, 256 pages, and 600 seconds; owner offers above one frame use the
+authenticated `owner-workspace-paging-v1` capability and bounded pages. A peer
+without that capability is rejected before an oversized offer is sent. The
+browser transport requires the matching WASM profile and bounded pairing-read
+API; a stale adapter fails closed instead of ignoring a requested bound.
 
 From this repository, run focused wrapper/blob tests and the native loopback
 stream-state harness:

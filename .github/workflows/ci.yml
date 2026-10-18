@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   resource-sdk:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -23,8 +24,32 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Use the matching CI-built browser SDK
+        uses: actions/download-artifact@v7
+        with:
+          name: browser-sdk-wasm
+          path: packages/mesh-transport
       - name: Verify resource connection contract
         run: npm exec -- vitest run packages/mesh-resource/src/index.test.ts
+
+  independent-replica:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Use the matching CI-built browser SDK
+        uses: actions/download-artifact@v7
+        with:
+          name: browser-sdk-wasm
+          path: packages/mesh-transport
+      - name: Verify the public replica contract without product source
+        run: npm test -- packages/mesh-replication/src/independentReplicaConsumer.test.ts
 
   formal-models:
     runs-on: ubuntu-latest

@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest"
-import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, meshNetworkConnection, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohNode, type IrohStream, type MeshConnection } from "./index"
+import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, meshNetworkConnection, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohModule, type IrohNode, type IrohStream, type MeshConnection } from "./index"
 import { MeshReconnectPolicy } from "@meta-uber/mesh-runtime"
+
+const ingressModule: IrohModule = {
+  default: async () => undefined,
+  BrowserNode: { start: async () => { throw new Error("unused") } },
+  WasmIngressBudgetProfile: class {
+    maxHeaderBytes() { return 4096 }
+    maxFrameBytes() { return 1024 }
+    maxPayloadBytes() { return 1023 }
+  },
+}
+const ingressProfile = new (ingressModule.WasmIngressBudgetProfile!)()
 
 describe("mesh transport wire", () => {
   it("preserves the authenticated remote endpoint from a WASM connection getter", () => {
@@ -10,16 +21,16 @@ describe("mesh transport wire", () => {
       async acceptStream(): Promise<IrohStream> { throw new Error("unused") }
       async close() {}
     }
-    expect(meshNetworkConnection(new Connection()).remoteEndpointId).toBe("remote-endpoint")
+    expect(meshNetworkConnection(new Connection(), ingressProfile).remoteEndpointId).toBe("remote-endpoint")
   })
 
   it("Given a structured payload, when sent over the wire, then its shape survives", () => {
     const payload = { kind: "sync", roomId: "one", bytes: [1, 2, 3] }
-    expect(decodeWireMessage(encodeWireMessage(payload))).toEqual(payload)
+    expect(decodeWireMessage(encodeWireMessage(payload, 1024), 1024)).toEqual(payload)
   })
 
   it("Given malformed input, when decoded, then it is rejected", () => {
-    expect(() => decodeWireMessage(new TextEncoder().encode("not json"))).toThrow("Invalid wire")
+    expect(() => decodeWireMessage(new TextEncoder().encode("not json"), 1024)).toThrow("Invalid wire")
   })
 
   it("Given one node seed, when its endpoint is calculated twice, then its public address is stable", async () => {
@@ -40,7 +51,8 @@ describe("mesh transport wire", () => {
   it("Given two requests target one endpoint, when both complete, then one connection carries two streams", async () => {
     const stream = (): IrohStream => ({
       send: vi.fn(async () => undefined),
-      read: vi.fn(async () => encodeWireMessage({ status: "ok" })),
+      read: vi.fn(async () => encodeWireMessage({ status: "ok" }, 1024)),
+      readPairingFrame: vi.fn(async () => encodeWireMessage({ status: "ok" }, 1024)),
       closeSend: vi.fn(async () => undefined),
     })
     const connection: IrohConnection = {
@@ -54,7 +66,7 @@ describe("mesh transport wire", () => {
       accept: vi.fn(),
       close: vi.fn(async () => undefined),
     } satisfies IrohNode
-    const mesh = new IrohMeshNode(node)
+    const mesh = new IrohMeshNode(node, undefined, ingressModule)
 
     await expect(mesh.request("remote", { sequence: 1 })).resolves.toEqual({ status: "ok" })
     await expect(mesh.request("remote", { sequence: 2 })).resolves.toEqual({ status: "ok" })
@@ -72,6 +84,7 @@ describe("mesh transport wire", () => {
       openStream: vi.fn(async () => ({
         send: vi.fn(async () => undefined),
         read: vi.fn(async () => { throw new Error("connection lost") }),
+        readPairingFrame: vi.fn(async () => { throw new Error("connection lost") }),
         closeSend: vi.fn(async () => undefined),
       })),
       acceptStream: vi.fn(),
@@ -80,7 +93,8 @@ describe("mesh transport wire", () => {
     const healthy: IrohConnection = {
       openStream: vi.fn(async () => ({
         send: vi.fn(async () => undefined),
-        read: vi.fn(async () => encodeWireMessage({ status: "recovered" })),
+        read: vi.fn(async () => encodeWireMessage({ status: "recovered" }, 1024)),
+        readPairingFrame: vi.fn(async () => encodeWireMessage({ status: "recovered" }, 1024)),
         closeSend: vi.fn(async () => undefined),
       })),
       acceptStream: vi.fn(),
@@ -94,7 +108,7 @@ describe("mesh transport wire", () => {
       accept: vi.fn(),
       close: vi.fn(async () => undefined),
     } as unknown as IrohNode
-    const mesh = new IrohMeshNode(node)
+    const mesh = new IrohMeshNode(node, undefined, ingressModule)
 
     await expect(mesh.request("remote", { sequence: 1 })).rejects.toThrow("connection lost")
     await expect(mesh.request("remote", { sequence: 2 })).resolves.toEqual({ status: "recovered" })
@@ -109,7 +123,8 @@ describe("mesh transport wire", () => {
     const connection: IrohConnection = {
       openStream: vi.fn(async () => ({
         send: vi.fn(async () => undefined),
-        read: vi.fn(async () => encodeWireMessage(responses.shift())),
+        read: vi.fn(async () => encodeWireMessage(responses.shift(), 1024)),
+        readPairingFrame: vi.fn(async () => encodeWireMessage(responses.shift(), 1024)),
         closeSend: vi.fn(async () => undefined),
       })),
       acceptStream: vi.fn(),
@@ -121,7 +136,7 @@ describe("mesh transport wire", () => {
       accept: vi.fn(),
       close: vi.fn(async () => undefined),
     } satisfies IrohNode
-    const mesh = new IrohMeshNode(node)
+    const mesh = new IrohMeshNode(node, undefined, ingressModule)
 
     await expect(mesh.request("remote", { sequence: 1 })).rejects.toThrow("Not authorized")
     await expect(mesh.request("remote", { sequence: 2 })).resolves.toEqual({ status: "ok" })
@@ -215,6 +230,7 @@ describe("mesh transport wire", () => {
       BrowserNode: { start: vi.fn() },
       WasmGossipEngine: MockGossip,
       WasmBlobEngine: MockBlob,
+      WasmIngressBudgetProfile: ingressModule.WasmIngressBudgetProfile,
     }
     const node = {
       endpointId: "peer-abc-123",

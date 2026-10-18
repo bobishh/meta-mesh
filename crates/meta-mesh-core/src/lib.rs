@@ -27,6 +27,7 @@ pub mod history_locator;
 pub mod history_preparation;
 pub mod history_rebase;
 pub mod identity;
+pub mod ingress;
 pub mod invitation;
 pub mod invitation_plan;
 pub mod live_session;
@@ -127,6 +128,13 @@ pub use identity::{
     certificate_hash, derive_device_seed, public_key_from_seed, public_key_id,
     sign_device_certificate, sign_json_envelope, signature_input, verify_device_certificate_chain,
     verify_signed_envelope,
+};
+pub use ingress::{
+    DEFAULT_STREAM_READ_BYTES, MAX_AUTOMERGE_WIRE_PAYLOAD_BYTES,
+    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_GOSSIP_PAYLOAD_BYTES,
+    MAX_IN_FLIGHT_BYTES_PER_CONNECTION, MAX_LOGICAL_TRANSFER_BYTES, MAX_PAIRING_HEADER_BYTES,
+    MAX_RPC_FRAME_BYTES, MAX_TRANSFER_DEADLINE_MS, MAX_TRANSFER_PAGES, PairingFrameBudget,
+    effective_read_limit, pairing_frame_budget, pairing_payload_limit,
 };
 pub use invitation::{
     DeviceEnrollmentInvitation, InvitationIssuer, PairingInvite, ScopedInvitation, WorkspaceItem,

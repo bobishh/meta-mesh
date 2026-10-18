@@ -1,12 +1,24 @@
 import { describe, expect, it, vi } from "vitest"
-import { meshNetworkConnection, MeshNetworkError, type IrohConnection, type IrohStream } from "./index"
+import { meshNetworkConnection, MeshNetworkError, type IrohConnection, type IrohStream, type MeshIngressBudgetProfile } from "./index"
+
+const profile = (maximum = 128): MeshIngressBudgetProfile => ({
+  maxHeaderBytes: () => 4096, maxFrameBytes: () => maximum, maxPayloadBytes: () => maximum,
+  maxLogicalTransferBytes: () => maximum, maxTransferPages: () => 1, maxTransferDeadlineMs: () => 1000,
+  maxInFlightBytesPerConnection: () => maximum, maxConcurrentFramesPerConnection: () => 1,
+})
 
 class BoundedReadStream {
   readonly calls: Array<{ receiver: BoundedReadStream; maximumBytes: number | undefined }> = []
+  readonly mixedCalls: Array<{ prefix: Uint8Array; maximumBytes: number | undefined }> = []
 
   async read(maximumBytes?: number) {
     this.calls.push({ receiver: this, maximumBytes })
     return new Uint8Array(maximumBytes === undefined ? [1, 2, 3] : [1].slice(0, maximumBytes))
+  }
+  readPairingFrame(maximumBytes?: number) { return this.read(maximumBytes) }
+  async readPairingOrRawPrefix(prefix: Uint8Array, maximumBytes?: number) {
+    this.mixedCalls.push({ prefix, maximumBytes })
+    return new Uint8Array([1])
   }
 
   async send(_bytes: Uint8Array) {}
@@ -23,7 +35,7 @@ describe("mesh transport stream read limits", () => {
         acceptStream: vi.fn(async () => stream as IrohStream),
         close: vi.fn(async () => undefined),
       } satisfies IrohConnection
-      const wrapped = meshNetworkConnection(connection)
+      const wrapped = meshNetworkConnection(connection, profile(64))
       const wrappedStream = await wrapped[acquisition]() as IrohStream & {
         read(maximumBytes?: number): Promise<Uint8Array>
       }
@@ -35,7 +47,7 @@ describe("mesh transport stream read limits", () => {
     },
   )
 
-  it("Given no byte limit, when a legacy read runs, then the wrapper calls read without arguments", async () => {
+  it("Given no byte limit, when a read runs, then the wrapper forwards its finite hard limit", async () => {
     const read = vi.fn(async function (this: BoundedReadStream, maximumBytes?: number) {
       this.calls.push({ receiver: this, maximumBytes })
       return new Uint8Array([1, 2, 3])
@@ -47,13 +59,28 @@ describe("mesh transport stream read limits", () => {
       acceptStream: async () => stream as IrohStream,
       close: async () => undefined,
     } satisfies IrohConnection
-    const wrappedStream = await meshNetworkConnection(connection).openStream()
+    const wrappedStream = await meshNetworkConnection(connection, profile(128)).openStream()
 
     await expect(wrappedStream.read()).resolves.toEqual(new Uint8Array([1, 2, 3]))
 
     expect(read).toHaveBeenCalledOnce()
-    expect(read.mock.calls[0]).toHaveLength(0)
+    expect(read.mock.calls[0]).toEqual([128])
     expect(stream.calls[0]?.receiver).toBe(stream)
+  })
+
+  it("Given a raw protocol prefix, when mixed ingress reads, then the wrapper preserves prefix and tightens raw limit", async () => {
+    const stream = new BoundedReadStream()
+    const connection = {
+      openStream: async () => stream as IrohStream,
+      acceptStream: async () => stream as IrohStream,
+      close: async () => undefined,
+    } satisfies IrohConnection
+    const wrapped = await meshNetworkConnection(connection, profile(128)).openStream()
+    const prefix = new TextEncoder().encode("known-raw-v1\n")
+
+    await expect(wrapped.readPairingOrRawPrefix?.(prefix, 32)).resolves.toEqual(new Uint8Array([1]))
+
+    expect(stream.mixedCalls).toEqual([{ prefix, maximumBytes: 32 }])
   })
 
   it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 32])(
@@ -66,7 +93,7 @@ describe("mesh transport stream read limits", () => {
         acceptStream: async () => stream as IrohStream,
         close: async () => undefined,
       } satisfies IrohConnection
-      const wrappedStream = await meshNetworkConnection(connection).openStream() as IrohStream & {
+      const wrappedStream = await meshNetworkConnection(connection, profile(64)).openStream() as IrohStream & {
         read(maximumBytes?: number): Promise<Uint8Array>
       }
 
@@ -83,7 +110,7 @@ describe("mesh transport stream read limits", () => {
       acceptStream: async () => stream as IrohStream,
       close: async () => undefined,
     } satisfies IrohConnection
-    const wrappedStream = await meshNetworkConnection(connection).acceptStream() as IrohStream & {
+    const wrappedStream = await meshNetworkConnection(connection, profile(128)).acceptStream() as IrohStream & {
       read(maximumBytes?: number): Promise<Uint8Array>
     }
 

@@ -38,7 +38,7 @@ export type RustStateCore = {
     remotePersonId: string): boolean
   meshHandshakeFeatures(capabilities: string[]): { heartbeatSupported: boolean;
     ownershipReceiptSupported: boolean; ownerWorkspaceSupported: boolean;
-    ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"; blobTransferSupported: boolean }
+    ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer" | "mesh-owner-workspace-offer-page-v1"; blobTransferSupported: boolean }
   credentialBelongsToProfile(credential: unknown, personId: string, publicKey: string): boolean
   canReuseMemberBundle(input: unknown): boolean
   planSuccessionPolicyRefresh(current: unknown, eligible: string[], epoch: number): {
@@ -222,6 +222,8 @@ export type RustLiveWorkspaceSession = {
     plan: { effects: string[]; serializeDocument: boolean; control?: unknown }
   } | null
   encode(frameType: string, payload: Uint8Array): Uint8Array
+  encodeOwnerWorkspaceOfferPages(payload: Uint8Array): Uint8Array[]
+  clearPendingTransfers(): void
   encodeAutomergeFrame(frame: unknown): Uint8Array
   decodeAutomergePayload(payload: Uint8Array): unknown
   startDocumentSync(localDeviceId: string, remoteDeviceId: string): void

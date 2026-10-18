@@ -1,3 +1,4 @@
+use crate::{MAX_PAIRING_HEADER_BYTES, pairing_frame_budget, pairing_payload_limit};
 use serde::{Deserialize, Serialize};
 
 pub const PAIRING_VERSION: &str = "0.0.1";
@@ -28,6 +29,7 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-proof-page-v1",
     "mesh-control-sync",
     "mesh-owner-workspace-offer",
+    "mesh-owner-workspace-offer-page-v1",
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
@@ -48,8 +50,18 @@ pub struct PairingCodec;
 
 impl PairingCodec {
     pub fn encode(frame_type: &str, secret: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
-        if !is_pairing_frame_type(frame_type) || secret.is_empty() {
+        let Some(budget) = pairing_frame_budget(frame_type) else {
             return Err("Pairing frame invalid".to_string());
+        };
+        if secret.is_empty() {
+            return Err("Pairing frame invalid".to_string());
+        }
+        let payload_limit = pairing_payload_limit(frame_type, secret)?;
+        if payload.len() > payload_limit {
+            return Err(format!(
+                "Pairing payload too large: kind={frame_type} bytes={} max={payload_limit}",
+                payload.len()
+            ));
         }
         let header = PairingFrameHeader {
             frame_type: frame_type.to_string(),
@@ -58,18 +70,57 @@ impl PairingCodec {
         };
         let mut frame =
             serde_json::to_vec(&header).map_err(|_| "Pairing frame invalid".to_string())?;
+        if frame.len().saturating_add(1) > MAX_PAIRING_HEADER_BYTES {
+            return Err(format!(
+                "Pairing header too large: kind={frame_type} bytes={} max={MAX_PAIRING_HEADER_BYTES}",
+                frame.len().saturating_add(1)
+            ));
+        }
         frame.push(b'\n');
+        if frame.len().saturating_add(payload.len()) > budget.max_wire_bytes {
+            return Err(format!(
+                "Pairing frame too large: kind={frame_type} bytes={} max={}",
+                frame.len().saturating_add(payload.len()),
+                budget.max_wire_bytes
+            ));
+        }
         frame.extend_from_slice(payload);
         Ok(frame)
     }
 
     pub fn inspect(frame: &[u8]) -> Result<PairingFrameHeader, String> {
+        if frame.len() > crate::MAX_RPC_FRAME_BYTES {
+            return Err(format!(
+                "Pairing frame too large: stage=inspect bytes={} max={}",
+                frame.len(),
+                crate::MAX_RPC_FRAME_BYTES
+            ));
+        }
         let separator = frame
             .iter()
+            .take(MAX_PAIRING_HEADER_BYTES)
             .position(|byte| *byte == b'\n')
-            .ok_or_else(|| "Pairing frame missing".to_string())?;
+            .ok_or_else(|| format!("Pairing header missing or too large: stage=inspect bytes={} max={MAX_PAIRING_HEADER_BYTES}", frame.len().min(MAX_PAIRING_HEADER_BYTES)))?;
         let header: PairingFrameHeader = serde_json::from_slice(&frame[..separator])
             .map_err(|_| "Pairing frame invalid".to_string())?;
+        let budget = pairing_frame_budget(&header.frame_type)
+            .ok_or_else(|| "Pairing frame invalid".to_string())?;
+        if frame.len() > budget.max_wire_bytes {
+            return Err(format!(
+                "Pairing frame too large: kind={} bytes={} max={}",
+                header.frame_type,
+                frame.len(),
+                budget.max_wire_bytes
+            ));
+        }
+        if frame.len().saturating_sub(separator + 1) > budget.max_payload_bytes {
+            return Err(format!(
+                "Pairing payload too large: kind={} bytes={} max={}",
+                header.frame_type,
+                frame.len().saturating_sub(separator + 1),
+                budget.max_payload_bytes
+            ));
+        }
         if header.version != PAIRING_VERSION
             || header.secret.is_empty()
             || !is_pairing_frame_type(&header.frame_type)
@@ -84,12 +135,38 @@ impl PairingCodec {
         expected_type: &str,
         expected_secret: &str,
     ) -> Result<Vec<u8>, String> {
+        if frame.len() > crate::MAX_RPC_FRAME_BYTES {
+            return Err(format!(
+                "Pairing frame too large: stage=decode bytes={} max={}",
+                frame.len(),
+                crate::MAX_RPC_FRAME_BYTES
+            ));
+        }
         let separator = frame
             .iter()
+            .take(MAX_PAIRING_HEADER_BYTES)
             .position(|byte| *byte == b'\n')
-            .ok_or_else(|| "Pairing frame missing".to_string())?;
+            .ok_or_else(|| format!("Pairing header missing or too large: stage=decode bytes={} max={MAX_PAIRING_HEADER_BYTES}", frame.len().min(MAX_PAIRING_HEADER_BYTES)))?;
         let header: PairingFrameHeader = serde_json::from_slice(&frame[..separator])
             .map_err(|_| "Pairing frame invalid".to_string())?;
+        let budget = pairing_frame_budget(&header.frame_type)
+            .ok_or_else(|| "Pairing frame invalid".to_string())?;
+        if frame.len() > budget.max_wire_bytes {
+            return Err(format!(
+                "Pairing frame too large: kind={} bytes={} max={}",
+                header.frame_type,
+                frame.len(),
+                budget.max_wire_bytes
+            ));
+        }
+        if frame.len().saturating_sub(separator + 1) > budget.max_payload_bytes {
+            return Err(format!(
+                "Pairing payload too large: kind={} bytes={} max={}",
+                header.frame_type,
+                frame.len().saturating_sub(separator + 1),
+                budget.max_payload_bytes
+            ));
+        }
         if header.frame_type != expected_type
             || header.version != PAIRING_VERSION
             || header.secret != expected_secret
@@ -559,6 +636,51 @@ mod tests {
         assert_eq!(
             PairingCodec::decode(&frame, "mesh-control-sync", "workspace-secret").unwrap(),
             vec![0, 1, 255]
+        );
+    }
+
+    #[test]
+    fn ordinary_frame_budget_includes_header_at_minus_one_exact_and_plus_one() {
+        let header = serde_json::to_vec(&PairingFrameHeader {
+            frame_type: "sync-request".to_string(),
+            version: PAIRING_VERSION.to_string(),
+            secret: "secret".to_string(),
+        })
+        .unwrap();
+        let payload_limit = crate::MAX_RPC_FRAME_BYTES - header.len() - 1;
+        let below =
+            PairingCodec::encode("sync-request", "secret", &vec![0; payload_limit - 1]).unwrap();
+        assert_eq!(below.len(), crate::MAX_RPC_FRAME_BYTES - 1);
+        assert!(PairingCodec::inspect(&below).is_ok());
+        assert!(PairingCodec::decode(&below, "sync-request", "secret").is_ok());
+
+        let exact =
+            PairingCodec::encode("sync-request", "secret", &vec![0; payload_limit]).unwrap();
+        assert_eq!(exact.len(), crate::MAX_RPC_FRAME_BYTES);
+        assert!(PairingCodec::inspect(&exact).is_ok());
+        assert!(PairingCodec::decode(&exact, "sync-request", "secret").is_ok());
+
+        assert!(
+            PairingCodec::encode("sync-request", "secret", &vec![0; payload_limit + 1]).is_err()
+        );
+        let mut oversized = exact;
+        oversized.push(0);
+        assert!(PairingCodec::inspect(&oversized).is_err());
+        assert!(PairingCodec::decode(&oversized, "sync-request", "secret").is_err());
+    }
+
+    #[test]
+    fn inspect_and_decode_stop_at_header_budget_without_delimiter() {
+        let frame = vec![b'{'; crate::MAX_PAIRING_HEADER_BYTES + 1];
+        assert!(
+            PairingCodec::inspect(&frame)
+                .unwrap_err()
+                .contains("header")
+        );
+        assert!(
+            PairingCodec::decode(&frame, "sync-request", "secret")
+                .unwrap_err()
+                .contains("header")
         );
     }
 

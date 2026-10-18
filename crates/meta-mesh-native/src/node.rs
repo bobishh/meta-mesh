@@ -23,13 +23,17 @@ use iroh_gossip::{
     api::{Event, GossipReceiver, GossipSender},
     net::{GOSSIP_ALPN, Gossip},
 };
-use tokio::sync::{Mutex, mpsc, oneshot};
+use meta_mesh_core::{
+    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES,
+    MAX_TRANSFER_DEADLINE_MS, PairingCodec, pairing_frame_budget,
+};
+use tokio::sync::{Mutex, Semaphore, mpsc, oneshot};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 pub const RPC_ALPN: &[u8] = b"meta-mesh/rpc/1";
 const BROWSER_RPC_ALPN: &[u8] = b"match/sync/0";
-pub const MAX_RPC_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_RPC_BYTES: usize = MAX_RPC_FRAME_BYTES;
 const RPC_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Debug, Clone)]
@@ -149,33 +153,176 @@ impl NativeBrowserRequest {
 impl NativeBrowserConnection {
     pub async fn accept(&self) -> Result<NativeBrowserRequest, BoxError> {
         let (send, mut receive) = self.connection.accept_bi().await?;
-        let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
-        Ok(NativeBrowserRequest { payload, send })
+        match tokio::time::timeout(
+            Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
+            receive.read_to_end(MAX_RPC_BYTES),
+        )
+        .await
+        {
+            Ok(Ok(payload)) => Ok(NativeBrowserRequest { payload, send }),
+            Ok(Err(error)) => {
+                receive.stop(0u32.into()).ok();
+                Err(Box::new(error))
+            }
+            Err(_) => {
+                receive.stop(0u32.into()).ok();
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Browser RPC stream timed out",
+                )))
+            }
+        }
+    }
+
+    pub async fn accept_pairing(&self) -> Result<NativeBrowserRequest, BoxError> {
+        let (send, mut receive) = self.connection.accept_bi().await?;
+        let result = tokio::time::timeout(
+            Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
+            read_pairing_frame(&mut receive),
+        )
+        .await;
+        match result {
+            Ok(Ok(payload)) => Ok(NativeBrowserRequest { payload, send }),
+            Ok(Err(error)) => {
+                receive.stop(0u32.into()).ok();
+                Err(error)
+            }
+            Err(_) => {
+                receive.stop(0u32.into()).ok();
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Pairing stream timed out",
+                )))
+            }
+        }
     }
 
     pub async fn exchange(&self, payload: &[u8], timeout: Duration) -> Result<Vec<u8>, BoxError> {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("RPC request exceeds size limit"));
         }
-        tokio::time::timeout(timeout, async {
-            let (mut send, mut receive) = self.connection.open_bi().await?;
+        let (mut send, mut receive) = self.connection.open_bi().await?;
+        match tokio::time::timeout(timeout, async {
             send.write_all(payload).await?;
             send.finish()?;
             let response = receive.read_to_end(MAX_RPC_BYTES).await?;
-            Ok(response)
+            Ok::<Vec<u8>, BoxError>(response)
         })
         .await
-        .map_err(|_| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "Browser RPC request timed out",
-            )) as BoxError
-        })?
+        {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(error)) => {
+                let _ = send.reset(0u32.into());
+                let _ = receive.stop(0u32.into());
+                Err(error)
+            }
+            Err(_) => {
+                let _ = send.reset(0u32.into());
+                let _ = receive.stop(0u32.into());
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Browser RPC request timed out",
+                )))
+            }
+        }
+    }
+
+    pub async fn exchange_pairing(
+        &self,
+        payload: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, BoxError> {
+        if payload.len() > MAX_RPC_BYTES {
+            return Err(io_error("Pairing frame exceeds ingress limit: stage=send"));
+        }
+        let (mut send, mut receive) = self.connection.open_bi().await?;
+        let result = tokio::time::timeout(timeout, async {
+            send.write_all(payload).await?;
+            send.finish()?;
+            read_pairing_frame(&mut receive).await
+        })
+        .await;
+        match result {
+            Ok(Ok(bytes)) => Ok(bytes),
+            Ok(Err(error)) => {
+                let _ = send.reset(0u32.into());
+                let _ = receive.stop(0u32.into());
+                Err(error)
+            }
+            Err(_) => {
+                let _ = send.reset(0u32.into());
+                let _ = receive.stop(0u32.into());
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Pairing stream timed out",
+                )))
+            }
+        }
     }
 
     pub fn close(&self) {
         self.connection
             .close(0u32.into(), b"browser session complete");
+    }
+}
+
+async fn read_pairing_frame(receive: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>, BoxError> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 16 * 1024];
+    let header = loop {
+        let remaining = MAX_PAIRING_HEADER_BYTES.saturating_sub(bytes.len());
+        if remaining == 0 {
+            return Err(io_error(
+                "Pairing header exceeds ingress limit: stage=stream",
+            ));
+        }
+        let read_limit = remaining.min(buffer.len());
+        let Some(length) = receive.read(&mut buffer[..read_limit]).await? else {
+            return Err(io_error("Pairing header incomplete: stage=stream"));
+        };
+        let chunk = &buffer[..length];
+        let newline = chunk.iter().position(|byte| *byte == b'\n');
+        bytes.extend_from_slice(chunk);
+        if let Some(position) = newline {
+            let header_end = bytes.len() - length + position + 1;
+            let header = PairingCodec::inspect(&bytes[..header_end])
+                .map_err(|_| io_error("Pairing frame invalid: stage=header"))?;
+            break header;
+        }
+        if bytes.len() >= MAX_PAIRING_HEADER_BYTES {
+            return Err(io_error(
+                "Pairing header exceeds ingress limit: stage=stream",
+            ));
+        }
+    };
+    let budget = pairing_frame_budget(&header.frame_type)
+        .ok_or_else(|| io_error("Pairing frame invalid: stage=kind"))?;
+    let header_bytes = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .unwrap_or(bytes.len())
+        + 1;
+    let frame_limit = budget
+        .max_wire_bytes
+        .min(MAX_RPC_FRAME_BYTES)
+        .min(header_bytes.saturating_add(budget.max_payload_bytes));
+    if bytes.len() > frame_limit {
+        return Err(io_error(
+            "Pairing frame exceeds ingress limit: stage=header",
+        ));
+    }
+    loop {
+        let remaining = frame_limit.saturating_sub(bytes.len());
+        let read_limit = remaining.saturating_add(1).min(buffer.len());
+        let Some(length) = receive.read(&mut buffer[..read_limit]).await? else {
+            return Ok(bytes);
+        };
+        if length > remaining {
+            return Err(io_error(
+                "Pairing frame exceeds ingress limit: stage=stream",
+            ));
+        }
+        bytes.extend_from_slice(&buffer[..length]);
     }
 }
 
@@ -226,30 +373,44 @@ struct RpcProtocol {
 impl ProtocolHandler for RpcProtocol {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         let remote_endpoint_id = connection.remote_id();
+        let frame_slots = Arc::new(Semaphore::new(MAX_CONCURRENT_FRAMES_PER_CONNECTION));
         while let Ok((mut send, mut receive)) = connection.accept_bi().await {
+            let permit = match frame_slots.clone().try_acquire_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    send.reset(1u32.into()).ok();
+                    receive.stop(1u32.into()).ok();
+                    continue;
+                }
+            };
             let sender = self.sender.clone();
             tokio::spawn(async move {
-                let result = async {
-                    let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
-                    let (response, response_receiver) = oneshot::channel();
-                    sender
-                        .send(NativeRpcRequest {
-                            remote_endpoint_id,
-                            payload,
-                            response: Some(response),
-                        })
-                        .await
-                        .map_err(|_| io_error("RPC listener stopped"))?;
-                    let response = response_receiver
-                        .await
-                        .map_err(|_| io_error("RPC request dropped without response"))?;
-                    send.write_all(&response).await?;
-                    send.finish()?;
-                    Ok::<(), BoxError>(())
-                }
+                let _permit = permit;
+                let result = tokio::time::timeout(
+                    Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
+                    async {
+                        let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
+                        let (response, response_receiver) = oneshot::channel();
+                        sender
+                            .send(NativeRpcRequest {
+                                remote_endpoint_id,
+                                payload,
+                                response: Some(response),
+                            })
+                            .await
+                            .map_err(|_| io_error("RPC listener stopped"))?;
+                        let response = response_receiver
+                            .await
+                            .map_err(|_| io_error("RPC request dropped without response"))?;
+                        send.write_all(&response).await?;
+                        send.finish()?;
+                        Ok::<(), BoxError>(())
+                    },
+                )
                 .await;
-                if result.is_err() {
+                if !matches!(result, Ok(Ok(()))) {
                     send.reset(1u32.into()).ok();
+                    receive.stop(1u32.into()).ok();
                 }
             });
         }

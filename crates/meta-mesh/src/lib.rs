@@ -18,7 +18,10 @@ pub mod state;
 pub use blobs::{BlobDescriptor, BlobEngine, ParsedTicket, WasmBlobEngine};
 pub use gossip::{GossipEngine, GossipPacket, WasmGossipEngine};
 pub use meta_mesh_core::{PairingCodec, PairingFrameHeader};
-pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandoff, WasmWorkspaceJoinHandshake};
+pub use pairing::{
+    WasmIngressBudgetProfile, WasmPairingCodec, WasmWorkspaceJoinHandoff,
+    WasmWorkspaceJoinHandshake,
+};
 pub use runtime::{
     WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshBatchDeliveryFlow,
     WasmMeshHandshakeFlow, WasmMeshLifecycleState, WasmMeshRuntimeState, WasmMeshScopeRuntime,

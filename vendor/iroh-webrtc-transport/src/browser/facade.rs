@@ -460,10 +460,10 @@ impl BrowserWebRtcStream {
         result.map_err(|error| JsValue::from_str(&error))
     }
 
-    pub async fn read_chunk(&self) -> Result<Option<Vec<u8>>, JsValue> {
+    pub async fn read_chunk(&self, maximum_bytes: usize) -> Result<Option<Vec<u8>>, JsValue> {
         self.node
             .runtime
-            .stream_receive_chunk_facade(&self.stream_key)
+            .stream_receive_chunk_facade(&self.stream_key, maximum_bytes)
             .await
     }
 }
@@ -572,8 +572,11 @@ impl BrowserRuntime {
     async fn stream_receive_chunk_facade(
         &self,
         stream_key: &str,
+        maximum_bytes: usize,
     ) -> Result<Option<Vec<u8>>, JsValue> {
-        let result = self.receive_stream_chunk(stream_key, None).await?;
+        let result = self
+            .receive_stream_chunk(stream_key, Some(maximum_bytes))
+            .await?;
         Ok((!result.done).then_some(result.chunk.unwrap_or_default()))
     }
 

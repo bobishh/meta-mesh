@@ -2,15 +2,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use web_time::Instant;
 
 pub const MAX_CONTROL_FRAME_BYTES: usize = 256 * 1024;
 pub const CONTROL_CHUNK_BYTES: usize = 128 * 1024;
-pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = 24 * 1024 * 1024;
-pub const MESH_CAPABILITIES: [&str; 7] = [
+pub const MAX_CONTROL_SNAPSHOT_BYTES: usize = crate::MAX_LOGICAL_TRANSFER_BYTES;
+pub const MESH_CAPABILITIES: [&str; 8] = [
     "heartbeat-v1",
     "automerge-sync-v1",
     "ownership-receipt-v1",
     "owner-workspace",
+    "owner-workspace-paging-v1",
     "iroh-gossip-v1",
     "blob-transfer-v1",
     "device-revocation-v1",
@@ -55,8 +58,13 @@ pub fn mesh_handshake_features(capabilities: &[String]) -> MeshHandshakeFeatures
         heartbeat_supported: has("heartbeat-v1"),
         ownership_receipt_supported: has("ownership-receipt-v1"),
         owner_workspace_supported: has("owner-workspace"),
-        owner_workspace_offer_frame: has("owner-workspace")
-            .then_some("mesh-owner-workspace-offer"),
+        owner_workspace_offer_frame: has("owner-workspace").then_some(
+            if has("owner-workspace-paging-v1") {
+                "mesh-owner-workspace-offer-page-v1"
+            } else {
+                "mesh-owner-workspace-offer"
+            },
+        ),
         blob_transfer_supported: has("blob-transfer-v1"),
     }
 }
@@ -548,8 +556,10 @@ pub fn control_frames(
 
 #[derive(Debug)]
 struct PendingControlTransfer {
+    kind: String,
     id: String,
     total_bytes: usize,
+    started_at: Instant,
     parts: BTreeMap<usize, Vec<u8>>,
 }
 
@@ -568,6 +578,24 @@ impl ControlFrameReceiver {
     }
 
     pub fn receive(&mut self, frame: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        self.receive_kind(frame, "control")
+    }
+
+    pub fn receive_kind(&mut self, frame: &[u8], kind: &str) -> Result<Option<Vec<u8>>, String> {
+        if self.pending.as_ref().is_some_and(|pending| {
+            pending.started_at.elapsed().as_millis() > u128::from(crate::MAX_TRANSFER_DEADLINE_MS)
+        }) {
+            self.pending = None;
+            return Err("Mesh control transfer deadline exceeded".to_string());
+        }
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.kind != kind)
+        {
+            self.pending = None;
+            return Err("Conflicting mesh control transfer kind".to_string());
+        }
         if frame.len() > MAX_CONTROL_FRAME_BYTES {
             return Err("Mesh control frame exceeds size limit".to_string());
         }
@@ -575,6 +603,7 @@ impl ControlFrameReceiver {
             serde_json::from_slice(frame).map_err(|_| "Invalid mesh control frame".to_string())?;
         if value.get("version").and_then(serde_json::Value::as_u64) != Some(2) {
             if self.pending.is_some() {
+                self.pending = None;
                 return Err("Incomplete mesh control snapshot".to_string());
             }
             return Ok(Some(frame.to_vec()));
@@ -594,42 +623,56 @@ impl ControlFrameReceiver {
         if part.len() != expected_size {
             return Err("Invalid mesh control chunk length".to_string());
         }
-        match &self.pending {
-            Some(pending)
-                if pending.id != chunk.transfer_id || pending.total_bytes != chunk.total_bytes =>
-            {
-                return Err("Conflicting mesh control transfer".to_string());
-            }
-            None => {
-                self.pending = Some(PendingControlTransfer {
-                    id: chunk.transfer_id.clone(),
-                    total_bytes: chunk.total_bytes,
-                    parts: BTreeMap::new(),
-                });
-            }
-            _ => {}
+        if self.pending.as_ref().is_some_and(|pending| {
+            pending.id != chunk.transfer_id || pending.total_bytes != chunk.total_bytes
+        }) {
+            self.pending = None;
+            return Err("Conflicting mesh control transfer".to_string());
         }
-        let pending = self.pending.as_mut().expect("pending transfer initialized");
-        if pending.parts.insert(chunk.index, part).is_some() {
+        if self.pending.is_none() {
+            self.pending = Some(PendingControlTransfer {
+                kind: kind.to_string(),
+                id: chunk.transfer_id.clone(),
+                total_bytes: chunk.total_bytes,
+                started_at: Instant::now(),
+                parts: BTreeMap::new(),
+            });
+        }
+        let (duplicate, complete) = {
+            let pending = self.pending.as_mut().expect("pending transfer initialized");
+            let duplicate = pending.parts.insert(chunk.index, part).is_some();
+            (duplicate, pending.parts.len() == expected_parts)
+        };
+        if duplicate {
+            self.pending = None;
             return Err("Conflicting mesh control chunk".to_string());
         }
-        if pending.parts.len() != expected_parts {
+        if !complete {
             return Ok(None);
         }
+        let mut pending = self.pending.take().expect("completed transfer is pending");
         let mut value = Vec::with_capacity(pending.total_bytes);
         for index in 0..expected_parts {
-            value.extend(
-                pending
-                    .parts
-                    .get(&index)
-                    .ok_or_else(|| "Incomplete mesh control transfer".to_string())?,
-            );
+            let part = pending
+                .parts
+                .remove(&index)
+                .ok_or_else(|| "Incomplete mesh control transfer".to_string())?;
+            value.extend_from_slice(&part);
         }
         if value.len() != pending.total_bytes {
             return Err("Invalid mesh control snapshot length".to_string());
         }
-        self.pending = None;
+        if let Some(expected_digest) = pending.id.strip_prefix("owner-sha256-") {
+            let actual_digest = URL_SAFE_NO_PAD.encode(Sha256::digest(&value));
+            if actual_digest != expected_digest {
+                return Err("Owner workspace transfer digest mismatch".to_string());
+            }
+        }
         Ok(Some(value))
+    }
+
+    pub fn clear_pending(&mut self) {
+        self.pending = None;
     }
 }
 
@@ -641,6 +684,7 @@ fn validate_chunk(chunk: &ControlChunk, workspace_id: &str) -> Result<(), String
         || chunk.total_bytes <= MAX_CONTROL_FRAME_BYTES
         || chunk.total_bytes > MAX_CONTROL_SNAPSHOT_BYTES
         || chunk.index >= parts
+        || parts > crate::MAX_TRANSFER_PAGES
     {
         Err("Invalid mesh control chunk".to_string())
     } else {

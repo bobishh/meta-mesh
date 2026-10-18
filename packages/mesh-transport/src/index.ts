@@ -1,6 +1,8 @@
 export type IrohStream = {
   send(bytes: Uint8Array): Promise<void>
   read(maximumBytes?: number): Promise<Uint8Array>
+  readPairingFrame(maximumBytes?: number): Promise<Uint8Array>
+  readPairingOrRawPrefix?(prefix: Uint8Array, maximumRawBytes?: number): Promise<Uint8Array>
   closeSend(): Promise<void>
   reset?(): Promise<void>
 }
@@ -21,6 +23,7 @@ export type IrohNode = {
 
 export type IrohModule = {
   default(input?: { module_or_path: string }): Promise<void>
+  WasmIngressBudgetProfile?: new () => MeshIngressBudgetProfile
   BrowserNode: { start(seed?: Uint8Array): Promise<IrohNode> }
   WasmGossipEngine?: { new(localPeerId: string): any }
   WasmBlobEngine?: { new(): any }
@@ -43,14 +46,29 @@ export type IrohModule = {
   WasmMeshAuthenticatedSessions?: typeof import("../wasm/policy/meta_mesh_policy.js").WasmMeshAuthenticatedSessions
 }
 
+export type MeshIngressBudgetProfile = {
+  maxHeaderBytes(): number
+  maxFrameBytes(frameType: string): number
+  maxPayloadBytes(frameType: string): number
+  maxLogicalTransferBytes(): number
+  maxTransferPages(): number
+  maxTransferDeadlineMs(): number
+  maxInFlightBytesPerConnection(): number
+  maxConcurrentFramesPerConnection(): number
+}
+
 export type PolicyModule = typeof import("../wasm/policy/meta_mesh_policy.js")
 
 export type WireHandler = (payload: unknown) => Promise<unknown>
 
 export type MeshStream = {
   send(bytes: Uint8Array): Promise<void>
-  /** Limit buffered bytes before EOF. Current WASM enforces it; legacy adapters may ignore it. */
+  /** Bounded pairing frame read; omission uses the core profile. */
   read(maximumBytes?: number): Promise<Uint8Array>
+  /** Finite raw read for non-pairing protocols; caller limits only tighten profile cap. */
+  readRaw?: (maximumBytes?: number) => Promise<Uint8Array>
+  /** Detect one explicit raw protocol prefix; all other input uses bounded pairing framing. */
+  readPairingOrRawPrefix?: (prefix: Uint8Array, maximumRawBytes?: number) => Promise<Uint8Array>
   closeSend(): Promise<void>
   /** Cancel both directions of this stream without closing its connection. Older adapters may omit it. */
   reset?(): Promise<void>
@@ -76,15 +94,128 @@ export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   catch (error) { throw new MeshNetworkError(error instanceof Error ? error.message : String(error)) }
 }
 
-export function meshNetworkConnection<TConnection extends MeshConnection>(connection: TConnection): TConnection {
-  const stream = (value: MeshStream): MeshStream => {
+type WaitingRead = { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+type ReadSlots = { active: number; waiting: WaitingRead[]; lastUsed: number }
+const peerReadSlots = new Map<string, ReadSlots>()
+const connectionReadSlots = new WeakMap<object, ReadSlots>()
+
+function readSlotsFor(connection: IrohConnection, deadlineMs: number): ReadSlots {
+  const peerId = connection.remoteEndpointId
+  if (!peerId) {
+    let slots = connectionReadSlots.get(connection)
+    if (!slots) {
+      slots = { active: 0, waiting: [], lastUsed: Date.now() }
+      connectionReadSlots.set(connection, slots)
+    }
+    return slots
+  }
+  const now = Date.now()
+  for (const [id, slots] of peerReadSlots) {
+    if (slots.active === 0 && slots.waiting.length === 0 && now - slots.lastUsed > deadlineMs) peerReadSlots.delete(id)
+  }
+  let slots = peerReadSlots.get(peerId)
+  if (!slots) {
+    if (peerReadSlots.size >= 1024) throw new MeshNetworkError("Mesh peer read budget is full")
+    slots = { active: 0, waiting: [], lastUsed: now }
+    peerReadSlots.set(peerId, slots)
+  }
+  slots.lastUsed = now
+  return slots
+}
+
+export function meshNetworkConnection(connection: IrohConnection,
+  ingressProfile: MeshIngressBudgetProfile, frameType = "sync-request"): MeshConnection {
+  const frameLimit = ingressProfile.maxFrameBytes(frameType)
+  const inFlightLimit = ingressProfile.maxInFlightBytesPerConnection()
+  const hardReadLimit = Math.min(frameLimit, inFlightLimit)
+  const maxFrames = ingressProfile.maxConcurrentFramesPerConnection()
+  const maxConcurrentReads = Math.min(maxFrames, Math.floor(inFlightLimit / hardReadLimit))
+  const readDeadlineMs = ingressProfile.maxTransferDeadlineMs()
+  if (!Number.isSafeInteger(frameLimit) || frameLimit < 1 || !Number.isSafeInteger(inFlightLimit) || inFlightLimit < 1) {
+    throw new RangeError("Invalid hard stream read limit")
+  }
+  if (!Number.isSafeInteger(maxFrames) || maxConcurrentReads < 1) throw new RangeError("Invalid peer read concurrency")
+  if (!Number.isSafeInteger(readDeadlineMs) || readDeadlineMs < 1) throw new RangeError("Invalid stream read deadline")
+  const slots = readSlotsFor(connection, readDeadlineMs)
+  const acquireRead = async (): Promise<void> => {
+    if (slots.active < maxConcurrentReads) {
+      slots.active++
+      slots.lastUsed = Date.now()
+      return
+    }
+    if (slots.waiting.length >= maxFrames) throw new MeshNetworkError("Mesh stream concurrency limit exceeded")
+    await new Promise<void>((resolve, reject) => {
+      const waiter: WaitingRead = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          const index = slots.waiting.indexOf(waiter)
+          if (index >= 0) slots.waiting.splice(index, 1)
+          reject(new MeshNetworkError("Mesh stream read deadline exceeded while queued: stage=stream"))
+        }, readDeadlineMs * 2),
+      }
+      slots.waiting.push(waiter)
+    })
+  }
+  const releaseRead = (): void => {
+    slots.lastUsed = Date.now()
+    const next = slots.waiting.shift()
+    if (next) {
+      clearTimeout(next.timer)
+      next.resolve()
+    } else {
+      slots.active--
+    }
+  }
+  const stream = (value: IrohStream): MeshStream => {
     const reset = value.reset
-    return {
-      read: maximumBytes => {
-        if (maximumBytes !== undefined && (!Number.isInteger(maximumBytes) || maximumBytes < 0 || maximumBytes > 0xffff_ffff)) {
-          return Promise.reject(new RangeError("Invalid stream read limit"))
+    const boundedRead = async (maximumBytes: number | undefined, pairing: boolean | "mixed", prefix?: Uint8Array) => {
+      if (maximumBytes !== undefined && (!Number.isInteger(maximumBytes) || maximumBytes < 0 || maximumBytes > 0xffff_ffff)) {
+        throw new RangeError("Invalid stream read limit")
+      }
+      const limit = Math.min(maximumBytes ?? hardReadLimit, hardReadLimit)
+      await acquireRead()
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let timedOut = false
+      try {
+        const read = pairing === "mixed"
+          ? value.readPairingOrRawPrefix
+            ? value.readPairingOrRawPrefix(prefix ?? new Uint8Array(), limit)
+            : Promise.reject(new MeshNetworkError("Pairing/raw ingress reader is unavailable"))
+          : pairing ? value.readPairingFrame(limit) : value.read(limit)
+        return await Promise.race([
+          meshNetworkIO(read),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              timedOut = true
+              reject(new Error("Mesh stream read deadline exceeded: stage=stream"))
+            }, readDeadlineMs)
+          }),
+        ])
+      } catch (error) {
+        if (timedOut) {
+          try {
+            if (value.reset) await meshNetworkIO(Promise.resolve().then(() => value.reset!.call(value)))
+            else await connection.close()
+          } catch {
+            await connection.close().catch(() => undefined)
+          }
         }
-        return meshNetworkIO(maximumBytes === undefined ? value.read() : value.read(maximumBytes))
+        throw error
+      }
+      finally {
+        if (timer) clearTimeout(timer)
+        releaseRead()
+      }
+    }
+    return {
+      read: maximumBytes => boundedRead(maximumBytes, true),
+      readRaw: maximumBytes => boundedRead(maximumBytes, false),
+      readPairingOrRawPrefix: (prefix, maximumRawBytes) => {
+        if (maximumRawBytes !== undefined && (!Number.isInteger(maximumRawBytes) || maximumRawBytes < 0 || maximumRawBytes > 0xffff_ffff)) {
+          throw new RangeError("Invalid raw stream read limit")
+        }
+        return boundedRead(maximumRawBytes, "mixed", prefix)
       },
       send: bytes => meshNetworkIO(value.send(bytes)),
       closeSend: () => meshNetworkIO(value.closeSend()),
@@ -185,21 +316,19 @@ export class MeshTraceBuffer {
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
-const MAX_WIRE_BYTES = 16 * 1024 * 1024
-
 export async function irohEndpointIdFromSeed(seed: Uint8Array): Promise<string> {
   const publicKey = await getPublicKeyAsync(seed)
   return [...publicKey].map(value => value.toString(16).padStart(2, "0")).join("")
 }
 
-export function encodeWireMessage(payload: unknown): Uint8Array {
+export function encodeWireMessage(payload: unknown, maximumBytes: number): Uint8Array {
   const bytes = encoder.encode(JSON.stringify(payload))
-  if (bytes.byteLength > MAX_WIRE_BYTES) throw new Error("Wire message is too large")
+  if (bytes.byteLength > maximumBytes) throw new Error(`Wire message exceeds ingress limit: stage=encode bytes=${bytes.byteLength} max=${maximumBytes}`)
   return bytes
 }
 
-export function decodeWireMessage(bytes: Uint8Array): unknown {
-  if (bytes.byteLength > MAX_WIRE_BYTES) throw new Error("Wire message is too large")
+export function decodeWireMessage(bytes: Uint8Array, maximumBytes: number): unknown {
+  if (bytes.byteLength > maximumBytes) throw new Error(`Wire message exceeds ingress limit: stage=decode bytes=${bytes.byteLength} max=${maximumBytes}`)
   try { return JSON.parse(decoder.decode(bytes)) }
   catch { throw new Error("Invalid wire message") }
 }
@@ -214,6 +343,12 @@ export class IrohMeshNode {
     readonly module?: IrohModule,
   ) {}
 
+  private ingressFrameLimit(frameType: string): number {
+    const Profile = this.module?.WasmIngressBudgetProfile
+    if (!Profile) throw new Error("Mesh ingress budget profile is unavailable")
+    return new Profile().maxFrameBytes(frameType)
+  }
+
   static async loadModule(moduleUrl: string): Promise<IrohModule> {
     const sourceUrl = new URL(moduleUrl, window.location.href)
     if (sourceUrl.origin !== window.location.origin) throw new Error("Iroh module must be same-origin")
@@ -225,6 +360,7 @@ export class IrohMeshNode {
     finally { URL.revokeObjectURL(blobUrl) }
     const wasmName = sourceUrl.pathname.includes("meta_mesh") ? "meta_mesh_bg.wasm" : "match_iroh_bg.wasm"
     await module.default({ module_or_path: new URL(wasmName, sourceUrl).href })
+    if (!module.WasmIngressBudgetProfile) throw new Error("Mesh ingress budget profile is unavailable")
     return module
   }
 
@@ -269,16 +405,19 @@ export class IrohMeshNode {
 
   async request(endpoint: string, payload: unknown, timeoutMs = 8_000): Promise<unknown> {
     const session = this.outboundConnection(endpoint)
+    let activeStream: IrohStream | undefined
     const operation = (async () => {
       const connection = await session.connection
       let response: { error?: string }
       try {
-        const stream = await connection.openStream()
-        await stream.send(encodeWireMessage(payload))
+        const stream = activeStream = await connection.openStream()
+        const maximumBytes = this.ingressFrameLimit("sync-request")
+        await stream.send(encodeWireMessage(payload, maximumBytes))
         await stream.closeSend()
-        response = decodeWireMessage(await stream.read()) as { error?: string }
+        response = decodeWireMessage(await stream.read(maximumBytes), maximumBytes) as { error?: string }
       } catch (error) {
-        this.discardOutbound(endpoint, session)
+        await activeStream?.reset?.().catch(() => undefined)
+        if (!activeStream?.reset) this.discardOutbound(endpoint, session)
         throw error
       }
       if (response?.error) throw new Error(response.error)
@@ -287,7 +426,8 @@ export class IrohMeshNode {
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<never>((_, reject) => {
       timer = globalThis.setTimeout(() => {
-        this.discardOutbound(endpoint, session)
+        if (activeStream?.reset) void activeStream.reset().catch(() => this.discardOutbound(endpoint, session))
+        else this.discardOutbound(endpoint, session)
         reject(new Error("Peer is offline"))
       }, timeoutMs)
     })
@@ -306,12 +446,14 @@ export class IrohMeshNode {
             while (!this.stopped) {
               const stream = await connection.acceptStream()
               try {
-                const result = await handler(decodeWireMessage(await stream.read()))
-                await stream.send(encodeWireMessage(result))
+              const maximumBytes = this.ingressFrameLimit("sync-request")
+              const result = await handler(decodeWireMessage(await stream.read(maximumBytes), maximumBytes))
+                await stream.send(encodeWireMessage(result, maximumBytes))
               } catch (error) {
+                const maximumBytes = this.ingressFrameLimit("sync-request")
                 await stream.send(encodeWireMessage({
                   error: error instanceof Error ? error.message : "Request failed",
-                })).catch(() => undefined)
+                }, maximumBytes)).catch(() => undefined)
               } finally {
                 await stream.closeSend().catch(() => undefined)
               }

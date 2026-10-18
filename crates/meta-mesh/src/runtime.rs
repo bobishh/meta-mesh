@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
+use js_sys::{Array, Uint8Array};
 use meta_mesh_core::{
     AutomergeSyncFrame, ControlFrameReceiver, DialMode, GossipLifecycleState, GossipRebuildInput,
-    LiveWorkspaceSession, MeshBatchDeliveryFlow, MeshHandshakeFlow, MeshLifecycleState,
-    MeshRuntimeState, MeshScopeRuntime, RelayDialPolicy, SessionCandidate, SessionDirection,
-    SessionKey, control_frames, encode_workspace_update, is_workspace_update,
+    LiveWorkspaceSession, MAX_LOGICAL_TRANSFER_BYTES, MAX_RPC_FRAME_BYTES, MeshBatchDeliveryFlow,
+    MeshHandshakeFlow, MeshLifecycleState, MeshRuntimeState, MeshScopeRuntime, RelayDialPolicy,
+    SessionCandidate, SessionDirection, SessionKey, control_frames, encode_workspace_update,
+    is_workspace_update,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -30,21 +32,58 @@ impl WasmLiveWorkspaceSession {
         })
     }
 
-    pub fn receive(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
-        to_value(&self.inner.receive(frame).map_err(js_error)?)
+    pub fn receive(&mut self, frame: &Uint8Array) -> Result<JsValue, JsValue> {
+        crate::pairing::preflight_pairing_frame(frame)?;
+        let frame = frame.to_vec();
+        to_value(&self.inner.receive(&frame).map_err(js_error)?)
     }
 
     #[wasm_bindgen(js_name = receiveWithPlan)]
-    pub fn receive_with_plan(&mut self, frame: &[u8]) -> Result<JsValue, JsValue> {
-        let Some(action) = self.inner.receive(frame).map_err(js_error)? else {
+    pub fn receive_with_plan(&mut self, frame: &Uint8Array) -> Result<JsValue, JsValue> {
+        crate::pairing::preflight_pairing_frame(frame)?;
+        let frame = frame.to_vec();
+        let Some(action) = self.inner.receive(&frame).map_err(js_error)? else {
             return to_value(&Option::<()>::None);
         };
         let plan = self.inner.receive_plan(&action).map_err(js_error)?;
         to_value(&Some(LiveReceiveWithPlan { action, plan }))
     }
 
-    pub fn encode(&self, frame_type: &str, payload: &[u8]) -> Result<Vec<u8>, JsValue> {
-        self.inner.encode(frame_type, payload).map_err(js_error)
+    #[wasm_bindgen(js_name = clearPendingTransfers)]
+    pub fn clear_pending_transfers(&mut self) {
+        self.inner.clear_pending_transfers();
+    }
+
+    pub fn encode(&self, frame_type: &str, payload: &Uint8Array) -> Result<Vec<u8>, JsValue> {
+        let payload_limit = self.inner.payload_limit(frame_type).map_err(js_error)?;
+        if payload.length() as usize > payload_limit {
+            return Err(js_error("Pairing payload exceeds ingress limit"));
+        }
+        let payload = payload.to_vec();
+        self.inner.encode(frame_type, &payload).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = encodeOwnerWorkspaceOfferPages)]
+    pub fn encode_owner_workspace_offer_pages(
+        &self,
+        payload: &Uint8Array,
+    ) -> Result<JsValue, JsValue> {
+        let length = payload.length() as usize;
+        if length > MAX_LOGICAL_TRANSFER_BYTES {
+            return Err(js_error(
+                "Owner workspace offer exceeds logical ingress limit",
+            ));
+        }
+        let payload = payload.to_vec();
+        let pages = self
+            .inner
+            .encode_owner_workspace_offer_pages(&payload)
+            .map_err(js_error)?;
+        let output = Array::new();
+        for page in pages {
+            output.push(&Uint8Array::from(page.as_slice()));
+        }
+        Ok(output.into())
     }
 
     #[wasm_bindgen(js_name = encodeAutomergeFrame)]
@@ -54,11 +93,15 @@ impl WasmLiveWorkspaceSession {
     }
 
     #[wasm_bindgen(js_name = decodeAutomergePayload)]
-    pub fn decode_automerge_payload(&self, payload: &[u8]) -> Result<JsValue, JsValue> {
+    pub fn decode_automerge_payload(&self, payload: &Uint8Array) -> Result<JsValue, JsValue> {
+        if payload.length() as usize > MAX_RPC_FRAME_BYTES {
+            return Err(js_error("Automerge payload exceeds ingress limit"));
+        }
+        let payload = payload.to_vec();
         to_value(
             &self
                 .inner
-                .decode_automerge_payload(payload)
+                .decode_automerge_payload(&payload)
                 .map_err(js_error)?,
         )
     }

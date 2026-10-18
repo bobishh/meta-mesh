@@ -6,11 +6,14 @@ pub mod scope_service;
 pub mod scope_store;
 
 pub use meta_mesh_core::{
-    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, GossipLifecycleState,
-    MAX_CONTROL_FRAME_BYTES, MAX_CONTROL_SNAPSHOT_BYTES, MeshLifecycleState, MeshRuntimeState,
-    MeshSessionLifecycleState, PAIRING_VERSION, PairingCodec, PairingFrameHeader, ReconnectState,
-    RouteAttempt, RuntimeSession, SessionAdmission, SessionCandidate, SessionDirection, SessionKey,
-    control_frames,
+    CONTROL_CHUNK_BYTES, ControlChunk, ControlFrameReceiver, DEFAULT_STREAM_READ_BYTES,
+    GossipLifecycleState, MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_CONTROL_FRAME_BYTES,
+    MAX_CONTROL_SNAPSHOT_BYTES, MAX_IN_FLIGHT_BYTES_PER_CONNECTION, MAX_LOGICAL_TRANSFER_BYTES,
+    MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES, MAX_TRANSFER_DEADLINE_MS, MAX_TRANSFER_PAGES,
+    MeshLifecycleState, MeshRuntimeState, MeshSessionLifecycleState, PAIRING_VERSION, PairingCodec,
+    PairingFrameHeader, ReconnectState, RouteAttempt, RuntimeSession, SessionAdmission,
+    SessionCandidate, SessionDirection, SessionKey, control_frames, effective_read_limit,
+    pairing_frame_budget, pairing_payload_limit,
 };
 pub use node::{
     GossipReceivedMessage, GossipTopicReceiver, GossipTopicSender, NativeBrowserConnection,

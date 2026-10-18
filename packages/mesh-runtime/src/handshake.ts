@@ -22,7 +22,7 @@ export type MeshHandshakeFeatures = {
   heartbeatSupported: boolean
   ownershipReceiptSupported: boolean
   ownerWorkspaceSupported: boolean
-  ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer"
+  ownerWorkspaceOfferFrame?: "mesh-owner-workspace-offer" | "mesh-owner-workspace-offer-page-v1"
   blobTransferSupported: boolean
 }
 

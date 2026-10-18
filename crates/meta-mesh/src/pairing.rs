@@ -1,7 +1,10 @@
 use js_sys::{Object, Reflect, Uint8Array};
 use meta_mesh_core::{
-    PairingCodec, WorkspaceJoinAck, WorkspaceJoinHandoff, WorkspaceJoinHandoffOutcome,
-    WorkspaceJoinHandshake, WorkspaceJoinResponse,
+    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_IN_FLIGHT_BYTES_PER_CONNECTION,
+    MAX_LOGICAL_TRANSFER_BYTES, MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES,
+    MAX_TRANSFER_DEADLINE_MS, MAX_TRANSFER_PAGES, PairingCodec, PairingFrameHeader,
+    WorkspaceJoinAck, WorkspaceJoinHandoff, WorkspaceJoinHandoffOutcome, WorkspaceJoinHandshake,
+    WorkspaceJoinResponse, pairing_frame_budget, pairing_payload_limit,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -10,8 +13,103 @@ fn js_error(error: impl ToString) -> JsValue {
     JsError::new(&error.to_string()).into()
 }
 
+pub(crate) fn preflight_pairing_frame(frame: &Uint8Array) -> Result<PairingFrameHeader, JsValue> {
+    let frame_len = frame.length() as usize;
+    if frame_len > MAX_RPC_FRAME_BYTES {
+        return Err(js_error(format!(
+            "Pairing frame exceeds ingress limit: stage=ffi bytes={frame_len} max={MAX_RPC_FRAME_BYTES}"
+        )));
+    }
+    let header_len = frame_len.min(MAX_PAIRING_HEADER_BYTES);
+    let header_bytes = frame.subarray(0, header_len as u32).to_vec();
+    let header = PairingCodec::inspect(&header_bytes).map_err(js_error)?;
+    let budget = pairing_frame_budget(&header.frame_type)
+        .ok_or_else(|| js_error("Pairing frame invalid"))?;
+    if frame_len > budget.max_wire_bytes {
+        return Err(js_error(format!(
+            "Pairing frame exceeds ingress limit: kind={} bytes={frame_len} max={}",
+            header.frame_type, budget.max_wire_bytes
+        )));
+    }
+    let payload_len = frame_len.saturating_sub(
+        header_bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .unwrap_or(header_len)
+            + 1,
+    );
+    if payload_len > budget.max_payload_bytes {
+        return Err(js_error(format!(
+            "Pairing payload exceeds ingress limit: kind={} bytes={payload_len} max={}",
+            header.frame_type, budget.max_payload_bytes
+        )));
+    }
+    Ok(header)
+}
+
 #[wasm_bindgen]
 pub struct WasmPairingCodec;
+
+#[wasm_bindgen]
+pub struct WasmIngressBudgetProfile;
+
+#[wasm_bindgen]
+impl WasmIngressBudgetProfile {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self
+    }
+
+    #[wasm_bindgen(js_name = maxHeaderBytes)]
+    pub fn max_header_bytes(&self) -> usize {
+        MAX_PAIRING_HEADER_BYTES
+    }
+
+    #[wasm_bindgen(js_name = maxFrameBytes)]
+    pub fn max_frame_bytes(&self, frame_type: &str) -> Result<usize, JsValue> {
+        pairing_frame_budget(frame_type)
+            .map(|budget| budget.max_wire_bytes)
+            .ok_or_else(|| JsError::new("Unsupported pairing frame kind").into())
+    }
+
+    #[wasm_bindgen(js_name = maxPayloadBytes)]
+    pub fn max_payload_bytes(&self, frame_type: &str) -> Result<usize, JsValue> {
+        pairing_frame_budget(frame_type)
+            .map(|budget| budget.max_payload_bytes)
+            .ok_or_else(|| JsError::new("Unsupported pairing frame kind").into())
+    }
+
+    #[wasm_bindgen(js_name = maxLogicalTransferBytes)]
+    pub fn max_logical_transfer_bytes(&self) -> usize {
+        MAX_LOGICAL_TRANSFER_BYTES
+    }
+
+    #[wasm_bindgen(js_name = maxTransferPages)]
+    pub fn max_transfer_pages(&self) -> usize {
+        MAX_TRANSFER_PAGES
+    }
+
+    #[wasm_bindgen(js_name = maxTransferDeadlineMs)]
+    pub fn max_transfer_deadline_ms(&self) -> u64 {
+        MAX_TRANSFER_DEADLINE_MS
+    }
+
+    #[wasm_bindgen(js_name = maxInFlightBytesPerConnection)]
+    pub fn max_in_flight_bytes_per_connection(&self) -> usize {
+        MAX_IN_FLIGHT_BYTES_PER_CONNECTION
+    }
+
+    #[wasm_bindgen(js_name = maxConcurrentFramesPerConnection)]
+    pub fn max_concurrent_frames_per_connection(&self) -> usize {
+        MAX_CONCURRENT_FRAMES_PER_CONNECTION
+    }
+}
+
+impl Default for WasmIngressBudgetProfile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[wasm_bindgen]
 impl WasmPairingCodec {
@@ -25,15 +123,21 @@ impl WasmPairingCodec {
         &self,
         frame_type: &str,
         secret: &str,
-        payload: &[u8],
+        payload: &Uint8Array,
     ) -> Result<Vec<u8>, JsValue> {
-        PairingCodec::encode(frame_type, secret, payload)
+        let payload_limit =
+            pairing_payload_limit(frame_type, secret).map_err(|message| JsError::new(&message))?;
+        if payload.length() as usize > payload_limit {
+            return Err(JsError::new("Pairing payload exceeds ingress limit").into());
+        }
+        let payload = payload.to_vec();
+        PairingCodec::encode(frame_type, secret, &payload)
             .map_err(|message| JsError::new(&message).into())
     }
 
     #[wasm_bindgen(js_name = inspect)]
-    pub fn inspect(&self, frame: &[u8]) -> Result<JsValue, JsValue> {
-        let header = PairingCodec::inspect(frame).map_err(|message| JsError::new(&message))?;
+    pub fn inspect(&self, frame: &Uint8Array) -> Result<JsValue, JsValue> {
+        let header = preflight_pairing_frame(frame)?;
         #[derive(Serialize)]
         struct PublicHeader<'a> {
             #[serde(rename = "type")]
@@ -50,11 +154,13 @@ impl WasmPairingCodec {
     #[wasm_bindgen(js_name = decode)]
     pub fn decode(
         &self,
-        frame: &[u8],
+        frame: &Uint8Array,
         expected_type: &str,
         expected_secret: &str,
     ) -> Result<Vec<u8>, JsValue> {
-        PairingCodec::decode(frame, expected_type, expected_secret)
+        preflight_pairing_frame(frame)?;
+        let frame = frame.to_vec();
+        PairingCodec::decode(&frame, expected_type, expected_secret)
             .map_err(|message| JsError::new(&message).into())
     }
 }

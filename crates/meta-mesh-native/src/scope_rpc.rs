@@ -82,7 +82,7 @@ pub async fn serve_scope_connection<H: NativeScopeServiceHost>(
 ) -> Result<(), String> {
     loop {
         let request = connection
-            .accept()
+            .accept_pairing()
             .await
             .map_err(|error| format!("Receive native scope frame: {error}"))?;
         let response = service
@@ -147,7 +147,7 @@ pub async fn publish_scope_to<H: NativeScopeServiceHost>(
                 if trace {
                     eprintln!("trace.sync event=publish.frame.start id={publish_id} workspace={} route={} index={frame_index} round={round} kind={kind} bytes={} deadline_ms={}", short(workspace_id), short(remote_id), frame.len(), timeout.as_millis());
                 }
-                let reply = connection.exchange(&frame, timeout).await.map_err(|error| {
+        let reply = connection.exchange_pairing(&frame, timeout).await.map_err(|error| {
                     let kind = if error.downcast_ref::<io::Error>().is_some_and(|error| error.kind() == io::ErrorKind::TimedOut) {
                         ScopePublishFailureKind::ExchangeTimeout
                     } else {
