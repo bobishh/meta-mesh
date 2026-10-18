@@ -815,6 +815,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pairing_stream_resets_at_header_and_kind_limits_without_harming_another_peer() {
+        let first_guest = NativeNode::start(Some([51; 32]), vec![]).await.unwrap();
+        let second_guest = NativeNode::start(Some([52; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(
+            Some([53; 32]),
+            vec![first_guest.endpoint_id(), second_guest.endpoint_id()],
+        )
+        .await
+        .unwrap();
+        let first_session = first_guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let second_session = second_guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let header_probe = inbox.receive().await.unwrap();
+            assert_eq!(header_probe.payload(), b"oversized-header");
+            header_probe
+                .respond(vec![b'{'; MAX_PAIRING_HEADER_BYTES + 1])
+                .unwrap();
+
+            let kind_probe = inbox.receive().await.unwrap();
+            assert_eq!(kind_probe.payload(), b"oversized-proof-frame");
+            let proof_wire_limit = pairing_frame_budget("mesh-proof-page-v1")
+                .unwrap()
+                .max_wire_bytes;
+            let mut oversized_proof =
+                PairingCodec::encode("mesh-proof-page-v1", "secret", &[]).unwrap();
+            oversized_proof.resize(proof_wire_limit + 1, 0);
+            kind_probe.respond(oversized_proof).unwrap();
+
+            let healthy = inbox.receive().await.unwrap();
+            assert_eq!(healthy.payload(), b"healthy-peer");
+            healthy
+                .respond(PairingCodec::encode("sync-heartbeat-ack", "secret", &[]).unwrap())
+                .unwrap();
+        });
+
+        let header_error = first_session
+            .exchange_pairing(b"oversized-header", Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert!(
+            header_error
+                .to_string()
+                .contains("Pairing header exceeds ingress limit")
+        );
+        let kind_error = first_session
+            .exchange_pairing(b"oversized-proof-frame", Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert!(
+            kind_error
+                .to_string()
+                .contains("Pairing frame exceeds ingress limit")
+        );
+        let healthy_ack = second_session
+            .exchange_pairing(b"healthy-peer", Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(
+            PairingCodec::inspect(&healthy_ack).unwrap().frame_type,
+            "sync-heartbeat-ack"
+        );
+
+        responder.await.unwrap();
+        first_session.close();
+        second_session.close();
+        first_guest.close().await.unwrap();
+        second_guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn unlisted_browser_sync_can_reach_signed_admission_without_blob_access() {
         let guest = NativeNode::start(Some([31; 32]), vec![]).await.unwrap();
         let host = NativeNode::start_with_options(NativeNodeOptions {

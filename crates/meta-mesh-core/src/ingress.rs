@@ -42,7 +42,6 @@ pub fn pairing_frame_budget(frame_type: &str) -> Option<PairingFrameBudget> {
         "sync-heartbeat"
         | "sync-heartbeat-ack"
         | "enroll-complete"
-        | "workspace-join-rejected-ack"
         | "mesh-handoff-request"
         | "mesh-handoff-ready"
         | "mesh-handoff-confirmed" => (MAX_RPC_FRAME_BYTES, 0),
@@ -64,6 +63,7 @@ pub fn pairing_frame_budget(frame_type: &str) -> Option<PairingFrameBudget> {
         | "enroll-ack"
         | "workspace-join-request"
         | "workspace-join-response"
+        | "workspace-join-rejected-ack"
         | "mesh-handshake-request"
         | "mesh-handshake-response"
         | "mesh-owner-workspace-offer"
