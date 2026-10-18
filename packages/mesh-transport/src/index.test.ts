@@ -9,6 +9,11 @@ const ingressModule: IrohModule = {
     maxHeaderBytes() { return 4096 }
     maxFrameBytes() { return 1024 }
     maxPayloadBytes() { return 1023 }
+    maxLogicalTransferBytes() { return 1024 }
+    maxTransferPages() { return 1 }
+    maxTransferDeadlineMs() { return 1000 }
+    maxInFlightBytesPerConnection() { return 2048 }
+    maxConcurrentFramesPerConnection() { return 2 }
   },
 }
 const ingressProfile = new (ingressModule.WasmIngressBudgetProfile!)()

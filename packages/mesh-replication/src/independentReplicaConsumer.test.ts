@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest"
 import { signEnvelope, publicKeyId, toBase64Url } from "@meta-uber/mesh-identity"
 import wasmModule from "../../mesh-transport/wasm/policy/meta_mesh_policy_bg.wasm"
-import { initSync, WasmStateCore } from "@meta-uber/mesh-transport/wasm"
+import { initSync, WasmIdentityCrypto, WasmStateCore } from "@meta-uber/mesh-transport/wasm"
 import { emptyReplicaState, ReplicaEngine, type ReplicaState } from "@meta-uber/mesh-replication/replica-engine"
 import { readArchiveBytes, writeArchiveBytes, type ArchiveObjectStore, type ArchiveTreeContext } from "@meta-uber/mesh-replication/history-archive"
 import { openArchiveObject, sealArchiveObject } from "@meta-uber/mesh-replication/history-archive-crypto"
@@ -72,7 +72,7 @@ it("verifies exact Rusty receipt scope, epoch, object, pin and request through p
   const { access, pair } = await accessFor()
   const object = await encryptBlindObject(access.scopeId, 2, new Uint8Array(32).fill(4), new Uint8Array([1, 2, 3]))
   const valid = await receipt(access, pair, object, "request-00000001")
-  expect(WasmStateCore.verifyEnvelope(valid, access.servicePublicKey, "RUSTY/2")).toBe(true)
+  expect(WasmIdentityCrypto.verifyEnvelope(valid, access.servicePublicKey, "RUSTY/2")).toBe(true)
   await expect(verifyRustyStorageReceipt(valid, access, object, "request-00000001")).resolves.toBeUndefined()
   const uploadRequests: Request[] = []
   await expect(uploadRustyObject(access, object, "request-00000001", 0, async (input, init) => {

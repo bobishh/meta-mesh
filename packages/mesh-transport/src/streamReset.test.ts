@@ -15,7 +15,7 @@ class ResettableStream {
 
   async send(_bytes: Uint8Array) {}
   async read() { return new Uint8Array() }
-  async readPairingFrame(maximumBytes?: number) { return this.read().slice(0, maximumBytes) }
+  async readPairingFrame(maximumBytes?: number) { return (await this.read()).slice(0, maximumBytes) }
   async closeSend() {}
 }
 
@@ -23,7 +23,7 @@ class GetterResettableStream {
   resetCount = 0
   async send(_bytes: Uint8Array) {}
   async read() { return new Uint8Array() }
-  async readPairingFrame(maximumBytes?: number) { return this.read().slice(0, maximumBytes) }
+  async readPairingFrame(maximumBytes?: number) { return (await this.read()).slice(0, maximumBytes) }
   async closeSend() {}
   get reset() {
     return async () => { this.resetCount += 1 }
