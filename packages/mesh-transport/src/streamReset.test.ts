@@ -105,7 +105,7 @@ describe("mesh transport stream reset", () => {
     vi.useFakeTimers()
     try {
       const stalled = new ResettableStream()
-      stalled.readPairingFrame = () => new Promise<Uint8Array>(() => {})
+      stalled.readPairingFrame = () => new Promise<Uint8Array<ArrayBuffer>>(() => {})
       let finishReset!: () => void
       const resetStarted = vi.fn(() => new Promise<void>(resolve => { finishReset = resolve }))
       stalled.reset = resetStarted
