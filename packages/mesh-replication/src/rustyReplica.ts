@@ -20,6 +20,17 @@ export type RustyReplicaAccess = {
   clientBuild?: string
 }
 export type RustyFetch = (url: string, init: RequestInit) => Promise<Response>
+export class RustyResponseError extends Error {
+  readonly code: unknown
+  readonly status?: number
+
+  constructor(message: string, detail: { code?: unknown; status?: number; cause?: unknown } = {}) {
+    super(message, detail.cause === undefined ? undefined : { cause: detail.cause })
+    this.name = "RustyResponseError"
+    this.code = detail.code
+    if (detail.status !== undefined) this.status = detail.status
+  }
+}
 export type RustyStorageReceipt = SignedEnvelope<{
   kind: "blind-storage-receipt"
   version: 2
@@ -144,10 +155,10 @@ export async function readRustyJson(response: Response, maximumBytes = 32 * 1024
   const declared = response.headers.get("Content-Length")
   if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maximumBytes)) {
     await response.body?.cancel().catch(() => {})
-    throw new Error("Rusty response too large")
+    throw new RustyResponseError("Rusty response too large", { status: response.status })
   }
   const reader = response.body?.getReader()
-  if (!reader) throw new Error("Empty Rusty response")
+  if (!reader) throw new RustyResponseError("Empty Rusty response", { status: response.status })
   const chunks: Uint8Array[] = []
   let length = 0
   try {
@@ -160,17 +171,19 @@ export async function readRustyJson(response: Response, maximumBytes = 32 * 1024
     }
   } catch (error) {
     await reader.cancel().catch(() => {})
-    throw error
+    if (error instanceof RustyResponseError) throw error
+    throw new RustyResponseError(error instanceof Error ? error.message : "Rusty response read failed",
+      { status: response.status, cause: error })
   } finally { reader.releaseLock() }
   const bytes = new Uint8Array(length)
   let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
   let value: unknown
   try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) }
-  catch { throw new Error("Invalid Rusty JSON response") }
+  catch { throw new RustyResponseError("Invalid Rusty JSON response", { status: response.status }) }
   if (!response.ok) {
     const detail = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-    throw Object.assign(new Error(typeof detail.message === "string" ? detail.message : `Rusty returned HTTP ${response.status}`),
+    throw new RustyResponseError(typeof detail.message === "string" ? detail.message : `Rusty returned HTTP ${response.status}`,
       { code: detail.code, status: response.status })
   }
   return value

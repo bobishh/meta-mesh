@@ -918,46 +918,52 @@ mod tests {
             second.respond(b"response-two".to_vec()).unwrap();
         });
 
-        let first = guest.request(host.addr(), b"same-peer-one", Duration::from_secs(5));
-        let second = guest.request(host.addr(), b"same-peer-two", Duration::from_secs(5));
-        tokio::pin!(first);
-        tokio::pin!(second);
-        let ready = ready_rx;
-        tokio::pin!(ready);
-        tokio::select! {
-            _ = &mut ready => {}
-            result = &mut first => panic!("first request completed before release: {result:?}"),
-            result = &mut second => panic!("second request completed before release: {result:?}"),
+        {
+            let first = guest.request(host.addr(), b"same-peer-one", Duration::from_secs(5));
+            let second = guest.request(host.addr(), b"same-peer-two", Duration::from_secs(5));
+            tokio::pin!(first);
+            tokio::pin!(second);
+            let ready = ready_rx;
+            tokio::pin!(ready);
+            tokio::select! {
+                _ = &mut ready => {}
+                result = &mut first => panic!("first request completed before release: {result:?}"),
+                result = &mut second => panic!("second request completed before release: {result:?}"),
+            }
+
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_secs(2),
+                    rpc_roundtrip(
+                        &guest.endpoint,
+                        host.addr(),
+                        RPC_ALPN,
+                        b"same-peer-over-limit"
+                    )
+                )
+                .await
+                .expect("over-budget stream must reset promptly")
+                .is_err()
+            );
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), host.rpc_inbox().receive())
+                    .await
+                    .is_err(),
+                "over-budget same-peer stream reached application inbox"
+            );
+            assert_eq!(
+                other_guest
+                    .request(host.addr(), b"different-peer", Duration::from_secs(2))
+                    .await
+                    .unwrap(),
+                b"healthy-response"
+            );
+
+            release_tx.send(()).unwrap();
+            let (first, second) = tokio::join!(first, second);
+            assert!(first.is_ok());
+            assert!(second.is_ok());
         }
-
-        assert!(
-            rpc_roundtrip(
-                &guest.endpoint,
-                host.addr(),
-                RPC_ALPN,
-                b"same-peer-over-limit"
-            )
-            .await
-            .is_err()
-        );
-        assert!(
-            tokio::time::timeout(Duration::from_millis(100), host.rpc_inbox().receive())
-                .await
-                .is_err(),
-            "over-budget same-peer stream reached application inbox"
-        );
-        assert_eq!(
-            other_guest
-                .request(host.addr(), b"different-peer", Duration::from_secs(2))
-                .await
-                .unwrap(),
-            b"healthy-response"
-        );
-
-        release_tx.send(()).unwrap();
-        let (first, second) = tokio::join!(first, second);
-        assert!(first.is_ok());
-        assert!(second.is_ok());
         responder.await.unwrap();
         guest.close().await.unwrap();
         other_guest.close().await.unwrap();

@@ -9,6 +9,8 @@ import {
   decryptBlindObject,
   encryptBlindObject,
   inventoryRustyObjects,
+  readRustyJson,
+  RustyResponseError,
   rustyHash,
   rustyObjectId,
   uploadRustyObject,
@@ -90,9 +92,21 @@ it("verifies exact Rusty receipt scope, epoch, object, pin and request through p
   }
   const other = await accessFor()
   const wrongPinReceipt = await receipt(other.access, other.pair, object, "request-00000001")
-  await expect(verifyRustyStorageReceipt(wrongPinReceipt, access, object, "request-00000001")).rejects.toThrow()
+  const receiptFailure = await verifyRustyStorageReceipt(wrongPinReceipt, access, object, "request-00000001")
+    .then(() => undefined, error => error)
+  expect(receiptFailure).toBeInstanceOf(Error)
+  expect(receiptFailure).not.toBeInstanceOf(RustyResponseError)
   await expect(decryptBlindObject(object, "other-scope", 2, new Uint8Array(32).fill(4))).rejects.toThrow()
   await expect(decryptBlindObject(object, access.scopeId, 3, new Uint8Array(32).fill(4))).rejects.toThrow()
+})
+
+it("marks only HTTP response parsing and bounds failures as Rusty response errors", async () => {
+  await expect(readRustyJson(new Response("{\"message\":\"unavailable\"}", { status: 503 })))
+    .rejects.toMatchObject({ name: "RustyResponseError", message: "unavailable", status: 503 })
+  await expect(readRustyJson(new Response("not-json")))
+    .rejects.toBeInstanceOf(RustyResponseError)
+  await expect(readRustyJson(new Response("12345"), 4))
+    .rejects.toMatchObject({ name: "RustyResponseError", message: "Rusty response too large" })
 })
 
 it("persists pending ciphertext before upload and retries exact request after response loss and restart", async () => {
