@@ -90,7 +90,7 @@ impl WasmIngressBudgetProfile {
     }
 
     #[wasm_bindgen(js_name = maxTransferDeadlineMs)]
-    pub fn max_transfer_deadline_ms(&self) -> u64 {
+    pub fn max_transfer_deadline_ms(&self) -> u32 {
         MAX_TRANSFER_DEADLINE_MS
     }
 

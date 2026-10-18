@@ -853,12 +853,8 @@ mod tests {
                 .encode("mesh-iroh-gossip", &vec![0; MAX_GOSSIP_PACKET_BYTES + 1])
                 .is_err()
         );
-        let oversized = PairingCodec::encode(
-            "mesh-iroh-gossip",
-            "secret",
-            &vec![0; MAX_GOSSIP_PACKET_BYTES + 1],
-        )
-        .unwrap();
+        let mut oversized = PairingCodec::encode("mesh-iroh-gossip", "secret", &[]).unwrap();
+        oversized.resize(oversized.len() + MAX_GOSSIP_PACKET_BYTES + 1, 0);
         assert!(session.receive(&oversized).is_err());
     }
 
