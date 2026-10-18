@@ -233,6 +233,7 @@ pub use transfer_selection::{
     TransferPeerInput, TransferRecordInput, TransferSelectionInput, TransferSelectionPlan,
     select_ownership_transfer,
 };
+pub use web_time::Instant as MeshInstant;
 pub use workspace_set::{WorkspaceSetEntry, decode_workspace_set, encode_workspace_set};
 mod authority_merge;
 pub use authority_merge::{

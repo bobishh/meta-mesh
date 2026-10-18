@@ -27,7 +27,10 @@ pub use identity::WasmIdentityCrypto;
 #[cfg(target_family = "wasm")]
 pub use invitation::WasmInvitations;
 #[cfg(target_family = "wasm")]
-pub use pairing::{WasmPairingCodec, WasmWorkspaceJoinHandoff, WasmWorkspaceJoinHandshake};
+pub use pairing::{
+    WasmIngressBudgetProfile, WasmPairingCodec, WasmWorkspaceJoinHandoff,
+    WasmWorkspaceJoinHandshake,
+};
 pub use runtime::{
     WasmGossipLifecycleState, WasmLiveWorkspaceSession, WasmMeshBatchDeliveryFlow,
     WasmMeshHandshakeFlow, WasmMeshLifecycleState, WasmMeshRuntimeState, WasmMeshScopeRuntime,

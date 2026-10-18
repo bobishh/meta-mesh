@@ -582,10 +582,7 @@ impl ControlFrameReceiver {
     }
 
     pub fn receive_kind(&mut self, frame: &[u8], kind: &str) -> Result<Option<Vec<u8>>, String> {
-        if self.pending.as_ref().is_some_and(|pending| {
-            pending.started_at.elapsed().as_millis() > u128::from(crate::MAX_TRANSFER_DEADLINE_MS)
-        }) {
-            self.pending = None;
+        if self.expire_pending_transfer() {
             return Err("Mesh control transfer deadline exceeded".to_string());
         }
         if self
@@ -673,6 +670,25 @@ impl ControlFrameReceiver {
 
     pub fn clear_pending(&mut self) {
         self.pending = None;
+    }
+
+    /// Release an idle partial transfer when the host's maintenance timer fires.
+    pub fn expire_pending_transfer(&mut self) -> bool {
+        self.expire_pending_transfer_at(Instant::now())
+    }
+
+    pub fn expire_pending_transfer_at(&mut self, now: Instant) -> bool {
+        if self.pending.as_ref().is_some_and(|pending| {
+            now.checked_duration_since(pending.started_at)
+                .is_some_and(|elapsed| {
+                    elapsed.as_millis() >= u128::from(crate::MAX_TRANSFER_DEADLINE_MS)
+                })
+        }) {
+            self.pending = None;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -908,5 +924,37 @@ mod tests {
             }
         }
         assert_eq!(result, Some(bytes));
+    }
+
+    #[test]
+    fn expired_control_transfer_is_released_by_host_maintenance() {
+        let bytes = vec![7_u8; MAX_CONTROL_FRAME_BYTES + 17];
+        let frames = control_frames("workspace", "transfer", &bytes).unwrap();
+        let mut receiver = ControlFrameReceiver::new("workspace");
+        assert_eq!(receiver.receive(&frames[0]).unwrap(), None);
+        let pending = receiver.pending.as_mut().expect("first page is pending");
+        pending.started_at = Instant::now()
+            - std::time::Duration::from_millis(u64::from(crate::MAX_TRANSFER_DEADLINE_MS) + 1);
+
+        assert!(receiver.expire_pending_transfer());
+        assert!(!receiver.expire_pending_transfer());
+        assert_eq!(receiver.receive(&frames[1]).unwrap(), None);
+    }
+
+    #[test]
+    fn mixed_control_transfer_kinds_clear_pending_pages() {
+        let bytes = vec![7_u8; MAX_CONTROL_FRAME_BYTES + 17];
+        let frames = control_frames("workspace", "transfer", &bytes).unwrap();
+        let mut receiver = ControlFrameReceiver::new("workspace");
+        assert_eq!(receiver.receive_kind(&frames[0], "control").unwrap(), None);
+        assert_eq!(
+            receiver.receive_kind(&frames[1], "owner-page"),
+            Err("Conflicting mesh control transfer kind".into())
+        );
+
+        assert_eq!(
+            receiver.receive_kind(&frames[0], "owner-page").unwrap(),
+            None
+        );
     }
 }

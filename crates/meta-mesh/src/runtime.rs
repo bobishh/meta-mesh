@@ -33,6 +33,7 @@ impl WasmLiveWorkspaceSession {
     }
 
     pub fn receive(&mut self, frame: &Uint8Array) -> Result<JsValue, JsValue> {
+        #[cfg(target_family = "wasm")]
         crate::pairing::preflight_pairing_frame(frame)?;
         let frame = frame.to_vec();
         to_value(&self.inner.receive(&frame).map_err(js_error)?)
@@ -40,6 +41,7 @@ impl WasmLiveWorkspaceSession {
 
     #[wasm_bindgen(js_name = receiveWithPlan)]
     pub fn receive_with_plan(&mut self, frame: &Uint8Array) -> Result<JsValue, JsValue> {
+        #[cfg(target_family = "wasm")]
         crate::pairing::preflight_pairing_frame(frame)?;
         let frame = frame.to_vec();
         let Some(action) = self.inner.receive(&frame).map_err(js_error)? else {

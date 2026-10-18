@@ -58,7 +58,19 @@ pub async fn serve_scope_request<H: NativeScopeServiceHost>(
     service: &Mutex<NativeScopeService<H>>,
     now_ms: i128,
 ) -> Result<bool, String> {
-    let Some(request) = node.rpc_inbox().receive().await else {
+    let mut maintenance = tokio::time::interval(Duration::from_secs(1));
+    let inbox = node.rpc_inbox();
+    let request = inbox.receive();
+    tokio::pin!(request);
+    let request = loop {
+        tokio::select! {
+            request = &mut request => break request,
+            _ = maintenance.tick() => {
+                service.lock().await.expire_pending_transfers();
+            }
+        }
+    };
+    let Some(request) = request else {
         return Ok(false);
     };
     let response = service.lock().await.receive(
@@ -80,11 +92,19 @@ pub async fn serve_scope_connection<H: NativeScopeServiceHost>(
     remote_id: &str,
     clock: impl Fn() -> Result<i128, String>,
 ) -> Result<(), String> {
+    let mut maintenance = tokio::time::interval(Duration::from_secs(1));
     loop {
-        let request = connection
-            .accept_pairing()
-            .await
-            .map_err(|error| format!("Receive native scope frame: {error}"))?;
+        let request = connection.accept_pairing();
+        tokio::pin!(request);
+        let request = loop {
+            tokio::select! {
+                request = &mut request => break request
+                    .map_err(|error| format!("Receive native scope frame: {error}"))?,
+                _ = maintenance.tick() => {
+                    service.lock().await.expire_pending_transfers();
+                }
+            }
+        };
         let response = service
             .lock()
             .await

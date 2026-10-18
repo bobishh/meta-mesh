@@ -1,5 +1,5 @@
 use meta_mesh_core::{
-    LiveSessionPublishPlan, MeshHandshake, MeshPeerAdmission, PairingCodec,
+    LiveSessionPublishPlan, MeshHandshake, MeshInstant, MeshPeerAdmission, PairingCodec,
     WorkspaceWriteAuthorizationSnapshot, encode_mesh_handshake,
 };
 use serde_json::Value;
@@ -64,6 +64,19 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         self.admission.remove(workspace_id, remote_endpoint);
         self.peers
             .remove(&(workspace_id.to_string(), remote_endpoint.to_string()));
+    }
+
+    /// Release expired partial control transfers without dropping authenticated peers.
+    pub fn expire_pending_transfers(&mut self) -> usize {
+        self.expire_pending_transfers_at(MeshInstant::now())
+    }
+
+    pub fn expire_pending_transfers_at(&mut self, now: MeshInstant) -> usize {
+        self.peers
+            .values_mut()
+            .map(|peer| peer.expire_pending_transfers_at(now))
+            .filter(|expired| *expired)
+            .count()
     }
 
     pub fn prepare_connect(&mut self, workspace_id: &str, secret: &str) -> Result<Vec<u8>, String> {
@@ -243,6 +256,8 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
 mod tests {
     use super::*;
     use crate::NativeScopeSnapshot;
+    use meta_mesh_core::{MAX_CONTROL_FRAME_BYTES, control_frames};
+    use std::time::Duration;
 
     struct Scope;
     impl NativeScopeHost for Scope {
@@ -333,5 +348,40 @@ mod tests {
         .unwrap();
         assert_eq!(decoded.workspace_id, "board");
         assert!(service.prepare_connect("board", "wrong").is_err());
+    }
+
+    #[test]
+    fn pending_transfer_sweep_keeps_other_authenticated_peers_live() {
+        let mut service = NativeScopeService::new(Host);
+        for remote in ["remote-a", "remote-b"] {
+            let peer = NativeScopePeer::new("board", "secret", "local", remote, Scope).unwrap();
+            service.peers.insert(("board".into(), remote.into()), peer);
+        }
+
+        let bytes = vec![7; MAX_CONTROL_FRAME_BYTES + 1];
+        let pages = control_frames("board", "expired-transfer", &bytes).unwrap();
+        let first_page = PairingCodec::encode("mesh-control-sync", "secret", &pages[0]).unwrap();
+        assert!(
+            service
+                .peers
+                .get_mut(&("board".into(), "remote-a".into()))
+                .unwrap()
+                .receive(&first_page)
+                .unwrap()
+                .is_none()
+        );
+
+        let future = MeshInstant::now()
+            + Duration::from_millis(u64::from(meta_mesh_core::MAX_TRANSFER_DEADLINE_MS) + 1);
+        assert_eq!(service.expire_pending_transfers_at(future), 1);
+        assert_eq!(service.peers.len(), 2);
+        let heartbeat = PairingCodec::encode("sync-heartbeat", "secret", &[]).unwrap();
+        for peer in service.peers.values_mut() {
+            let acknowledgement = peer.receive(&heartbeat).unwrap().unwrap();
+            assert_eq!(
+                PairingCodec::inspect(&acknowledgement).unwrap().frame_type,
+                "sync-heartbeat-ack"
+            );
+        }
     }
 }

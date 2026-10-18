@@ -103,6 +103,14 @@ impl<H: NativeScopeHost> NativeScopePeer<H> {
         &mut self.host
     }
 
+    pub fn expire_pending_transfers(&mut self) -> bool {
+        self.runtime.expire_pending_transfers()
+    }
+
+    pub fn expire_pending_transfers_at(&mut self, now: meta_mesh_core::MeshInstant) -> bool {
+        self.runtime.expire_pending_transfers_at(now)
+    }
+
     /// Abort an incomplete document/proof receive after its RPC exchange is
     /// lost. No product storage was committed while this receive was pending;
     /// the next publish restarts Automerge sync and revalidates staged pages.

@@ -119,6 +119,14 @@ impl MeshScopeRuntime {
             .start_document_sync(local_device_id, remote_device_id)
     }
 
+    pub fn expire_pending_transfers(&mut self) -> bool {
+        self.live.expire_pending_transfers()
+    }
+
+    pub fn expire_pending_transfers_at(&mut self, now: crate::MeshInstant) -> bool {
+        self.live.expire_pending_transfers_at(now)
+    }
+
     /// Decode one authenticated frame and return the next host operation.
     /// Document bytes are requested only after the authenticated frame says
     /// they are needed, so gossip and control handlers never read storage.

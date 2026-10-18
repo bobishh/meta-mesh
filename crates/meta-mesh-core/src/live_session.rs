@@ -206,6 +206,14 @@ impl LiveWorkspaceSession {
         self.control_receiver.clear_pending();
     }
 
+    pub fn expire_pending_transfers(&mut self) -> bool {
+        self.control_receiver.expire_pending_transfer()
+    }
+
+    pub fn expire_pending_transfers_at(&mut self, now: web_time::Instant) -> bool {
+        self.control_receiver.expire_pending_transfer_at(now)
+    }
+
     /// Selects host effects and their order for one authenticated incoming frame.
     /// Storage, callbacks, and transport remain host operations.
     pub fn receive_plan(
