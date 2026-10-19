@@ -283,9 +283,10 @@ impl NativeBrowserConnection {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("Pairing frame exceeds ingress limit: stage=send"));
         }
-        let _permit = self.try_read_permit()?;
+        let started = std::time::Instant::now();
+        let _permit = acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await?;
         let (mut send, mut receive) = self.connection.open_bi().await?;
-        let result = tokio::time::timeout(timeout, async {
+        let result = tokio::time::timeout(timeout.saturating_sub(started.elapsed()), async {
             send.write_all(payload).await?;
             send.finish()?;
             read_pairing_frame(&mut receive).await
@@ -777,9 +778,38 @@ fn io_error(message: &'static str) -> BoxError {
     Box::new(std::io::Error::other(message))
 }
 
+async fn acquire_peer_read_slot(
+    slots: Arc<Semaphore>,
+    timeout: Duration,
+) -> Result<OwnedSemaphorePermit, BoxError> {
+    tokio::time::timeout(timeout, slots.acquire_owned())
+        .await
+        .map_err(|_| io_error("Peer stream concurrency wait timed out"))?
+        .map_err(|error| Box::new(error) as BoxError)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn pairing_exchange_waits_for_a_peer_stream_slot() {
+        let slots = Arc::new(Semaphore::new(1));
+        let held = slots.clone().acquire_owned().await.unwrap();
+        let waiting_slots = slots.clone();
+        let waiter = tokio::spawn(async move {
+            acquire_peer_read_slot(waiting_slots, Duration::from_secs(1)).await
+        });
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !waiter.is_finished(),
+            "saturated peer slot must queue outbound work"
+        );
+        drop(held);
+
+        assert!(waiter.await.unwrap().is_ok());
+    }
 
     #[tokio::test]
     async fn current_iroh_node_has_stable_identity_and_mutable_allowlist() {
