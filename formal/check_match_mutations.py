@@ -47,6 +47,9 @@ def prepare_copy(match_root: Path, root: Path) -> None:
     shutil.copytree(match_root / "src", root / "src")
     for name in ("package.json", "vitest.config.ts", "tsconfig.app.json"):
         shutil.copy2(match_root / name, root / name)
+    automation_types = root / "workers" / "automation" / "automation-types.json"
+    automation_types.parent.mkdir(parents=True)
+    shutil.copy2(match_root / "workers" / "automation" / "automation-types.json", automation_types)
     shutil.copytree(match_root / "release", root / "release")
     (root / "node_modules").symlink_to(match_root / "node_modules")
     (root / "vendor").mkdir()
