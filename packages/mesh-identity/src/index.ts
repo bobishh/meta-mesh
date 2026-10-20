@@ -480,17 +480,39 @@ export type IdentityAdoptionCommit = (
   ensureCurrent: () => void,
 ) => Promise<void>
 
-export function canonicalizeJson(value: unknown): string {
+function compareCanonicalKeys(left: string, right: string): number {
+  let leftIndex = 0
+  let rightIndex = 0
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftPoint = left.codePointAt(leftIndex)!
+    const rightPoint = right.codePointAt(rightIndex)!
+    if (leftPoint !== rightPoint) return leftPoint - rightPoint
+    leftIndex += leftPoint > 0xffff ? 2 : 1
+    rightIndex += rightPoint > 0xffff ? 2 : 1
+  }
+  return (leftIndex < left.length ? 1 : 0) - (rightIndex < right.length ? 1 : 0)
+}
+
+function canonicalizeJsonWithOrder(value: unknown, compareKeys?: (left: string, right: string) => number): string {
   if (value === null || typeof value !== "object") {
     if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error("Non-finite number cannot be canonicalized")
     }
     return JSON.stringify(value)
   }
-  if (Array.isArray(value)) return "[" + value.map(canonicalizeJson).join(",") + "]"
+  if (Array.isArray(value)) return "[" + value.map(item => canonicalizeJsonWithOrder(item, compareKeys)).join(",") + "]"
   const object = value as Record<string, unknown>
-  return "{" + Object.keys(object).sort()
-    .map(key => `${JSON.stringify(key)}:${canonicalizeJson(object[key])}`).join(",") + "}"
+  return "{" + Object.keys(object).sort(compareKeys)
+    .map(key => `${JSON.stringify(key)}:${canonicalizeJsonWithOrder(object[key], compareKeys)}`).join(",") + "}"
+}
+
+export function canonicalizeJson(value: unknown): string {
+  return canonicalizeJsonWithOrder(value)
+}
+
+function canonicalizeSignatureJson(value: unknown): string {
+  // Rust strings sort by Unicode scalar value, rather than JavaScript UTF-16 units.
+  return canonicalizeJsonWithOrder(value, compareCanonicalKeys)
 }
 
 export function toBase64Url(bytes: Uint8Array): string {
@@ -571,7 +593,7 @@ export async function signEnvelope<T extends { kind: string }>(
   signerKeyId: PersonId | DeviceId,
   domain = "MATCH/1",
 ): Promise<SignedEnvelope<T>> {
-  const input = signatureInput(payload.kind, canonicalizeJson(payload), domain)
+  const input = signatureInput(payload.kind, canonicalizeSignatureJson(payload), domain)
   const signature = await crypto.subtle.sign({ name: "Ed25519" }, privateKey, input)
   return { payload, signerKeyId, signature: toBase64Url(new Uint8Array(signature)) }
 }
@@ -584,11 +606,21 @@ export async function verifyEnvelope<T extends { kind: string }>(
   const key = typeof publicKeyRawOrCrypto === "string"
     ? await crypto.subtle.importKey("raw", fromBase64Url(publicKeyRawOrCrypto), { name: "Ed25519" }, true, ["verify"])
     : publicKeyRawOrCrypto
-  return crypto.subtle.verify(
+  const canonical = canonicalizeSignatureJson(envelope.payload)
+  const signature = fromBase64Url(envelope.signature)
+  if (await crypto.subtle.verify(
     { name: "Ed25519" },
     key,
-    fromBase64Url(envelope.signature),
-    signatureInput(envelope.payload.kind, canonicalizeJson(envelope.payload), domain),
+    signature,
+    signatureInput(envelope.payload.kind, canonical, domain),
+  )) return true
+  // Preserve envelopes signed by browser clients before scalar key ordering was shared.
+  const legacyCanonical = canonicalizeJsonWithOrder(envelope.payload)
+  return legacyCanonical !== canonical && crypto.subtle.verify(
+    { name: "Ed25519" },
+    key,
+    signature,
+    signatureInput(envelope.payload.kind, legacyCanonical, domain),
   )
 }
 

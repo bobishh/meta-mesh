@@ -898,12 +898,12 @@ export interface InitOutput {
     readonly wasmworkspacejoinhandshake_rejectAcceptedResponse: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_respond: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmworkspacejoinhandshake_sendRequest: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly wasmpairingcodec_new: () => number;
     readonly wasmmeshauthenticatedsessions_new: () => number;
-    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
-    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
     readonly __wbg_wasmingressbudgetprofile_free: (a: number, b: number) => void;
+    readonly __wbg_wasminvitations_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpairingcodec_free: (a: number, b: number) => void;
+    readonly __wbg_wasmstatecore_free: (a: number, b: number) => void;
+    readonly wasmpairingcodec_new: () => number;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

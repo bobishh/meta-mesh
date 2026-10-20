@@ -35,6 +35,8 @@ struct Input {
     #[serde(default)]
     propose_initial_baseline: bool,
     #[serde(default)]
+    scope_authority: Option<meta_mesh_core::ScopeAuthoritySnapshot>,
+    #[serde(default)]
     signed_baseline: Option<String>,
 }
 #[derive(Deserialize)]
@@ -193,7 +195,12 @@ fn verify(input: Input) -> Result<Value, String> {
         },
     });
     if input.propose_initial_baseline {
-        let proposal = joined.propose_baseline(HistoryBaselineParent::Initial)?;
+        let scope_authority = input
+            .scope_authority
+            .as_ref()
+            .ok_or("Owner proposal requires signed scope authority")?;
+        let proposal = joined
+            .propose_owner_attested_baseline(HistoryBaselineParent::Initial, scope_authority)?;
         let attestation = input
             .signed_baseline
             .as_ref()
