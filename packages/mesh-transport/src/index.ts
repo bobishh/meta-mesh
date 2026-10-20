@@ -94,7 +94,7 @@ export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   catch (error) { throw new MeshNetworkError(error instanceof Error ? error.message : String(error)) }
 }
 
-type WaitingRead = { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+type WaitingRead = { resolve: () => void; timer: ReturnType<typeof setTimeout> }
 type ReadSlots = { active: number; waiting: WaitingRead[]; lastUsed: number }
 const peerReadSlots = new Map<string, ReadSlots>()
 const connectionReadSlots = new WeakMap<object, ReadSlots>()
@@ -137,7 +137,20 @@ export function meshNetworkConnection(connection: IrohConnection,
   if (!Number.isSafeInteger(maxFrames) || maxConcurrentReads < 1) throw new RangeError("Invalid peer read concurrency")
   if (!Number.isSafeInteger(readDeadlineMs) || readDeadlineMs < 1) throw new RangeError("Invalid stream read deadline")
   const slots = readSlotsFor(connection, readDeadlineMs)
+  const cancellations = new Set<(error: MeshNetworkError) => void>()
+  let closed: MeshNetworkError | undefined
+  let closing: Promise<void> | undefined
+  const assertOpen = () => { if (closed) throw closed }
+  const close = (): Promise<void> => {
+    if (closing) return closing
+    closed = new MeshNetworkError("Mesh connection closed")
+    closing = Promise.resolve().then(() => connection.close()).catch(() => undefined)
+    for (const cancel of cancellations) cancel(closed)
+    cancellations.clear()
+    return closing
+  }
   const acquireRead = async (): Promise<void> => {
+    assertOpen()
     if (slots.active < maxConcurrentReads) {
       slots.active++
       slots.lastUsed = Date.now()
@@ -145,16 +158,19 @@ export function meshNetworkConnection(connection: IrohConnection,
     }
     if (slots.waiting.length >= maxFrames) throw new MeshNetworkError("Mesh stream concurrency limit exceeded")
     await new Promise<void>((resolve, reject) => {
+      const cancel = (error: MeshNetworkError) => {
+        const index = slots.waiting.indexOf(waiter)
+        if (index >= 0) slots.waiting.splice(index, 1)
+        clearTimeout(waiter.timer)
+        cancellations.delete(cancel)
+        reject(error)
+      }
       const waiter: WaitingRead = {
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          const index = slots.waiting.indexOf(waiter)
-          if (index >= 0) slots.waiting.splice(index, 1)
-          reject(new MeshNetworkError("Mesh stream read deadline exceeded while queued: stage=stream"))
-        }, readDeadlineMs * 2),
+        resolve: () => { cancellations.delete(cancel); resolve() },
+        timer: setTimeout(() => cancel(new MeshNetworkError("Mesh stream read deadline exceeded while queued: stage=stream")), readDeadlineMs * 2),
       }
       slots.waiting.push(waiter)
+      cancellations.add(cancel)
     })
   }
   const releaseRead = (): void => {
@@ -177,7 +193,11 @@ export function meshNetworkConnection(connection: IrohConnection,
       await acquireRead()
       let timer: ReturnType<typeof setTimeout> | undefined
       let timedOut = false
+      let cancel!: (error: MeshNetworkError) => void
+      const cancelled = new Promise<never>((_, reject) => { cancel = reject })
+      cancellations.add(cancel)
       try {
+        assertOpen()
         const read = pairing === "mixed"
           ? value.readPairingOrRawPrefix
             ? value.readPairingOrRawPrefix(prefix ?? new Uint8Array(), limit)
@@ -185,26 +205,30 @@ export function meshNetworkConnection(connection: IrohConnection,
           : pairing ? value.readPairingFrame(limit) : value.read(limit)
         return await Promise.race([
           meshNetworkIO(read),
+          cancelled,
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => {
               timedOut = true
-              reject(new Error("Mesh stream read deadline exceeded: stage=stream"))
+              reject(new MeshNetworkError("Mesh stream read deadline exceeded: stage=stream"))
             }, readDeadlineMs)
           }),
         ])
       } catch (error) {
         if (timedOut) {
           try {
-            if (value.reset) await meshNetworkIO(Promise.resolve().then(() => value.reset!.call(value)))
-            else await connection.close()
+            if (reset) await Promise.race([meshNetworkIO(Promise.resolve().then(() => reset.call(value))), cancelled])
+            else await close()
           } catch {
-            await connection.close().catch(() => undefined)
+            await close()
           }
         }
         throw error
       }
       finally {
         if (timer) clearTimeout(timer)
+        cancellations.delete(cancel)
+        // Keep the peer lease until transport cancellation has completed.
+        if (closing) await closing
         releaseRead()
       }
     }
@@ -225,9 +249,9 @@ export function meshNetworkConnection(connection: IrohConnection,
   return {
     ...connection,
     remoteEndpointId: connection.remoteEndpointId,
-    openStream: async () => stream(await meshNetworkIO(connection.openStream())),
-    acceptStream: async () => stream(await meshNetworkIO(connection.acceptStream())),
-    close: () => connection.close().catch(() => undefined),
+    openStream: async () => { assertOpen(); const value = await meshNetworkIO(connection.openStream()); assertOpen(); return stream(value) },
+    acceptStream: async () => { assertOpen(); const value = await meshNetworkIO(connection.acceptStream()); assertOpen(); return stream(value) },
+    close,
   }
 }
 
