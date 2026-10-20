@@ -68,9 +68,9 @@ it("Given a read has timed out with reset pending, when its connection closes, t
   const peer = crypto.randomUUID()
   const raw = connection(peer, () => new Promise(() => {}))
   const rawStream = await raw.openStream()
-  rawStream.reset = vi.fn(() => new Promise(() => {}))
+  rawStream.reset = vi.fn(() => new Promise<void>(() => {}))
   let finishClose!: () => void
-  raw.close = vi.fn(() => new Promise(resolve => { finishClose = resolve }))
+  raw.close = vi.fn(() => new Promise<void>(resolve => { finishClose = resolve }))
   const failed = meshNetworkConnection(raw, limits)
   const outcome = (await failed.openStream()).read().catch(error => error)
   await vi.advanceTimersByTimeAsync(10)
