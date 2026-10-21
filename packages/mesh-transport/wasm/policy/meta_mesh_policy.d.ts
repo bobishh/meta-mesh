@@ -78,6 +78,7 @@ export class WasmIngressBudgetProfile {
     free(): void;
     [Symbol.dispose](): void;
     maxConcurrentFramesPerConnection(): number;
+    maxConcurrentHeadersPerConnection(): number;
     maxFrameBytes(frame_type: string): number;
     maxHeaderBytes(): number;
     maxInFlightBytesPerConnection(): number;
@@ -619,6 +620,7 @@ export interface InitOutput {
     readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
     readonly wasmingressbudgetprofile_maxConcurrentFramesPerConnection: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxConcurrentHeadersPerConnection: (a: number) => number;
     readonly wasmingressbudgetprofile_maxFrameBytes: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmingressbudgetprofile_maxHeaderBytes: (a: number) => number;
     readonly wasmingressbudgetprofile_maxInFlightBytesPerConnection: (a: number) => number;

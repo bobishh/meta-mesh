@@ -18,8 +18,11 @@ pub const MAX_GOSSIP_PAYLOAD_BYTES: usize = 256 * 1024;
 pub const MAX_AUTOMERGE_WIRE_PAYLOAD_BYTES: usize = 512 * 1024;
 /// Maximum bytes reserved by concurrent frame reads on one authenticated peer.
 pub const MAX_IN_FLIGHT_BYTES_PER_CONNECTION: usize = 32 * 1024 * 1024;
-/// Maximum concurrent frame reads on one authenticated peer.
+/// Maximum concurrent payload frame reads on one authenticated peer.
 pub const MAX_CONCURRENT_FRAMES_PER_CONNECTION: usize = 2;
+/// Maximum simultaneous bounded header waits on one authenticated peer.
+/// Header reservations share the byte budget with payloads; idle responses cannot occupy payload slots.
+pub const MAX_CONCURRENT_HEADERS_PER_CONNECTION: usize = 32;
 /// Upper bound on pages in one logical transfer.
 pub const MAX_TRANSFER_PAGES: usize = 256;
 /// Maximum time allowed for one bounded logical transfer.
@@ -130,6 +133,28 @@ mod tests {
             MAX_PROOF_FRAME_BYTES
         );
         assert_eq!(pairing_frame_budget("mesh-unknown"), None);
+    }
+
+    #[test]
+    fn concurrent_header_reservations_fit_beside_a_full_payload() {
+        assert!(MAX_CONCURRENT_HEADERS_PER_CONNECTION > MAX_CONCURRENT_FRAMES_PER_CONNECTION);
+        assert!(
+            MAX_CONCURRENT_HEADERS_PER_CONNECTION * MAX_PAIRING_HEADER_BYTES + MAX_RPC_FRAME_BYTES
+                <= MAX_IN_FLIGHT_BYTES_PER_CONNECTION
+        );
+        let heartbeat = PairingFrameHeader {
+            frame_type: "sync-heartbeat-ack".to_owned(),
+            version: PAIRING_VERSION.to_owned(),
+            secret: "scope".to_owned(),
+        };
+        let header_bytes = serde_json::to_vec(&heartbeat).unwrap().len() + 1;
+        assert!(
+            header_bytes
+                + pairing_frame_budget(&heartbeat.frame_type)
+                    .unwrap()
+                    .max_payload_bytes
+                <= MAX_PAIRING_HEADER_BYTES
+        );
     }
 
     #[test]

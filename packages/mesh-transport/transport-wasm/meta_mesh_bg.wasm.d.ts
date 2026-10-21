@@ -45,7 +45,9 @@ export const browsernode_start: (a: number, b: number) => any;
 export const browserstream_closeSend: (a: number) => any;
 export const browserstream_read: (a: number, b: number) => any;
 export const browserstream_readPairingFrame: (a: number, b: number) => any;
+export const browserstream_readPairingFrameAdmitted: (a: number, b: number, c: any) => any;
 export const browserstream_readPairingOrRawPrefix: (a: number, b: number, c: number, d: number) => any;
+export const browserstream_readPairingOrRawPrefixAdmitted: (a: number, b: number, c: number, d: number, e: number, f: any) => any;
 export const browserstream_reset: (a: number) => any;
 export const browserstream_send: (a: number, b: number, c: number) => any;
 export const mesh_version: () => [number, number];
@@ -114,6 +116,7 @@ export const wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number
 export const wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
 export const wasmingressbudgetprofile_maxConcurrentFramesPerConnection: (a: number) => number;
+export const wasmingressbudgetprofile_maxConcurrentHeadersPerConnection: (a: number) => number;
 export const wasmingressbudgetprofile_maxFrameBytes: (a: number, b: number, c: number) => [number, number, number];
 export const wasmingressbudgetprofile_maxHeaderBytes: (a: number) => number;
 export const wasmingressbudgetprofile_maxInFlightBytesPerConnection: (a: number) => number;

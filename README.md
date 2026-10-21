@@ -31,6 +31,14 @@ exports with the policy WASM built from the same source revision.
 See [replication protocol](docs/replication.md) for identity boundaries, route lifecycle, delivery guarantees, browser-instance behavior, security checks, and operational traces.
 See [verification measurements](docs/measurements.md) for current topology, byte, duplicate, reconnect, and limitation evidence.
 See [protocol models](formal/README.md) for bounded TLA+ checks of authority epochs, session generations, and durable batch acknowledgements.
+
+Browser ingress shares one 32-MiB read budget across connections to the same
+authenticated endpoint. Up to 32 bounded header reads may wait independently;
+their 4-KiB reservations count toward that same byte budget. The native reader
+validates the frame kind before requesting its payload reservation, with at most
+two payload reads active. A response that has not arrived therefore cannot
+occupy a full payload slot and block another board's heartbeat. Older transport
+adapters retain the conservative full-frame reservation and bounded queue.
 See [co-owned scope governance](docs/coownership.md) for opt-in v2 quorum, conflict resolution, independent forks, and consumer integration limits.
 See [causal write admission](docs/causal-admission.md) for retained raw history, revocation reclassification, authorized projections, and grant-bound transaction provenance.
 
