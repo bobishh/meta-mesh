@@ -167,8 +167,23 @@ impl BrowserStream {
         maximum_bytes: Option<usize>,
     ) -> Result<Vec<u8>, JsValue> {
         let maximum_bytes = effective_read_limit(maximum_bytes, DEFAULT_STREAM_READ_BYTES);
-        self.read_pairing_frame_after_prefix(Vec::new(), maximum_bytes)
+        self.read_pairing_frame_after_prefix(Vec::new(), maximum_bytes, None)
             .await
+    }
+
+    /// Read only a bounded header before requesting the peer's payload reservation.
+    #[wasm_bindgen(js_name = readPairingFrameAdmitted)]
+    pub async fn read_pairing_frame_admitted(
+        &self,
+        maximum_bytes: usize,
+        admit: js_sys::Function,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.read_pairing_frame_after_prefix(
+            Vec::new(),
+            effective_read_limit(Some(maximum_bytes), DEFAULT_STREAM_READ_BYTES),
+            Some(&admit),
+        )
+        .await
     }
 
     #[wasm_bindgen(js_name = readPairingOrRawPrefix)]
@@ -177,7 +192,53 @@ impl BrowserStream {
         raw_prefix: &[u8],
         maximum_raw_bytes: Option<usize>,
     ) -> Result<Vec<u8>, JsValue> {
-        let maximum_raw_bytes = effective_read_limit(maximum_raw_bytes, DEFAULT_STREAM_READ_BYTES);
+        self.read_mixed_frame(
+            raw_prefix,
+            effective_read_limit(maximum_raw_bytes, DEFAULT_STREAM_READ_BYTES),
+            DEFAULT_STREAM_READ_BYTES,
+            None,
+        )
+        .await
+    }
+
+    #[wasm_bindgen(js_name = readPairingOrRawPrefixAdmitted)]
+    pub async fn read_pairing_or_raw_prefix_admitted(
+        &self,
+        raw_prefix: &[u8],
+        maximum_raw_bytes: usize,
+        maximum_frame_bytes: usize,
+        admit: js_sys::Function,
+    ) -> Result<Vec<u8>, JsValue> {
+        self.read_mixed_frame(
+            raw_prefix,
+            effective_read_limit(Some(maximum_raw_bytes), DEFAULT_STREAM_READ_BYTES),
+            effective_read_limit(Some(maximum_frame_bytes), DEFAULT_STREAM_READ_BYTES),
+            Some(&admit),
+        )
+        .await
+    }
+
+    async fn admit_read(
+        admit: Option<&js_sys::Function>,
+        maximum_bytes: usize,
+    ) -> Result<(), JsValue> {
+        if let Some(admit) = admit {
+            let result = admit.call1(
+                &JsValue::UNDEFINED,
+                &JsValue::from_f64(maximum_bytes as f64),
+            )?;
+            wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&result)).await?;
+        }
+        Ok(())
+    }
+
+    async fn read_mixed_frame(
+        &self,
+        raw_prefix: &[u8],
+        maximum_raw_bytes: usize,
+        maximum_frame_bytes: usize,
+        admit: Option<&js_sys::Function>,
+    ) -> Result<Vec<u8>, JsValue> {
         let mut prefix = Vec::with_capacity(raw_prefix.len());
         while prefix.len() < raw_prefix.len() {
             let Some(chunk) = self
@@ -196,6 +257,7 @@ impl BrowserStream {
                     "Raw stream exceeds ingress limit: stage=stream",
                 ));
             }
+            Self::admit_read(admit, maximum_raw_bytes).await?;
             let remaining = self
                 .inner
                 .read_to_end(maximum_raw_bytes - prefix.len())
@@ -205,7 +267,7 @@ impl BrowserStream {
                 prefix
             });
         }
-        self.read_pairing_frame_after_prefix(prefix, DEFAULT_STREAM_READ_BYTES)
+        self.read_pairing_frame_after_prefix(prefix, maximum_frame_bytes, admit)
             .await
     }
 
@@ -213,6 +275,7 @@ impl BrowserStream {
         &self,
         mut bytes: Vec<u8>,
         maximum_bytes: usize,
+        admit: Option<&js_sys::Function>,
     ) -> Result<Vec<u8>, JsValue> {
         let initial_frame_limit = (|| -> Result<Option<usize>, JsValue> {
             let Some(header_end) = bytes.iter().position(|byte| *byte == b'\n') else {
@@ -248,6 +311,9 @@ impl BrowserStream {
             }
         };
         let result = async {
+            if let Some(limit) = frame_limit {
+                Self::admit_read(admit, limit).await?;
+            }
             loop {
                 let read_limit = frame_limit
                     .map_or_else(
@@ -306,6 +372,7 @@ impl BrowserStream {
                             "Pairing frame exceeds ingress limit: stage=stream",
                         ));
                     }
+                    Self::admit_read(admit, frame_limit.unwrap_or(maximum_bytes)).await?;
                 }
                 bytes.extend_from_slice(&chunk);
             }

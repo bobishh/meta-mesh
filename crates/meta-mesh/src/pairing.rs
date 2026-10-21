@@ -1,10 +1,10 @@
 use js_sys::{Object, Reflect, Uint8Array};
 use meta_mesh_core::{
-    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_IN_FLIGHT_BYTES_PER_CONNECTION,
-    MAX_LOGICAL_TRANSFER_BYTES, MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES,
-    MAX_TRANSFER_DEADLINE_MS, MAX_TRANSFER_PAGES, PairingCodec, PairingFrameHeader,
-    WorkspaceJoinAck, WorkspaceJoinHandoff, WorkspaceJoinHandoffOutcome, WorkspaceJoinHandshake,
-    WorkspaceJoinResponse, pairing_frame_budget, pairing_payload_limit,
+    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_CONCURRENT_HEADERS_PER_CONNECTION,
+    MAX_IN_FLIGHT_BYTES_PER_CONNECTION, MAX_LOGICAL_TRANSFER_BYTES, MAX_PAIRING_HEADER_BYTES,
+    MAX_RPC_FRAME_BYTES, MAX_TRANSFER_DEADLINE_MS, MAX_TRANSFER_PAGES, PairingCodec,
+    PairingFrameHeader, WorkspaceJoinAck, WorkspaceJoinHandoff, WorkspaceJoinHandoffOutcome,
+    WorkspaceJoinHandshake, WorkspaceJoinResponse, pairing_frame_budget, pairing_payload_limit,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -97,6 +97,11 @@ impl WasmIngressBudgetProfile {
     #[wasm_bindgen(js_name = maxInFlightBytesPerConnection)]
     pub fn max_in_flight_bytes_per_connection(&self) -> usize {
         MAX_IN_FLIGHT_BYTES_PER_CONNECTION
+    }
+
+    #[wasm_bindgen(js_name = maxConcurrentHeadersPerConnection)]
+    pub fn max_concurrent_headers_per_connection(&self) -> usize {
+        MAX_CONCURRENT_HEADERS_PER_CONNECTION
     }
 
     #[wasm_bindgen(js_name = maxConcurrentFramesPerConnection)]

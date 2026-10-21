@@ -72,6 +72,7 @@ export const wasmidentitycrypto_verifyDeviceCertificateChain: (a: any, b: number
 export const wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
 export const wasmingressbudgetprofile_maxConcurrentFramesPerConnection: (a: number) => number;
+export const wasmingressbudgetprofile_maxConcurrentHeadersPerConnection: (a: number) => number;
 export const wasmingressbudgetprofile_maxFrameBytes: (a: number, b: number, c: number) => [number, number, number];
 export const wasmingressbudgetprofile_maxHeaderBytes: (a: number) => number;
 export const wasmingressbudgetprofile_maxInFlightBytesPerConnection: (a: number) => number;

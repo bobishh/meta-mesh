@@ -29,6 +29,7 @@ describe("WASM package boundary", () => {
     const profile = new policyModule.WasmIngressBudgetProfile()
     const encoder = new TextEncoder()
     expect(profile.maxHeaderBytes()).toBe(4 * 1024)
+    expect(profile.maxConcurrentHeadersPerConnection()).toBe(32)
     expect(profile.maxFrameBytes("sync-request")).toBe(16 * 1024 * 1024)
     expect(profile.maxPayloadBytes("mesh-control-sync")).toBe(256 * 1024)
     expect(profile.maxPayloadBytes("mesh-automerge-sync")).toBe(512 * 1024)

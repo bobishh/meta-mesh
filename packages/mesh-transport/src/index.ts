@@ -1,7 +1,12 @@
+import { MeshReadBudget } from "./readBudget"
+
 export type IrohStream = {
   send(bytes: Uint8Array): Promise<void>
   read(maximumBytes?: number): Promise<Uint8Array>
   readPairingFrame(maximumBytes?: number): Promise<Uint8Array>
+  readPairingFrameAdmitted?(maximumBytes: number, admit: (frameLimit: number) => Promise<void>): Promise<Uint8Array>
+  readPairingOrRawPrefixAdmitted?(prefix: Uint8Array, maximumRawBytes: number, maximumFrameBytes: number,
+    admit: (frameLimit: number) => Promise<void>): Promise<Uint8Array>
   readPairingOrRawPrefix?(prefix: Uint8Array, maximumRawBytes?: number): Promise<Uint8Array>
   closeSend(): Promise<void>
   reset?(): Promise<void>
@@ -55,6 +60,7 @@ export type MeshIngressBudgetProfile = {
   maxTransferDeadlineMs(): number
   maxInFlightBytesPerConnection(): number
   maxConcurrentFramesPerConnection(): number
+  maxConcurrentHeadersPerConnection?(): number
 }
 
 export type PolicyModule = typeof import("../wasm/policy/meta_mesh_policy.js")
@@ -94,29 +100,25 @@ export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   catch (error) { throw new MeshNetworkError(error instanceof Error ? error.message : String(error)) }
 }
 
-type WaitingRead = { resolve: () => void; timer: ReturnType<typeof setTimeout> }
-type ReadSlots = { active: number; waiting: WaitingRead[]; lastUsed: number }
-const peerReadSlots = new Map<string, ReadSlots>()
-const connectionReadSlots = new WeakMap<object, ReadSlots>()
+const peerReadSlots = new Map<string, MeshReadBudget>()
+const connectionReadSlots = new WeakMap<object, MeshReadBudget>()
 
-function readSlotsFor(connection: IrohConnection, deadlineMs: number): ReadSlots {
+function readSlotsFor(connection: IrohConnection, limits: { bytes: number; frames: number; headers: number; deadlineMs: number }): MeshReadBudget {
+  const create = () => new MeshReadBudget(limits, message => new MeshNetworkError(message))
   const peerId = connection.remoteEndpointId
   if (!peerId) {
     let slots = connectionReadSlots.get(connection)
-    if (!slots) {
-      slots = { active: 0, waiting: [], lastUsed: Date.now() }
-      connectionReadSlots.set(connection, slots)
-    }
+    if (!slots) { slots = create(); connectionReadSlots.set(connection, slots) }
     return slots
   }
   const now = Date.now()
   for (const [id, slots] of peerReadSlots) {
-    if (slots.active === 0 && slots.waiting.length === 0 && now - slots.lastUsed > deadlineMs) peerReadSlots.delete(id)
+    if (slots.idle && now - slots.lastUsed > limits.deadlineMs) peerReadSlots.delete(id)
   }
   let slots = peerReadSlots.get(peerId)
   if (!slots) {
     if (peerReadSlots.size >= 1024) throw new MeshNetworkError("Mesh peer read budget is full")
-    slots = { active: 0, waiting: [], lastUsed: now }
+    slots = create()
     peerReadSlots.set(peerId, slots)
   }
   slots.lastUsed = now
@@ -136,7 +138,11 @@ export function meshNetworkConnection(connection: IrohConnection,
   }
   if (!Number.isSafeInteger(maxFrames) || maxConcurrentReads < 1) throw new RangeError("Invalid peer read concurrency")
   if (!Number.isSafeInteger(readDeadlineMs) || readDeadlineMs < 1) throw new RangeError("Invalid stream read deadline")
-  const slots = readSlotsFor(connection, readDeadlineMs)
+  const headerLimit = Math.min(ingressProfile.maxHeaderBytes(), hardReadLimit)
+  const maxHeaders = ingressProfile.maxConcurrentHeadersPerConnection?.() ?? maxFrames
+  if (!Number.isSafeInteger(headerLimit) || headerLimit < 1 || headerLimit > inFlightLimit ||
+      !Number.isSafeInteger(maxHeaders) || maxHeaders < 1) throw new RangeError("Invalid peer header read budget")
+  const slots = readSlotsFor(connection, { bytes: inFlightLimit, frames: maxConcurrentReads, headers: maxHeaders, deadlineMs: readDeadlineMs })
   const cancellations = new Set<(error: MeshNetworkError) => void>()
   let closed: MeshNetworkError | undefined
   let closing: Promise<void> | undefined
@@ -149,67 +155,51 @@ export function meshNetworkConnection(connection: IrohConnection,
     cancellations.clear()
     return closing
   }
-  const acquireRead = async (): Promise<void> => {
-    assertOpen()
-    if (slots.active < maxConcurrentReads) {
-      slots.active++
-      slots.lastUsed = Date.now()
-      return
-    }
-    if (slots.waiting.length >= maxFrames) throw new MeshNetworkError("Mesh stream concurrency limit exceeded")
-    await new Promise<void>((resolve, reject) => {
-      const cancel = (error: MeshNetworkError) => {
-        const index = slots.waiting.indexOf(waiter)
-        if (index >= 0) slots.waiting.splice(index, 1)
-        clearTimeout(waiter.timer)
-        cancellations.delete(cancel)
-        reject(error)
-      }
-      const waiter: WaitingRead = {
-        resolve: () => { cancellations.delete(cancel); resolve() },
-        timer: setTimeout(() => cancel(new MeshNetworkError("Mesh stream read deadline exceeded while queued: stage=stream")), readDeadlineMs * 2),
-      }
-      slots.waiting.push(waiter)
-      cancellations.add(cancel)
-    })
-  }
-  const releaseRead = (): void => {
-    slots.lastUsed = Date.now()
-    const next = slots.waiting.shift()
-    if (next) {
-      clearTimeout(next.timer)
-      next.resolve()
-    } else {
-      slots.active--
-    }
-  }
   const stream = (value: IrohStream): MeshStream => {
     const reset = value.reset
     const boundedRead = async (maximumBytes: number | undefined, pairing: boolean | "mixed", prefix?: Uint8Array) => {
       if (maximumBytes !== undefined && (!Number.isInteger(maximumBytes) || maximumBytes < 0 || maximumBytes > 0xffff_ffff)) {
         throw new RangeError("Invalid stream read limit")
       }
+      assertOpen()
       const limit = Math.min(maximumBytes ?? hardReadLimit, hardReadLimit)
-      await acquireRead()
+      const staged = pairing === true ? Boolean(value.readPairingFrameAdmitted)
+        : pairing === "mixed" && Boolean(value.readPairingOrRawPrefixAdmitted)
+      const lease = slots.create(staged)
       let timer: ReturnType<typeof setTimeout> | undefined
       let timedOut = false
-      let cancel!: (error: MeshNetworkError) => void
-      const cancelled = new Promise<never>((_, reject) => { cancel = reject })
+      let rejectRead: ((error: MeshNetworkError) => void) | undefined
+      let cancelled: Promise<never> = new Promise(() => {})
+      const cancel = (error: MeshNetworkError) => { lease.cancel(error); rejectRead?.(error) }
       cancellations.add(cancel)
       try {
+        await lease.reserve(staged ? headerLimit : pairing === "mixed" ? hardReadLimit : limit, !staged)
         assertOpen()
+        cancelled = new Promise<never>((_, reject) => { rejectRead = reject })
+        let admitted = false
+        const admit = (frameLimit: number) => {
+          if (admitted || !Number.isSafeInteger(frameLimit) || frameLimit < 1 || frameLimit > hardReadLimit) {
+            return Promise.reject(new MeshNetworkError("Invalid stream frame admission"))
+          }
+          admitted = true
+          return lease.reserve(Math.max(frameLimit, headerLimit), frameLimit > headerLimit)
+        }
         const read = pairing === "mixed"
-          ? value.readPairingOrRawPrefix
-            ? value.readPairingOrRawPrefix(prefix ?? new Uint8Array(), limit)
-            : Promise.reject(new MeshNetworkError("Pairing/raw ingress reader is unavailable"))
-          : pairing ? value.readPairingFrame(limit) : value.read(limit)
+          ? value.readPairingOrRawPrefixAdmitted
+            ? value.readPairingOrRawPrefixAdmitted(prefix ?? new Uint8Array(), limit, hardReadLimit, admit)
+            : value.readPairingOrRawPrefix
+              ? value.readPairingOrRawPrefix(prefix ?? new Uint8Array(), limit)
+              : Promise.reject(new MeshNetworkError("Pairing/raw ingress reader is unavailable"))
+          : pairing ? value.readPairingFrameAdmitted ? value.readPairingFrameAdmitted(limit, admit) : value.readPairingFrame(limit) : value.read(limit)
         return await Promise.race([
           meshNetworkIO(read),
           cancelled,
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => {
               timedOut = true
-              reject(new MeshNetworkError("Mesh stream read deadline exceeded: stage=stream"))
+              const error = new MeshNetworkError("Mesh stream read deadline exceeded: stage=stream")
+              lease.cancel(error)
+              reject(error)
             }, readDeadlineMs)
           }),
         ])
@@ -229,7 +219,7 @@ export function meshNetworkConnection(connection: IrohConnection,
         cancellations.delete(cancel)
         // Keep the peer lease until transport cancellation has completed.
         if (closing) await closing
-        releaseRead()
+        lease.release()
       }
     }
     return {

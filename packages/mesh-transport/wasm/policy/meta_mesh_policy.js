@@ -863,6 +863,13 @@ export class WasmIngressBudgetProfile {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    maxConcurrentHeadersPerConnection() {
+        const ret = wasm.wasmingressbudgetprofile_maxConcurrentHeadersPerConnection(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @param {string} frame_type
      * @returns {number}
      */

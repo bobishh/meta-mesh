@@ -45,7 +45,12 @@ export class BrowserStream {
     closeSend(): Promise<void>;
     read(maximum_bytes?: number | null): Promise<Uint8Array>;
     readPairingFrame(maximum_bytes?: number | null): Promise<Uint8Array>;
+    /**
+     * Read only a bounded header before requesting the peer's payload reservation.
+     */
+    readPairingFrameAdmitted(maximum_bytes: number, admit: Function): Promise<Uint8Array>;
     readPairingOrRawPrefix(raw_prefix: Uint8Array, maximum_raw_bytes?: number | null): Promise<Uint8Array>;
+    readPairingOrRawPrefixAdmitted(raw_prefix: Uint8Array, maximum_raw_bytes: number, maximum_frame_bytes: number, admit: Function): Promise<Uint8Array>;
     reset(): Promise<void>;
     send(bytes: Uint8Array): Promise<void>;
 }
@@ -180,6 +185,7 @@ export class WasmIngressBudgetProfile {
     free(): void;
     [Symbol.dispose](): void;
     maxConcurrentFramesPerConnection(): number;
+    maxConcurrentHeadersPerConnection(): number;
     maxFrameBytes(frame_type: string): number;
     maxHeaderBytes(): number;
     maxInFlightBytesPerConnection(): number;
@@ -700,7 +706,9 @@ export interface InitOutput {
     readonly browserstream_closeSend: (a: number) => any;
     readonly browserstream_read: (a: number, b: number) => any;
     readonly browserstream_readPairingFrame: (a: number, b: number) => any;
+    readonly browserstream_readPairingFrameAdmitted: (a: number, b: number, c: any) => any;
     readonly browserstream_readPairingOrRawPrefix: (a: number, b: number, c: number, d: number) => any;
+    readonly browserstream_readPairingOrRawPrefixAdmitted: (a: number, b: number, c: number, d: number, e: number, f: any) => any;
     readonly browserstream_reset: (a: number) => any;
     readonly browserstream_send: (a: number, b: number, c: number) => any;
     readonly mesh_version: () => [number, number];
@@ -769,6 +777,7 @@ export interface InitOutput {
     readonly wasmidentitycrypto_verifyEnvelope: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmidentitycrypto_verifyWorkspaceGrant: (a: any, b: number, c: number, d: number, e: number, f: any, g: any) => [number, number, number, number];
     readonly wasmingressbudgetprofile_maxConcurrentFramesPerConnection: (a: number) => number;
+    readonly wasmingressbudgetprofile_maxConcurrentHeadersPerConnection: (a: number) => number;
     readonly wasmingressbudgetprofile_maxFrameBytes: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmingressbudgetprofile_maxHeaderBytes: (a: number) => number;
     readonly wasmingressbudgetprofile_maxInFlightBytesPerConnection: (a: number) => number;
