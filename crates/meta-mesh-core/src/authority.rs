@@ -95,6 +95,8 @@ pub struct WorkspaceDeviceRevocationPayload {
     pub device_id: String,
     pub workspace_heads: Vec<String>,
     pub revoked_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restores: Option<Vec<String>>,
 }
 pub type WorkspaceDeviceRevocation = SignedEnvelope<WorkspaceDeviceRevocationPayload>;
 
@@ -116,10 +118,53 @@ pub fn verify_workspace_device_revocation(
         || (authority.person_id != owner_person_id && authority.person_id != p.person_id)
         || public_key_id(&authority.public_key)? != authority.person_id
         || !valid_time(&p.revoked_at, now_ms)?
+        || p.restores.as_ref().is_some_and(|signatures| {
+            signatures.is_empty()
+                || signatures.len() > 512
+                || signatures
+                    .iter()
+                    .any(|signature| signature.is_empty() || signature.len() > 128)
+                || signatures
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    != signatures.len()
+                || record.signer_key_id == p.device_id
+        })
     {
         return Err("Invalid workspace device revocation".into());
     }
     verify_owner_envelope(record, authority, "workspace device revocation")
+}
+
+/// A new signed approval supersedes only the removals it explicitly names.
+pub(crate) fn restored_device_revocations<'a>(
+    records: impl Iterator<Item = (&'a WorkspaceDeviceRevocation, &'a WorkspaceAuthority)>,
+    owner_person_id: &str,
+) -> Result<std::collections::HashSet<String>, String> {
+    let records: Vec<_> = records.collect();
+    let mut restored = std::collections::HashSet::new();
+    for (approval, signer) in &records {
+        let Some(signatures) = &approval.payload.restores else {
+            continue;
+        };
+        for signature in signatures {
+            let (removal, authority) = records
+                .iter()
+                .find(|(record, _)| &record.signature == signature)
+                .ok_or("Device restoration is missing its removal evidence")?;
+            if removal.payload.restores.is_some()
+                || removal.payload.workspace_id != approval.payload.workspace_id
+                || removal.payload.person_id != approval.payload.person_id
+                || removal.payload.device_id != approval.payload.device_id
+                || (signer.person_id != owner_person_id && signer.person_id != authority.person_id)
+            {
+                return Err("Device restoration does not authorize this removal".into());
+            }
+            restored.insert(signature.clone());
+        }
+    }
+    Ok(restored)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -607,7 +607,7 @@ export async function verifyWorkspaceSuccessionClaim(raw: unknown, workspaceId: 
 }
 
 export type WorkspaceDeviceRevocation = {
-  record: SignedEnvelope<{ kind: "workspace-device-revocation"; version: 1; workspaceId: string; personId: string; deviceId: string; workspaceHeads: string[]; revokedAt: string }>
+  record: SignedEnvelope<{ kind: "workspace-device-revocation"; version: 1; workspaceId: string; personId: string; deviceId: string; workspaceHeads: string[]; revokedAt: string; restores?: string[] }>
   authority: WorkspaceAuthority
 }
 
@@ -626,6 +626,17 @@ export async function createWorkspaceDeviceRevocation(profile: LocalProfile, wor
   }, signing)
   return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey,
     certificates: signing ? workspaceSignerCertificates(profile, signing) : certificates } }
+}
+
+export async function createWorkspaceDeviceRestoration(profile: LocalProfile, workspaceId: string,
+  personId: string, deviceId: string, workspaceHeads: string[],
+  restores: string[], signing: WorkspaceRecordSigner): Promise<WorkspaceDeviceRevocation> {
+  profile = captureSigningProfile(profile)
+  const record = await signWorkspaceRecord(profile, { kind: "workspace-device-revocation" as const,
+    version: 1 as const, workspaceId, personId, deviceId, workspaceHeads: [...workspaceHeads],
+    revokedAt: new Date().toISOString(), restores: [...new Set(restores)].sort() }, signing)
+  return { record, authority: { personId: profile.identity.personId, publicKey: profile.identity.publicKey,
+    certificates: workspaceSignerCertificates(profile, signing) } }
 }
 
 export function verifyWorkspaceDeviceRevocation(value: WorkspaceDeviceRevocation, workspaceId: string,

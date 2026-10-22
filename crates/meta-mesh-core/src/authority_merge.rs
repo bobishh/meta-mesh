@@ -257,17 +257,35 @@ pub fn plan_authority_merge(mut input: AuthorityMergeInput) -> Result<AuthorityM
                 return Err("Too many device revocations".into());
             }
             merged.sort_by(|a, b| a.record.payload.device_id.cmp(&b.record.payload.device_id));
+            let restored = crate::authority::restored_device_revocations(
+                merged.iter().map(|value| (&value.record, &value.authority)),
+                &owner_person_id,
+            )?;
+            let active: Vec<_> = merged
+                .iter()
+                .filter(|value| {
+                    value.record.payload.restores.is_none()
+                        && !restored.contains(&value.record.signature)
+                })
+                .collect();
             for mut peer in input.peers {
-                if let Some(record) = merged.iter().find(|record| {
+                if let Some(record) = active.iter().find(|record| {
                     record.record.payload.person_id == peer.person_id
                         && record.record.payload.device_id == peer.device_id
                 }) {
                     peer.revoked_at = Some(Some(record.record.payload.revoked_at.clone()));
                     evict_device_ids.insert(peer.device_id.clone());
                     changed_peers.push(peer);
+                } else if merged.iter().any(|value| {
+                    value.record.payload.restores.is_some()
+                        && value.record.payload.person_id == peer.person_id
+                        && value.record.payload.device_id == peer.device_id
+                }) {
+                    peer.revoked_at = Some(None);
+                    changed_peers.push(peer);
                 }
             }
-            local_access_revoked = merged.iter().any(|record| {
+            local_access_revoked = active.iter().any(|record| {
                 record.record.payload.person_id == input.local_person_id
                     && record.record.payload.device_id == input.local_device_id
             });

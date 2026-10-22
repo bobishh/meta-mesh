@@ -40,7 +40,7 @@ pub fn is_grant_revoked(credential: &Value, person_id: &str, grant: Option<&Valu
 }
 
 pub fn is_device_revoked(credential: &Value, person_id: &str, device_id: &str) -> bool {
-    catalog_records(credential, "deviceRevocations").any(|record| {
+    let matches_device = |record: &Value| {
         record
             .pointer("/record/payload/personId")
             .and_then(Value::as_str)
@@ -49,6 +49,25 @@ pub fn is_device_revoked(credential: &Value, person_id: &str, device_id: &str) -
                 .pointer("/record/payload/deviceId")
                 .and_then(Value::as_str)
                 == Some(device_id)
+    };
+    let restored: std::collections::HashSet<&str> =
+        catalog_records(credential, "deviceRevocations")
+            .filter(|record| matches_device(record))
+            .filter_map(|record| {
+                record
+                    .pointer("/record/payload/restores")
+                    .and_then(Value::as_array)
+            })
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+    catalog_records(credential, "deviceRevocations").any(|record| {
+        matches_device(record)
+            && record.pointer("/record/payload/restores").is_none()
+            && !record
+                .pointer("/record/signature")
+                .and_then(Value::as_str)
+                .is_some_and(|signature| restored.contains(signature))
     })
 }
 

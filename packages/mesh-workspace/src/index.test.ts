@@ -14,6 +14,8 @@ import {
   createWorkspaceRevocation,
   verifyWorkspaceRevocation,
   createWorkspaceDeviceRevocation,
+  createWorkspaceDeviceRestoration,
+  verifyWorkspaceDeviceRevocation,
   createWorkspaceOwnershipTransfer,
   verifyWorkspaceOwnershipTransfer,
   createWorkspaceSuccessionPolicy,
@@ -38,6 +40,23 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
 
     expect(revocation.authority.personId).toBe(owner.identity.personId)
     expect(transfer.payload.toOwnerPersonId).toBe(successor.identity.personId)
+  })
+
+  it("Given signed removal evidence, when another device approves restoration, then bind the exact removed key and removal signatures", async () => {
+    const owner = await createProfile("Owner")
+    const removed = await createWorkspaceDeviceRevocation(owner, workspaceId, owner.identity.personId,
+      "removed-device", ["head"], [owner.certificate])
+    const restored = await createWorkspaceDeviceRestoration(owner, workspaceId, owner.identity.personId,
+      "removed-device", ["head"], [removed.record.signature], {
+        personId: owner.identity.personId, publicKey: owner.identity.publicKey, deviceId: owner.device.deviceId,
+        certificates: [owner.certificate],
+        sign: payload => signEnvelope(owner.privateKeys.devicePrivateKey, payload, owner.device.deviceId),
+      })
+    expect(restored.record.payload.restores).toEqual([removed.record.signature])
+    expect(verifyWorkspaceDeviceRevocation(restored, workspaceId, owner.identity.personId)).toEqual(restored)
+    const forged = structuredClone(restored)
+    forged.record.payload.restores = ["different-removal"]
+    expect(() => verifyWorkspaceDeviceRevocation(forged, workspaceId, owner.identity.personId)).toThrow()
   })
 
   describe("ownership transfer", () => {

@@ -61,6 +61,13 @@ fn session_authority(
         return Err("Workspace ownership chain does not match the expected owner".into());
     }
     let mut revoked_devices = HashSet::new();
+    let restored = crate::authority::restored_device_revocations(
+        snapshot
+            .device_revocations
+            .iter()
+            .map(|value| (&value.record, &value.signer)),
+        &current_owner.person_id,
+    )?;
     for evidence in &snapshot.device_revocations {
         validate_authority(&evidence.signer)?;
         let owner_signed = crate::authority::verify_workspace_device_revocation(
@@ -82,6 +89,11 @@ fn session_authority(
             .is_ok();
         if !owner_signed && !subject_signed {
             return Err("Invalid workspace device revocation".into());
+        }
+        if evidence.record.payload.restores.is_some()
+            || restored.contains(&evidence.record.signature)
+        {
+            continue;
         }
         revoked_devices.insert((
             evidence.record.payload.person_id.clone(),
@@ -464,6 +476,7 @@ mod tests {
             device_id,
             workspace_heads,
             revoked_at: "1970-01-01T00:00:00.000Z".into(),
+            restores: None,
         };
         let signed = sign_json_envelope(
             &[2; 32],

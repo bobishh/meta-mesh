@@ -103,14 +103,12 @@ fn finish_preparation(
         display_name: String::new(),
     };
     let signer = verified_signer(signer, &identity)?;
-    if source.snapshot.device_revocations.iter().any(|evidence| {
-        evidence.record.payload.person_id == signer.person_id
-            && evidence.record.payload.device_id == signer.device_id
-    }) || source
-        .snapshot
-        .departures
-        .iter()
-        .any(|evidence| evidence.record.payload.person_id == signer.person_id)
+    if context.device_was_revoked(&signer.person_id, &signer.device_id)
+        || source
+            .snapshot
+            .departures
+            .iter()
+            .any(|evidence| evidence.record.payload.person_id == signer.person_id)
     {
         return Err("History preparation signing device or person is no longer active".into());
     }

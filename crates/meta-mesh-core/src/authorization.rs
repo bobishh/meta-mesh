@@ -376,6 +376,12 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
             (String, String),
             Vec<std::collections::HashSet<String>>,
         >::new();
+        let restored = crate::authority::restored_device_revocations(
+            raw.device_revocations
+                .iter()
+                .map(|value| (&value.record, &value.signer)),
+            &current_owner.person_id,
+        )?;
         for evidence in &raw.device_revocations {
             validate_authority(&evidence.signer)?;
             let signed_by_owner = std::iter::once(&current_owner)
@@ -411,6 +417,9 @@ impl ValidatedWorkspaceWriteAuthorizationContext {
                 return Err("Invalid workspace device revocation".to_string());
             }
             let payload = &evidence.record.payload;
+            if payload.restores.is_some() || restored.contains(&evidence.record.signature) {
+                continue;
+            }
             let hashes = ancestry(&payload.workspace_heads, &by_hash)?;
             let key = (payload.person_id.clone(), payload.device_id.clone());
             revoked_devices.entry(key).or_default().push(hashes);
@@ -1203,6 +1212,7 @@ mod tests {
             device_id: device_id.into(),
             workspace_heads: heads,
             revoked_at: "1970-01-01T00:00:00.000Z".into(),
+            restores: None,
         };
         let signed = sign_json_envelope(
             owner_device_seed,
