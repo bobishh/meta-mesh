@@ -7,11 +7,43 @@ export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJo
   BrowserWorkspaceJoinHandoffHost, WorkspaceJoinHandoffRollbackError, WorkspaceJoinRejectedError,
   type WorkspaceJoinConnection, type WorkspaceJoinHandoffMachine, type WorkspaceJoinHandoffOutcome,
   type WorkspaceJoinMachine, type WorkspaceJoinResponse, type WorkspaceJoinStream } from "./browserWorkspaceJoin"
-export { connectBrowserIdentityEnrollment, createBrowserIdentityEnrollmentHost, serveIdentityProfileSync, syncProfileState,
-  type BrowserIdentityEnrollmentApproval, type BrowserIdentityEnrollmentHost, type ConnectedIdentityEnrollment,
-  type IdentityEnrollmentRecovery, type IdentityProfileSyncOptions, type PendingIdentityEnrollment } from "./browserIdentityEnrollment"
-export { connectBrowserIdentityPeer, startBrowserIdentityPeerHost,
-  type BrowserIdentityPeerHost, type ConnectedIdentityPeer, type IdentityPeerContact, type IdentityPeerHostConnection } from "./browserIdentityReconnect"
+export type { BrowserIdentityEnrollmentApproval, BrowserIdentityEnrollmentHost, ConnectedIdentityEnrollment,
+  IdentityEnrollmentRecovery, IdentityProfileSyncOptions, PendingIdentityEnrollment } from "./browserIdentityEnrollment"
+export type { BrowserIdentityPeerHost, ConnectedIdentityPeer, IdentityPeerContact, IdentityPeerHostConnection } from "./browserIdentityReconnect"
+
+// Keep identity enrollment and reconnect code out of the workspace runtime's
+// startup graph. These features use the full Automerge identity replica and
+// are loaded only when a caller explicitly starts an identity operation.
+type BrowserIdentityEnrollmentApi = typeof import("./browserIdentityEnrollment")
+type BrowserIdentityReconnectApi = typeof import("./browserIdentityReconnect")
+
+export function connectBrowserIdentityEnrollment(...args: Parameters<BrowserIdentityEnrollmentApi["connectBrowserIdentityEnrollment"]>) {
+  return import("./browserIdentityEnrollment").then(module => module.connectBrowserIdentityEnrollment(...args))
+}
+
+export function createBrowserIdentityEnrollmentHost(...args: Parameters<BrowserIdentityEnrollmentApi["createBrowserIdentityEnrollmentHost"]>) {
+  return import("./browserIdentityEnrollment").then(module => module.createBrowserIdentityEnrollmentHost(...args))
+}
+
+export function serveIdentityProfileSync(...args: Parameters<BrowserIdentityEnrollmentApi["serveIdentityProfileSync"]>) {
+  const serving = import("./browserIdentityEnrollment").then(module => module.serveIdentityProfileSync(...args))
+  return {
+    done: serving.then(sync => sync.done),
+    close: async () => (await serving).close(),
+  }
+}
+
+export function syncProfileState(...args: Parameters<BrowserIdentityEnrollmentApi["syncProfileState"]>) {
+  return import("./browserIdentityEnrollment").then(module => module.syncProfileState(...args))
+}
+
+export function connectBrowserIdentityPeer(...args: Parameters<BrowserIdentityReconnectApi["connectBrowserIdentityPeer"]>) {
+  return import("./browserIdentityReconnect").then(module => module.connectBrowserIdentityPeer(...args))
+}
+
+export function startBrowserIdentityPeerHost(...args: Parameters<BrowserIdentityReconnectApi["startBrowserIdentityPeerHost"]>) {
+  return import("./browserIdentityReconnect").then(module => module.startBrowserIdentityPeerHost(...args))
+}
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"
