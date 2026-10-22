@@ -9,7 +9,6 @@
 use std::cell::RefCell;
 use std::{
     collections::HashMap,
-    fmt::Write as _,
     sync::{Arc, Mutex},
 };
 
@@ -19,6 +18,7 @@ use iroh::{
     endpoint::{Connection, RecvStream, SendStream},
     protocol::{AcceptError, DynProtocolHandler, ProtocolHandler, Router},
 };
+#[cfg(test)]
 use iroh_base::CustomAddr;
 use tokio::sync::{mpsc, oneshot};
 

@@ -10,7 +10,7 @@ import {
 import { meshRustRuntime, type RustAutomergeSyncEngine } from "./runtime"
 
 export type AutomergeRuntime = Pick<typeof Automerge,
-  "load" | "save" | "getChanges" | "getHeads" | "clone" | "initSyncState" | "generateSyncMessage" | "receiveSyncMessage">
+  "load" | "save" | "getChanges" | "getHeads" | "clone" | "change" | "initSyncState" | "generateSyncMessage" | "receiveSyncMessage">
 
 export type AutomergeDocumentRuntime = Pick<typeof Automerge, "load">
 
@@ -65,6 +65,7 @@ export interface AutomergeDocumentAdapter<T extends Record<string, unknown>> {
   readonly documentId: string
   current(): Promise<Automerge.Doc<T>>
   authorize(remoteDeviceId: string, proof: unknown, direction: "send" | "receive"): boolean | Promise<boolean>
+  normalizeCandidate?(candidate: Automerge.Doc<T>): Automerge.Doc<T> | Promise<Automerge.Doc<T>>
   validateCandidate(admission: AutomergeAdmission<T>): void | Promise<void>
   commit(admission: AutomergeAdmission<T>): void | Promise<void>
   snapshot?(document: Automerge.Doc<T>, heads: readonly string[]): void | Promise<void>
@@ -98,10 +99,12 @@ export async function receiveAutomergeDeviceSync<T extends Record<string, unknow
   adapter: AutomergeDocumentAdapter<T>
   remoteDeviceId: string
   request: AutomergeDeviceSyncRequest
+  onReceivedChanges?: (count: number) => void
 }): Promise<AutomergeDeviceSyncResponse> {
   const { frame: rawFrame, batch } = meshRustRuntime().decodeAutomergeDeviceSyncRequest(options.request, options.remoteDeviceId)
   const frame = normalizeRustFrame(rawFrame as AutomergeSyncFrame)
   const result = await options.engine.receive(options.adapter, options.remoteDeviceId, frame)
+  options.onReceivedChanges?.(result.acceptedChanges)
   const ack = await createSignedDurableBatchAck(options.profile, {
     scopeId: batch.scopeId,
     documentId: batch.documentId,
@@ -250,7 +253,8 @@ export class AutomergeAntiEntropy {
       }
       let rustCommitted = false
       try {
-        const candidate = this.automerge.load<T>(new Uint8Array(result.document))
+        let candidate = this.automerge.load<T>(new Uint8Array(result.document))
+        if (adapter.normalizeCandidate) candidate = await adapter.normalizeCandidate(candidate)
         const changes = this.automerge.getChanges(before, candidate)
         const admission = { before, candidate, changes, remoteDeviceId, proof: frame.proof }
         if (changes.length > 0) await adapter.validateCandidate(admission)

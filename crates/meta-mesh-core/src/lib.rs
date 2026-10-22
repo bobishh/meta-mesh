@@ -46,6 +46,7 @@ pub mod scope_authority;
 pub mod scope_runtime;
 pub mod session_admission;
 pub mod session_lifecycle;
+pub mod service_login;
 pub mod state;
 pub mod succession_merge;
 pub mod transfer_selection;

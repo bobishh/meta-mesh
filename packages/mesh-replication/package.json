@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./automerge": "./src/automerge.ts",
+    "./identity-mesh": "./src/identityMesh.ts",
     "./gossip": "./src/gossip.ts",
     "./runtime": "./src/runtime.ts",
     "./rusty-replica": "./src/rustyReplica.ts",

@@ -114,13 +114,20 @@ describe("pairing protocol", () => {
 
     it("creates and strictly parses a device-enrollment invitation", () => {
       const now = 1700000000000
-      const invite = createDeviceEnrollmentInvite("endpoint_test", "secret_123", mockProfile, now)
+      const invite = createDeviceEnrollmentInvite("endpoint_test", "secret_123", mockProfile, now,
+        "https://relay.test:1234")
       expect(invite.kind).toBe("device-enrollment")
       expect(invite.expiresAt).toBe(new Date(now + 10 * 60 * 1000).toISOString())
 
       const url = invitationUrl("https://match.test", invite)
       const parsed = parseInvitation(url, now)
       expect(parsed).toEqual(invite)
+      expect(url).toContain("issuerRelayUrl=https%3A%2F%2Frelay.test%3A1234")
+    })
+
+    it("rejects relay URLs that cannot be used as browser relay hints", () => {
+      expect(() => createDeviceEnrollmentInvite("endpoint_test", "secret_123", mockProfile, 1700000000000,
+        "javascript:alert(1)")).toThrow("Invalid browser relay address")
     })
 
     it("creates and strictly parses a workspace-join invitation", () => {

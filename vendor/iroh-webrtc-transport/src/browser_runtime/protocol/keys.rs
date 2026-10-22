@@ -22,14 +22,6 @@ pub(in crate::browser_runtime) fn stream_key_string(stream_key: BrowserStreamKey
     format!("stream-{}", stream_key.0)
 }
 
-pub(in crate::browser_runtime) fn custom_addr_string(addr: &CustomAddr) -> String {
-    let mut encoded = format!("{}:", addr.id());
-    for byte in addr.data() {
-        write!(&mut encoded, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    encoded
-}
-
 pub(in crate::browser_runtime) fn validate_alpn(alpn: String) -> BrowserRuntimeResult<String> {
     if alpn.is_empty() {
         return Err(BrowserRuntimeError::new(

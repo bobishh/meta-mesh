@@ -106,6 +106,12 @@ impl BrowserRuntimeCore {
         }
         Ok(node)
     }
+
+    pub(in crate::browser_runtime) async fn wait_for_relay_url(
+        &self,
+    ) -> BrowserRuntimeResult<String> {
+        self.open_node()?.wait_for_relay_url().await
+    }
 }
 
 fn protocol_alpn_string(alpn: &[u8]) -> BrowserRuntimeResult<String> {

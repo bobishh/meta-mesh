@@ -17,6 +17,7 @@ impl std::fmt::Debug for BrowserRuntimeNode {
 struct BrowserRuntimeNodeInner {
     secret_key: SecretKey,
     endpoint_id: EndpointId,
+    #[cfg(test)]
     local_custom_addr: CustomAddr,
     transport: WebRtcTransport,
     relay_endpoint: Option<Endpoint>,

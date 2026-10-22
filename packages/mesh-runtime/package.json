@@ -5,8 +5,12 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@automerge/automerge": "^3.4.1",
+    "@meta-uber/mesh-identity": "*",
+    "@meta-uber/mesh-pairing": "*",
     "@meta-uber/mesh-replication": "*",
     "@meta-uber/mesh-transport": "*",
-    "@meta-uber/mesh-workspace": "*"
+    "@meta-uber/mesh-workspace": "*",
+    "zod": "^4.6.2"
   }
 }

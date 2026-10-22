@@ -82,6 +82,7 @@ impl BrowserRuntimeNode {
             inner: Arc::new(Mutex::new(BrowserRuntimeNodeInner {
                 secret_key,
                 endpoint_id,
+                #[cfg(test)]
                 local_custom_addr,
                 transport,
                 relay_endpoint: None,
@@ -151,12 +152,36 @@ impl BrowserRuntimeNode {
             .inner
             .lock()
             .expect("browser runtime node mutex poisoned");
+        let relay_url = inner
+            .relay_endpoint
+            .as_ref()
+            .and_then(|endpoint| endpoint.addr().relay_urls().next().map(ToString::to_string));
         BrowserNodeInfo {
             node_key: format!("node-{}", inner.endpoint_id),
             endpoint_id: endpoint_id_string(inner.endpoint_id),
-            local_custom_addr: custom_addr_string(&inner.local_custom_addr),
+            relay_url,
             bootstrap_alpn: bootstrap_alpn_str().to_owned(),
         }
+    }
+
+    pub(in crate::browser_runtime) async fn wait_for_relay_url(
+        &self,
+    ) -> BrowserRuntimeResult<String> {
+        let endpoint = self.relay_endpoint()?;
+        // Browser callers enforce a JS-side deadline. Tokio's timer driver is
+        // unavailable in this wasm runtime, so tokio::time::timeout panics here.
+        endpoint.online().await;
+        endpoint
+            .addr()
+            .relay_urls()
+            .next()
+            .map(ToString::to_string)
+            .ok_or_else(|| {
+                BrowserRuntimeError::new(
+                    BrowserRuntimeErrorCode::BootstrapFailed,
+                    "browser relay endpoint is online but has no advertised relay URL",
+                )
+            })
     }
 
     pub(in crate::browser_runtime) fn is_closed(&self) -> bool {

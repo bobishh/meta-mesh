@@ -85,7 +85,7 @@ pub(in crate::browser_runtime) struct BrowserRuntimeNodeState {
 pub(crate) struct BrowserNodeInfo {
     pub(crate) node_key: String,
     pub(crate) endpoint_id: String,
-    pub(crate) local_custom_addr: String,
+    pub(crate) relay_url: Option<String>,
     pub(crate) bootstrap_alpn: String,
 }
 

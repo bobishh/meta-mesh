@@ -7,6 +7,11 @@ export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJo
   BrowserWorkspaceJoinHandoffHost, WorkspaceJoinHandoffRollbackError, WorkspaceJoinRejectedError,
   type WorkspaceJoinConnection, type WorkspaceJoinHandoffMachine, type WorkspaceJoinHandoffOutcome,
   type WorkspaceJoinMachine, type WorkspaceJoinResponse, type WorkspaceJoinStream } from "./browserWorkspaceJoin"
+export { connectBrowserIdentityEnrollment, createBrowserIdentityEnrollmentHost, serveIdentityProfileSync, syncProfileState,
+  type BrowserIdentityEnrollmentApproval, type BrowserIdentityEnrollmentHost, type ConnectedIdentityEnrollment,
+  type IdentityEnrollmentRecovery, type IdentityProfileSyncOptions, type PendingIdentityEnrollment } from "./browserIdentityEnrollment"
+export { connectBrowserIdentityPeer, startBrowserIdentityPeerHost,
+  type BrowserIdentityPeerHost, type ConnectedIdentityPeer, type IdentityPeerContact, type IdentityPeerHostConnection } from "./browserIdentityReconnect"
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
 export { BrowserMeshDialScheduler, type BrowserDialPeer, type BrowserMeshDialHost } from "./browserDial"

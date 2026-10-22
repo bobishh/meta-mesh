@@ -11,7 +11,7 @@ use crate::{
     config::WebRtcIceConfig,
     core::signaling::BootstrapTransportIntent,
 };
-use iroh::{EndpointAddr, EndpointId, SecretKey};
+use iroh::{EndpointAddr, EndpointId, RelayUrl, SecretKey};
 use std::str::FromStr as _;
 use wasm_bindgen::JsValue;
 
@@ -148,6 +148,7 @@ pub struct BrowserWebRtcNode {
 
 struct BrowserWebRtcNodeInner {
     endpoint_id: String,
+    relay_url: Option<String>,
     runtime: BrowserRuntime,
 }
 
@@ -186,10 +187,12 @@ impl BrowserWebRtcNodeBuilder {
 
         let result = runtime.spawn_facade_node(&self).await?;
         let endpoint_id = result.endpoint_id;
+        let relay_url = result.relay_url;
 
         Ok(BrowserWebRtcNode {
             inner: Rc::new(BrowserWebRtcNodeInner {
                 endpoint_id,
+                relay_url,
                 runtime,
             }),
         })
@@ -221,6 +224,14 @@ impl BrowserWebRtcNode {
         &self.inner.endpoint_id
     }
 
+    pub fn relay_url(&self) -> Option<&str> {
+        self.inner.relay_url.as_deref()
+    }
+
+    pub async fn wait_for_relay_url(&self) -> Result<String, JsValue> {
+        self.inner.runtime.wait_for_relay_url().await
+    }
+
     pub async fn dial(
         &self,
         remote_endpoint: &str,
@@ -231,6 +242,34 @@ impl BrowserWebRtcNode {
             .inner
             .runtime
             .dial_facade(remote_endpoint, alpn, options)
+            .await?;
+        Ok(BrowserWebRtcConnection::from_result(
+            self.inner.clone(),
+            result,
+        ))
+    }
+
+    pub async fn dial_with_relay_url(
+        &self,
+        remote_endpoint: &str,
+        relay_url: &str,
+        alpn: &[u8],
+        options: BrowserDialOptions,
+    ) -> Result<BrowserWebRtcConnection, JsValue> {
+        let endpoint_id = EndpointId::from_str(remote_endpoint).map_err(|err| {
+            JsValue::from_str(&format!("invalid browser remote endpoint id: {err}"))
+        })?;
+        let relay_url = RelayUrl::from_str(relay_url)
+            .map_err(|err| JsValue::from_str(&format!("invalid browser relay URL: {err}")))?;
+        let remote_addr = EndpointAddr::new(endpoint_id).with_relay_url(relay_url);
+        let result = self
+            .inner
+            .runtime
+            .dial(
+                remote_addr,
+                alpn_string(alpn),
+                options.transport_preference.as_intent(),
+            )
             .await?;
         Ok(BrowserWebRtcConnection::from_result(
             self.inner.clone(),

@@ -15,6 +15,7 @@ export type DeviceEnrollmentInvitation = {
   issuerDeviceId: string
   issuerPublicKey: string
   issuerEndpoint: string
+  issuerRelayUrl?: string
   createdAt: string
   expiresAt: string
   secret: string
@@ -130,8 +131,10 @@ export function createDeviceEnrollmentInvite(
   endpoint: string,
   secret: string,
   profile: { identity: { personId: string }; device: { deviceId: string; publicKey: string } },
-  now = Date.now()
+  now = Date.now(),
+  issuerRelayUrl?: string,
 ): DeviceEnrollmentInvitation {
+  if (issuerRelayUrl !== undefined) validateRelayUrl(issuerRelayUrl)
   return {
     version: 1,
     kind: "device-enrollment",
@@ -140,6 +143,7 @@ export function createDeviceEnrollmentInvite(
     issuerDeviceId: profile.device.deviceId,
     issuerPublicKey: profile.device.publicKey,
     issuerEndpoint: endpoint,
+    ...(issuerRelayUrl ? { issuerRelayUrl } : {}),
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
     secret,
@@ -188,6 +192,9 @@ export function invitationUrl(origin: string, invite: ScopedInvitation): string 
   params.set("issuerDeviceId", invite.issuerDeviceId)
   params.set("issuerPublicKey", invite.issuerPublicKey)
   params.set("endpoint", invite.issuerEndpoint)
+  if (invite.kind === "device-enrollment" && invite.issuerRelayUrl) {
+    params.set("issuerRelayUrl", invite.issuerRelayUrl)
+  }
   params.set("createdAt", invite.createdAt)
   params.set("expiresAt", invite.expiresAt)
   params.set("secret", invite.secret)
@@ -211,6 +218,7 @@ type InvitationEnvelope = {
   issuerDeviceId: string
   issuerPublicKey: string
   issuerEndpoint: string
+  issuerRelayUrl?: string
   createdAt: string
   expiresAt: string
   secret: string
@@ -265,9 +273,11 @@ function readInvitationEnvelope(params: URLSearchParams, now: number): Invitatio
   const issuerPersonId = params.get("issuerPersonId") || ""
   const issuerDeviceId = params.get("issuerDeviceId") || ""
   const issuerPublicKey = params.get("issuerPublicKey") || ""
+  const issuerRelayUrl = params.get("issuerRelayUrl") || undefined
   if (!invitationId || !endpoint || !issuerPersonId || !issuerDeviceId || !issuerPublicKey) {
     throw new PairingError("Invalid pairing link")
   }
+  if (issuerRelayUrl !== undefined) validateRelayUrl(issuerRelayUrl)
 
   const createdAt = params.get("createdAt") || ""
   const expiresAt = params.get("expiresAt") || ""
@@ -285,6 +295,7 @@ function readInvitationEnvelope(params: URLSearchParams, now: number): Invitatio
     issuerDeviceId,
     issuerPublicKey,
     issuerEndpoint: endpoint,
+    ...(issuerRelayUrl ? { issuerRelayUrl } : {}),
     createdAt,
     expiresAt,
     secret,
@@ -293,13 +304,16 @@ function readInvitationEnvelope(params: URLSearchParams, now: number): Invitatio
 
 function decodeDeviceEnrollment(params: URLSearchParams, envelope: InvitationEnvelope): DeviceEnrollmentInvitation {
   const workspaceFields = ["workspaceId", "workspaceTitle", "workspaceIds", "workspaceTitles", "role"]
-  if (workspaceFields.some(field => params.has(field))) {
+  if (workspaceFields.some(field => params.has(field)) || params.has("issuerLocalCustomAddr")) {
     throw new PairingError("Invalid invitation: wrong-kind fields present on device-enrollment")
   }
   return { ...envelope, kind: "device-enrollment" }
 }
 
 function decodeWorkspaceJoin(params: URLSearchParams, envelope: InvitationEnvelope): WorkspaceJoinInvitation {
+  if (params.has("issuerRelayUrl") || params.has("issuerLocalCustomAddr")) {
+    throw new PairingError("Invalid invitation: wrong-kind fields present on workspace-join")
+  }
   const workspaceId = params.get("workspaceId") ?? ""
   const role = params.get("role")
   if (!workspaceId || (role !== "editor" && role !== "visitor")) {
@@ -315,6 +329,16 @@ function decodeWorkspaceJoin(params: URLSearchParams, envelope: InvitationEnvelo
     workspaceTitle: workspaces[0].title,
     workspaces,
     role,
+  }
+}
+
+function validateRelayUrl(value: string): void {
+  let url: URL
+  try { url = new URL(value) }
+  catch { throw new PairingError("Invalid browser relay address") }
+  const localHttp = url.protocol === "http:" && ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+  if (value.length > 2048 || (url.protocol !== "https:" && !localHttp) || url.username || url.password || url.hash) {
+    throw new PairingError("Invalid browser relay address")
   }
 }
 

@@ -26,6 +26,17 @@ describe("WASM package boundary", () => {
     expect(codec.inspect(frame)).toMatchObject({ type: "mesh-handshake-request", secret: "shared-secret" })
     expect([...codec.decode(frame, "mesh-handshake-request", "shared-secret")]).toEqual([1, 2, 3])
 
+    const transportCodec = new transportModule.WasmPairingCodec()
+    const completion = new TextEncoder().encode(JSON.stringify({
+      kind: "mesh-identity-device-enrollment-complete",
+      version: 1,
+      requestId: "00000000-0000-4000-8000-000000000000",
+    }))
+    const completionFrame = transportCodec.encode("enroll-complete", "shared-secret", completion)
+    expect(new transportModule.WasmIngressBudgetProfile().maxPayloadBytes("enroll-complete")).toBe(256)
+    expect([...transportCodec.decode(completionFrame, "enroll-complete", "shared-secret")]).toEqual([...completion])
+    expect(() => transportCodec.encode("enroll-complete", "shared-secret", new Uint8Array(257))).toThrow()
+
     const profile = new policyModule.WasmIngressBudgetProfile()
     const encoder = new TextEncoder()
     expect(profile.maxHeaderBytes()).toBe(4 * 1024)

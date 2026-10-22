@@ -21,7 +21,9 @@ export type IrohConnection = {
 
 export type IrohNode = {
   endpointId: string
-  dialRelay(endpoint: string): Promise<IrohConnection>
+  relayUrl?: string
+  waitForRelayUrl(): Promise<string>
+  dialRelay(endpoint: string, relayUrl?: string): Promise<IrohConnection>
   accept(): Promise<{ accept(): Promise<IrohConnection | undefined> }>
   close(reason?: string): Promise<void>
 }
@@ -94,6 +96,34 @@ export type DialNode<TConnection extends MeshConnection = MeshConnection> = {
 
 export class MeshNetworkError extends Error {}
 export class MeshTerminalError extends Error {}
+
+/** Wait for a routable relay address only when a flow needs remote enrollment. */
+export async function waitForRelayUrl(
+  node: Pick<IrohNode, "waitForRelayUrl">,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<string> {
+  const timeoutMs = options.timeoutMs ?? 10_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 60_000) {
+    throw new RangeError("Relay readiness timeout must be between 1 and 60000 milliseconds")
+  }
+  if (options.signal?.aborted) throw new Error("Relay address wait was cancelled")
+
+  let timer: ReturnType<typeof globalThis.setTimeout> | undefined
+  let abortListener: (() => void) | undefined
+  const deadline = new Promise<string>((_resolve, reject) => {
+    timer = globalThis.setTimeout(() => reject(new Error("Relay address is not ready")), timeoutMs)
+  })
+  const cancelled = options.signal && new Promise<string>((_resolve, reject) => {
+    abortListener = () => reject(new Error("Relay address wait was cancelled"))
+    options.signal?.addEventListener("abort", abortListener, { once: true })
+  })
+  try {
+    return await Promise.race([node.waitForRelayUrl(), deadline, ...(cancelled ? [cancelled] : [])])
+  } finally {
+    if (timer !== undefined) globalThis.clearTimeout(timer)
+    if (abortListener) options.signal?.removeEventListener("abort", abortListener)
+  }
+}
 
 export async function meshNetworkIO<T>(operation: Promise<T>): Promise<T> {
   try { return await operation }

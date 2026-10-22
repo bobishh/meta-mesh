@@ -49,6 +49,16 @@ impl BrowserNode {
         self.inner.endpoint_id().to_owned()
     }
 
+    #[wasm_bindgen(getter, js_name = relayUrl)]
+    pub fn relay_url(&self) -> Option<String> {
+        self.inner.relay_url().map(str::to_owned)
+    }
+
+    #[wasm_bindgen(js_name = waitForRelayUrl)]
+    pub async fn wait_for_relay_url(&self) -> Result<String, JsValue> {
+        self.inner.wait_for_relay_url().await
+    }
+
     #[wasm_bindgen(js_name = dial)]
     pub async fn dial(&self, remote_endpoint: String) -> Result<BrowserConnection, JsValue> {
         let connection = self
@@ -63,11 +73,25 @@ impl BrowserNode {
     }
 
     #[wasm_bindgen(js_name = dialRelay)]
-    pub async fn dial_relay(&self, remote_endpoint: String) -> Result<BrowserConnection, JsValue> {
-        let connection = self
-            .inner
-            .dial(&remote_endpoint, ALPN, BrowserDialOptions::iroh_relay())
-            .await?;
+    pub async fn dial_relay(
+        &self,
+        remote_endpoint: String,
+        relay_url: Option<String>,
+    ) -> Result<BrowserConnection, JsValue> {
+        let connection = if let Some(relay_url) = relay_url {
+            self.inner
+                .dial_with_relay_url(
+                    &remote_endpoint,
+                    &relay_url,
+                    ALPN,
+                    BrowserDialOptions::iroh_relay(),
+                )
+                .await?
+        } else {
+            self.inner
+                .dial(&remote_endpoint, ALPN, BrowserDialOptions::iroh_relay())
+                .await?
+        };
         Ok(BrowserConnection { inner: connection })
     }
 

@@ -8,6 +8,8 @@ use crate::{PAIRING_VERSION, PairingFrameHeader};
 pub const MAX_PAIRING_HEADER_BYTES: usize = 4 * 1024;
 /// Maximum complete frame for ordinary RPC kinds, including header and payload.
 pub const MAX_RPC_FRAME_BYTES: usize = 16 * 1024 * 1024;
+/// Small fixed completion receipt used after an Identity device enrollment ack.
+pub const MAX_ENROLLMENT_COMPLETION_PAYLOAD_BYTES: usize = 256;
 /// Finite default for stream reads that do not supply a tighter limit.
 pub const DEFAULT_STREAM_READ_BYTES: usize = MAX_RPC_FRAME_BYTES;
 /// Existing logical allowance for chunked control snapshots and owner offers.
@@ -44,10 +46,10 @@ pub fn pairing_frame_budget(frame_type: &str) -> Option<PairingFrameBudget> {
     let (max_wire_bytes, max_payload_bytes) = match frame_type {
         "sync-heartbeat"
         | "sync-heartbeat-ack"
-        | "enroll-complete"
         | "mesh-handoff-request"
         | "mesh-handoff-ready"
         | "mesh-handoff-confirmed" => (MAX_RPC_FRAME_BYTES, 0),
+        "enroll-complete" => (MAX_RPC_FRAME_BYTES, MAX_ENROLLMENT_COMPLETION_PAYLOAD_BYTES),
         "mesh-control-sync" => (MAX_RPC_FRAME_BYTES, MAX_CONTROL_FRAME_BYTES),
         "mesh-owner-workspace-offer-page-v1" => (MAX_RPC_FRAME_BYTES, MAX_CONTROL_FRAME_BYTES),
         "mesh-iroh-gossip" => (MAX_RPC_FRAME_BYTES, MAX_GOSSIP_PAYLOAD_BYTES),

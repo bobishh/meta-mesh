@@ -82,6 +82,36 @@ export type LocalProfile = {
   }
 }
 
+export { createDelegatedCertificate, createDeviceAuthorizationRequest, issueDeviceAuthorization,
+  verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
+export type { DeviceAuthorizationRequest } from "./deviceAuthorization"
+export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, issueIdentityDeviceEnrollment,
+  verifyIdentityDeviceEnrollmentRequest, identityRequestAllowsRecoveryTransfer } from "./identityEnrollment"
+export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "./identityEnrollment"
+export { createServiceLoginRequest, encodeServiceLoginRequest, verifyServiceLoginApproval } from "./serviceLoginClient"
+
+export {
+  assertServiceLoginSession,
+  createServiceLoginApproval,
+  parseServiceLoginRequest,
+  serviceLoginPayload,
+  snapshotServiceLoginRequest,
+} from "./serviceLogin"
+export type {
+  ServiceLoginApproval,
+  ServiceLoginApprovalOptions,
+  ServiceLoginPayload,
+  ServiceLoginRequest,
+} from "./serviceLogin"
+
+export { createIdentityProfileRecovery, openIdentityProfileRecovery, parseIdentityProfileRecoveryFile,
+  sealIdentityProfileRecovery } from "./identityProfileRecovery"
+export type { IdentityProfileRecoveryFile, IdentityProfileRecoveryPayload } from "./identityProfileRecovery"
+
+export { createIdentityProfileOperation, emptyIdentityProfileState, identityProfileRevision, identityProfileValue,
+  mergeIdentityProfileState, observeLegacyIdentityProfile, readIdentityProfileState } from "./identityProfile"
+export type { IdentityProfileField, IdentityProfileOperation, IdentityProfileState, IdentityProfileValue } from "./identityProfile"
+
 export type IdentityStoreOptions = {
   storageKey: string
   signatureDomain?: string
@@ -1051,6 +1081,98 @@ export class BrowserIdentityStore {
     await this.persist(profile, true)
     this.profile = profile
     return profile
+  }
+
+  /** Persist an explicitly approved Identity device without replacing its generated device key. */
+  async adoptEnrolledDevice(
+    submitted: LocalProfile,
+    certificates: DeviceCertificate[],
+    options: { consentToReplaceExistingIdentity: true; commit?: IdentityAdoptionCommit },
+  ): Promise<LocalProfile> {
+    const commit = options.commit
+    const identity = structuredClone(submitted.identity)
+    const device = structuredClone(submitted.device)
+    const certificate = structuredClone(submitted.certificate)
+    const chain = structuredClone(certificates)
+    if (submitted.privateKeys.identityPrivateKey) throw new Error("Enrolled device profile must not include the Identity root key")
+    if (certificate.payload.deviceId !== device.deviceId || certificate.payload.devicePublicKey !== device.publicKey ||
+      certificate.payload.personId !== identity.personId || !certificate.payload.canEnrollDevices ||
+      canonicalizeJson(chain.find(item => item.payload.deviceId === device.deviceId)) !== canonicalizeJson(certificate)) {
+      throw new Error("Enrolled device profile does not match its certificate chain")
+    }
+    const certifiedPublicKey = await verifyDeviceCertificateChain(identity, device.deviceId, chain, this.domain)
+    if (certifiedPublicKey !== device.publicKey) throw new Error("Enrolled device key does not match its certificate")
+    const proof = await signEnvelope(submitted.privateKeys.devicePrivateKey, {
+      kind: "mesh-enrolled-device-key-check", challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+    }, device.deviceId, this.domain)
+    if (!await verifyEnvelope(proof, device.publicKey, this.domain)) throw new Error("Enrolled device private key does not match its certificate")
+
+    const previous = await this.get(this.options.storageKey)
+    if (!previous && !this.profile) {
+      if (options.consentToReplaceExistingIdentity !== true) throw new Error("Adopting this Identity requires explicit consent")
+      const adopted: LocalProfile = { identity, device, certificate,
+        privateKeys: { devicePrivateKey: submitted.privateKeys.devicePrivateKey } }
+      const candidateProfile = await this.serialize(adopted)
+      if (await this.get(this.options.storageKey) !== null) throw new Error("Durable identity changed before device adoption")
+      const plan: IdentityAdoptionCommitPlan = {
+        storageKey: this.options.storageKey,
+        previousProfile: null,
+        candidateProfile,
+        publicProfile: { identity: structuredClone(identity), device: structuredClone(device), certificate: structuredClone(certificate) },
+      }
+      if (options.commit) await options.commit(structuredClone(plan), () => {
+        if (this.profile) throw new Error("Identity changed during device adoption")
+      })
+      else {
+        if (await this.get(this.options.storageKey) !== null) throw new Error("Durable identity changed before device adoption")
+        await this.set(this.options.storageKey, candidateProfile, true)
+      }
+      if (this.profile) throw new Error("Identity changed during device adoption")
+      this.profile = adopted
+      return adopted
+    }
+
+    const current = await this.bootstrap()
+    const active = this.profile
+    const keys = { ...current.privateKeys }
+    const currentPublic = canonicalizeJson({ identity: current.identity, device: current.device, certificate: current.certificate })
+    const ensureCurrent = () => {
+      if (!active || this.profile !== active || active.privateKeys.devicePrivateKey !== keys.devicePrivateKey ||
+        active.privateKeys.identityPrivateKey !== keys.identityPrivateKey ||
+        canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+        throw new Error("Identity changed during device adoption")
+      }
+    }
+    const durableCurrent = await this.get(this.options.storageKey)
+    ensureCurrent()
+    if (options.consentToReplaceExistingIdentity !== true) throw new Error("Replacing this browser's current identity requires explicit consent")
+    const saved = durableCurrent ? JSON.parse(durableCurrent) as SerializedProfile : null
+    if (!saved || canonicalizeJson({ identity: saved.identity, device: saved.device, certificate: saved.certificate }) !== currentPublic) {
+      if (this.profile === current) this.clearMemory()
+      throw new Error("Durable identity changed before device adoption")
+    }
+    const adopted: LocalProfile = { identity, device, certificate,
+      privateKeys: { devicePrivateKey: submitted.privateKeys.devicePrivateKey } }
+    const candidateProfile = await this.serialize(adopted)
+    const backup = { key: `${this.options.storageKey}.backup.${current.identity.personId}`, value: durableCurrent! }
+    const plan: IdentityAdoptionCommitPlan = {
+      storageKey: this.options.storageKey,
+      previousProfile: durableCurrent,
+      candidateProfile,
+      publicProfile: { identity: structuredClone(identity), device: structuredClone(device), certificate: structuredClone(certificate) },
+      backup,
+    }
+    ensureCurrent()
+    if (commit) await commit(structuredClone(plan), ensureCurrent)
+    else {
+      await this.set(backup.key, backup.value, true)
+      ensureCurrent()
+      if (await this.get(this.options.storageKey) !== durableCurrent) throw new Error("Durable identity changed before device adoption")
+      await this.set(this.options.storageKey, candidateProfile, true)
+    }
+    ensureCurrent()
+    this.profile = adopted
+    return adopted
   }
 
   /** Updates local presentation metadata without changing the identity keys. */

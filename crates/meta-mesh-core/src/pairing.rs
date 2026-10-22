@@ -640,6 +640,14 @@ mod tests {
     }
 
     #[test]
+    fn enrollment_completion_frame_allows_only_small_receipt_payload() {
+        let receipt = br#"{"kind":"mesh-identity-device-enrollment-complete","version":1,"requestId":"00000000-0000-4000-8000-000000000000"}"#;
+        let frame = PairingCodec::encode("enroll-complete", "secret", receipt).unwrap();
+        assert_eq!(PairingCodec::decode(&frame, "enroll-complete", "secret").unwrap(), receipt);
+        assert!(PairingCodec::encode("enroll-complete", "secret", &vec![0; 257]).is_err());
+    }
+
+    #[test]
     fn ordinary_frame_budget_includes_header_at_minus_one_exact_and_plus_one() {
         let header = serde_json::to_vec(&PairingFrameHeader {
             frame_type: "sync-request".to_string(),

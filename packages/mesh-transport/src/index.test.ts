@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, meshNetworkConnection, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, type IrohConnection, type IrohModule, type IrohNode, type IrohStream, type MeshConnection } from "./index"
+import { decodeWireMessage, encodeWireMessage, IrohMeshNode, irohEndpointIdFromSeed, isMeshNetworkFailure, meshNetworkConnection, MeshNetworkError, MeshTraceBuffer, startMeshHeartbeat, waitForRelayUrl, type IrohConnection, type IrohModule, type IrohNode, type IrohStream, type MeshConnection } from "./index"
 import { MeshReconnectPolicy } from "@meta-uber/mesh-runtime"
 
 const ingressModule: IrohModule = {
@@ -19,6 +19,32 @@ const ingressModule: IrohModule = {
 const ingressProfile = new (ingressModule.WasmIngressBudgetProfile!)()
 
 describe("mesh transport wire", () => {
+  it("Given relay readiness stalls, when enrollment waits, then the JS deadline rejects", async () => {
+    vi.useFakeTimers()
+    try {
+      const node = { waitForRelayUrl: vi.fn(() => new Promise<string>(() => {})) } as unknown as IrohNode
+      const waiting = waitForRelayUrl(node, { timeoutMs: 10 })
+      const rejection = expect(waiting).rejects.toThrow("Relay address is not ready")
+      await vi.advanceTimersByTimeAsync(10)
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("Given relay readiness resolves, when enrollment waits, then its relay URL is returned", async () => {
+    const node = { waitForRelayUrl: vi.fn(async () => "https://relay.example") } as unknown as IrohNode
+    await expect(waitForRelayUrl(node)).resolves.toBe("https://relay.example")
+  })
+
+  it("Given enrollment is cancelled, when relay readiness is pending, then the wait rejects promptly", async () => {
+    const controller = new AbortController()
+    const node = { waitForRelayUrl: vi.fn(() => new Promise<string>(() => {})) } as unknown as IrohNode
+    const waiting = waitForRelayUrl(node, { signal: controller.signal })
+    controller.abort()
+    await expect(waiting).rejects.toThrow("Relay address wait was cancelled")
+  })
+
   it("preserves the authenticated remote endpoint from a WASM connection getter", () => {
     class Connection {
       get remoteEndpointId() { return "remote-endpoint" }
@@ -47,6 +73,7 @@ describe("mesh transport wire", () => {
   it("Given browser transport shutdown stalls, when the mesh node closes, then cleanup still completes", async () => {
     const stalled = {
       endpointId: "stalled",
+      relayUrl: "https://relay.example",
       close: () => new Promise<void>(() => {}),
     } as IrohNode
 
@@ -67,6 +94,8 @@ describe("mesh transport wire", () => {
     }
     const node = {
       endpointId: "local",
+      relayUrl: "https://relay.example",
+      waitForRelayUrl: vi.fn(async () => "https://relay.example"),
       dialRelay: vi.fn(async () => connection),
       accept: vi.fn(),
       close: vi.fn(async () => undefined),
@@ -107,6 +136,7 @@ describe("mesh transport wire", () => {
     }
     const node = {
       endpointId: "local",
+      relayUrl: "https://relay.example",
       dialRelay: vi.fn()
         .mockResolvedValueOnce(failed)
         .mockResolvedValueOnce(healthy),
@@ -137,6 +167,8 @@ describe("mesh transport wire", () => {
     }
     const node = {
       endpointId: "local",
+      relayUrl: "https://relay.example",
+      waitForRelayUrl: vi.fn(async () => "https://relay.example"),
       dialRelay: vi.fn(async () => connection),
       accept: vi.fn(),
       close: vi.fn(async () => undefined),
@@ -239,6 +271,8 @@ describe("mesh transport wire", () => {
     }
     const node = {
       endpointId: "peer-abc-123",
+      relayUrl: "https://relay.example",
+      waitForRelayUrl: vi.fn(async () => "https://relay.example"),
       dialRelay: vi.fn(),
       accept: vi.fn(),
       close: vi.fn(),

@@ -104,6 +104,13 @@ impl BrowserRuntime {
         Ok(result)
     }
 
+    pub(crate) async fn wait_for_relay_url(&self) -> Result<String, JsValue> {
+        self.core
+            .wait_for_relay_url()
+            .await
+            .map_err(|err| runtime_error_to_js(err))
+    }
+
     pub(crate) async fn dial(
         &self,
         remote_addr: EndpointAddr,

@@ -2,8 +2,6 @@ import {
   canonicalizeJson,
   fromBase64Url,
   sha256Base64Url,
-  signEnvelope,
-  verifyEnvelope,
   type DeviceCertificate,
   type LocalProfile,
   type SignedEnvelope,
@@ -14,6 +12,7 @@ import { signWorkspaceRecord, workspaceSignerCertificates, type WorkspaceRecordS
 export type { WorkspaceRecordSigner } from "./signing"
 
 export * from "./coownership"
+export { createDelegatedCertificate } from "@meta-uber/mesh-identity"
 
 export type WorkspaceRole = "owner" | "editor" | "visitor" | "automation"
 export type WorkspaceGrant = SignedEnvelope<{
@@ -41,25 +40,6 @@ function captureSigningProfile(profile: LocalProfile): LocalProfile {
 
 export async function certHashDefault(cert: DeviceCertificate): Promise<string> {
   return sha256Base64Url(new TextEncoder().encode(canonicalizeJson(cert)))
-}
-
-export async function createDelegatedCertificate(
-  delegatorDevicePrivateKey: CryptoKey,
-  delegatorDeviceId: string,
-  personId: string,
-  subjectDeviceId: string,
-  subjectDevicePublicKey: string,
-  issuerCertificateHash: string,
-): Promise<DeviceCertificate> {
-  return await signEnvelope(delegatorDevicePrivateKey, {
-    kind: "device-certificate" as const,
-    version: 1 as const,
-    personId,
-    deviceId: subjectDeviceId,
-    devicePublicKey: subjectDevicePublicKey,
-    issuerCertificateHash,
-    canEnrollDevices: true as const,
-  }, delegatorDeviceId) as DeviceCertificate
 }
 
 export async function createWorkspaceGrant(
