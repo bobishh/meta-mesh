@@ -18,6 +18,7 @@
     "./rusty-scope-enrollment": "./src/rustyScopeEnrollment.ts",
     "./rusty-scope-authority": "./src/rustyScopeAuthorityClient.ts",
     "./rusty-scope-purpose": "./src/rustyScopePurposeClient.ts",
+    "./rusty-identity-succession": "./src/rustyIdentitySuccessionClient.ts",
     "./replica-engine": "./src/replicaEngine.ts",
     "./history-archive": "./src/historyArchive.ts",
     "./history-archive-store": "./src/historyArchiveStore.ts",

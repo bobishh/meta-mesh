@@ -143,6 +143,51 @@ describe("Rusty Identity authority high-water update", () => {
     expect(status.payload).toMatchObject({ state: "missing", view: null })
   })
 
+  it("Given Rusty has retired this person, when reading status, then preserve retired as distinct from missing", async () => {
+    const identity = (await createRecoverableIdentity("better", "Retired owner")).profile
+    const service = (await createRecoverableIdentity("better", "Rusty service")).profile
+    const status = await readRustyIdentityAuthorityStatus({
+      origin: "https://rusty.example", servicePublicKey: service.identity.publicKey, identity: identity.identity,
+      now: () => 10_000,
+      fetcher: async input => {
+        const url = new URL(String(input))
+        const path = `${url.pathname}${url.search}`
+        const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
+          kind: "rusty-identity-authority-status" as const, version: 1 as const,
+          serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
+          personId: identity.identity.personId, state: "retired" as const,
+          requestNonce: url.searchParams.get("nonce")!, requestHash, issuedAt: 10_000, view: null,
+          enforcement: { mode: "strict" as const, epoch: 1 as const },
+        }, service.identity.personId, "RUSTY/2") })
+      },
+    })
+    expect(status.payload).toMatchObject({ state: "retired", view: null })
+  })
+
+  it("Given a retired status carries an authority view, when reading it, then reject the contradictory response", async () => {
+    const identity = (await createRecoverableIdentity("better", "Retired owner")).profile
+    const service = (await createRecoverableIdentity("better", "Rusty service")).profile
+    const view = await createIdentityAuthorityView(identity.identity,
+      { certificates: [identity.certificate], revocations: [] }, emptyIdentityProfileState(identity.identity.personId))
+    await expect(readRustyIdentityAuthorityStatus({
+      origin: "https://rusty.example", servicePublicKey: service.identity.publicKey, identity: identity.identity,
+      now: () => 10_000,
+      fetcher: async input => {
+        const url = new URL(String(input))
+        const path = `${url.pathname}${url.search}`
+        const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
+          kind: "rusty-identity-authority-status" as const, version: 1 as const,
+          serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
+          personId: identity.identity.personId, state: "retired" as const,
+          requestNonce: url.searchParams.get("nonce")!, requestHash, issuedAt: 10_000, view,
+          enforcement: { mode: "strict" as const, epoch: 1 as const },
+        }, service.identity.personId, "RUSTY/2") })
+      },
+    })).rejects.toThrow(/match this request/i)
+  })
+
   it("Given a signed status with the wrong request nonce, when reading, then reject instead of treating it as current", async () => {
     const identity = (await createRecoverableIdentity("better", "Owner")).profile
     const service = (await createRecoverableIdentity("better", "Rusty service")).profile

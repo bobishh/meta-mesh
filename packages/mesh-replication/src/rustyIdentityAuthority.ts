@@ -44,7 +44,7 @@ export type RustyIdentityAuthorityStatus = SignedEnvelope<{
   serviceId: string
   origin: string
   personId: string
-  state: "missing" | "ready"
+  state: "missing" | "ready" | "retired"
   requestNonce: string
   requestHash: string
   issuedAt: number
@@ -120,8 +120,8 @@ export async function readRustyIdentityAuthorityStatus(
       payload.serviceId !== serviceId || payload.origin !== origin || payload.personId !== options.identity.personId ||
       payload.requestNonce !== nonce || payload.requestHash !== requestHash || !Number.isSafeInteger(payload.issuedAt) ||
       Math.abs(currentTime - payload.issuedAt) > 120_000 ||
-      (payload.state !== "missing" && payload.state !== "ready") ||
-      (payload.state === "missing" ? payload.view !== null : payload.view === null) ||
+      (payload.state !== "missing" && payload.state !== "ready" && payload.state !== "retired") ||
+      ((payload.state === "missing" || payload.state === "retired") ? payload.view !== null : payload.view === null) ||
       !isRustyIdentityEnforcement(payload.enforcement)) {
     throw new Error("Rusty Identity authority status does not match this request")
   }
