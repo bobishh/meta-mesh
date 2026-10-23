@@ -40,7 +40,7 @@ it("Given an enrolled workspace scope with missing Rusty authority, When publish
   })
   const current = vi.fn()
 
-  const receipt = await publishRustyScopeAuthoritySnapshot({
+  const result = await publishRustyScopeAuthoritySnapshot({
     origin: "https://rusty.example", servicePublicKey: service.identity.publicKey, scopeId: "scope-1",
     workspaceId: "workspace-1", identity: owner.identity, authorityView, deviceId: owner.device.deviceId,
     devicePublicKey: owner.device.publicKey, scopeAuthority, fetcher, ensureCurrent: current,
@@ -58,7 +58,9 @@ it("Given an enrolled workspace scope with missing Rusty authority, When publish
     personId: owner.identity.personId, deviceId: owner.device.deviceId, controlEpoch: 1,
     issuedAt: 50_000, expiresAt: 140_000 })
   expect(update?.authorization.payload.requestId).toMatch(/^[A-Za-z0-9_-]{43}$/u)
-  expect(receipt.payload.enforcement).toEqual({ mode: "additive", epoch: 0 })
+  expect(result.receipt.payload.enforcement).toEqual({ mode: "additive", epoch: 0 })
+  expect(result.scopeAuthority).toEqual({ workspaceId: "workspace-1", controllerPersonId: owner.identity.personId,
+    controllerPublicKey: owner.identity.publicKey, controlEpoch: 1, snapshot: scopeAuthority })
   expect(current).toHaveBeenCalledTimes(4)
 })
 
