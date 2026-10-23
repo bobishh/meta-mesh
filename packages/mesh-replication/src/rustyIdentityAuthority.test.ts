@@ -39,7 +39,7 @@ describe("Rusty Identity authority high-water update", () => {
           requestHash: requestHash.payload.requestHash, committedAt: authorization.issuedAt as number,
           enforcement: { mode: "additive" as const, epoch: 0 as const },
         }, service.identity.personId, "RUSTY/2")
-        return Response.json(receipt)
+        return Response.json({ receipt })
       },
     })
     expect(sent?.version).toBe(1)
@@ -59,13 +59,13 @@ describe("Rusty Identity authority high-water update", () => {
       view,
       signAuthorization: async payload => signEnvelope(identity.privateKeys.devicePrivateKey, payload,
         identity.device.deviceId, "MATCH/1"),
-      fetcher: async () => Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+      fetcher: async () => Response.json({ receipt: await signEnvelope(service.privateKeys.identityPrivateKey!, {
         kind: "rusty-identity-authority-receipt" as const, version: 1 as const,
         serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
         personId: identity.identity.personId, authorityHead: { revision: 1, recordHash: "A".repeat(43) },
         viewDigest: view.viewDigest, requestHash: "A".repeat(43), committedAt: Date.now(),
         enforcement: { mode: "additive" as const, epoch: 0 as const },
-      }, service.identity.personId, "RUSTY/2")),
+      }, service.identity.personId, "RUSTY/2") }),
     })).rejects.toThrow(/receipt|authority/i)
   })
 
@@ -84,13 +84,13 @@ describe("Rusty Identity authority high-water update", () => {
         const nonce = url.searchParams.get("nonce")!
         const path = `${url.pathname}${url.search}`
         const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
-        return Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
           kind: "rusty-identity-authority-status" as const, version: 1 as const,
           serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
           personId: identity.identity.personId, state: "ready" as const,
           requestNonce: nonce, requestHash, issuedAt: 10_000, view,
           enforcement: { mode: "strict" as const, epoch: 1 as const },
-        }, service.identity.personId, "RUSTY/2"))
+        }, service.identity.personId, "RUSTY/2") })
       },
     })
     expect(new URL(requestedUrl).pathname).toBe(`/v2/identity/authority/${identity.identity.personId}/status`)
@@ -110,13 +110,13 @@ describe("Rusty Identity authority high-water update", () => {
         const url = new URL(String(input))
         const path = `${url.pathname}${url.search}`
         const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
-        return Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
           kind: "rusty-identity-authority-status" as const, version: 1 as const,
           serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
           personId: identity.identity.personId, state: "missing" as const,
           requestNonce: url.searchParams.get("nonce")!, requestHash, issuedAt: 10_000, view: null,
           enforcement: { mode: "strict" as const, epoch: 0 as const },
-        }, service.identity.personId, "RUSTY/2"))
+        }, service.identity.personId, "RUSTY/2") })
       },
     })).rejects.toThrow(/match this request/i)
   })
@@ -131,13 +131,13 @@ describe("Rusty Identity authority high-water update", () => {
         const url = new URL(String(input))
         const path = `${url.pathname}${url.search}`
         const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
-        return Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
           kind: "rusty-identity-authority-status" as const, version: 1 as const,
           serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
           personId: identity.identity.personId, state: "missing" as const,
           requestNonce: url.searchParams.get("nonce")!, requestHash, issuedAt: 10_000, view: null,
           enforcement: { mode: "additive" as const, epoch: 0 as const },
-        }, service.identity.personId, "RUSTY/2"))
+        }, service.identity.personId, "RUSTY/2") })
       },
     })
     expect(status.payload).toMatchObject({ state: "missing", view: null })
@@ -153,13 +153,13 @@ describe("Rusty Identity authority high-water update", () => {
         const url = new URL(String(input))
         const path = `${url.pathname}${url.search}`
         const requestHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson({ method: "GET", path })))
-        return Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+        return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
           kind: "rusty-identity-authority-status" as const, version: 1 as const,
           serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
           personId: identity.identity.personId, state: "missing" as const,
           requestNonce: "A".repeat(43), requestHash, issuedAt: 10_000, view: null,
           enforcement: { mode: "additive" as const, epoch: 0 as const },
-        }, service.identity.personId, "RUSTY/2"))
+        }, service.identity.personId, "RUSTY/2") })
       },
     })).rejects.toThrow(/match this request/i)
   })
@@ -233,14 +233,14 @@ describe("Rusty Identity authority high-water update", () => {
       signAuthorization: async payload => signEnvelope(app.privateKey, payload, app.device.deviceId, "MATCH/1"),
       fetcher: async (_input, init) => {
         const posted = JSON.parse(String(init?.body)) as { authorization: { payload: { requestHash: string; issuedAt: number } } }
-        return Response.json(await signEnvelope(service.privateKeys.identityPrivateKey!, {
+        return Response.json({ receipt: await signEnvelope(service.privateKeys.identityPrivateKey!, {
           kind: "rusty-identity-authority-receipt" as const, version: 1 as const,
           serviceId: await publicKeyId(service.identity.publicKey), origin: "https://rusty.example",
           personId: identity.identity.personId, authorityHead: view.revocationHead,
           viewDigest: view.viewDigest, requestHash: posted.authorization.payload.requestHash,
           committedAt: posted.authorization.payload.issuedAt,
           enforcement: { mode: "strict" as const, epoch: 1 as const },
-        }, service.identity.personId, "RUSTY/2"))
+        }, service.identity.personId, "RUSTY/2") })
       },
     })
     expect(receipt.payload).toMatchObject({ personId: identity.identity.personId, authorityHead: view.revocationHead })

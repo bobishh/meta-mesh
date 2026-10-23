@@ -275,13 +275,15 @@ async function readReceipt(response: Response): Promise<RustyIdentityAuthorityRe
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   let value: unknown
   try { value = JSON.parse(text) } catch { throw new Error("Invalid Rusty Identity authority receipt") }
-  if (!isRecord(value) || !hasExactKeys(value, ["payload", "signerKeyId", "signature"]) ||
-      typeof value.signerKeyId !== "string" || typeof value.signature !== "string" || !isRecord(value.payload) ||
-      !hasExactKeys(value.payload, ["kind", "version", "serviceId", "origin", "personId", "authorityHead",
+  if (!isRecord(value) || !hasExactKeys(value, ["receipt"]) || !isRecord(value.receipt) ||
+      !hasExactKeys(value.receipt, ["payload", "signerKeyId", "signature"]) ||
+      typeof value.receipt.signerKeyId !== "string" || typeof value.receipt.signature !== "string" ||
+      !isRecord(value.receipt.payload) ||
+      !hasExactKeys(value.receipt.payload, ["kind", "version", "serviceId", "origin", "personId", "authorityHead",
         "viewDigest", "requestHash", "committedAt", "enforcement"])) {
     throw new Error("Invalid Rusty Identity authority receipt")
   }
-  return value as unknown as RustyIdentityAuthorityReceipt
+  return value.receipt as unknown as RustyIdentityAuthorityReceipt
 }
 
 async function readAuthorityStatus(response: Response): Promise<RustyIdentityAuthorityStatus> {
@@ -312,13 +314,17 @@ async function readAuthorityStatus(response: Response): Promise<RustyIdentityAut
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   let value: unknown
   try { value = JSON.parse(text) } catch { throw new Error("Invalid Rusty Identity authority status") }
-  if (!isRecord(value) || !hasExactKeys(value, ["payload", "signerKeyId", "signature"]) ||
-      typeof value.signerKeyId !== "string" || typeof value.signature !== "string" || !isRecord(value.payload) ||
-      !hasExactKeys(value.payload, ["kind", "version", "serviceId", "origin", "personId", "state", "requestNonce",
-        "requestHash", "issuedAt", "view", "enforcement"])) {
-    throw new Error("Invalid Rusty Identity authority status")
+  if (!isRecord(value) || !hasExactKeys(value, ["status"]) || !isRecord(value.status) ||
+      !hasExactKeys(value.status, ["payload", "signerKeyId", "signature"]) ||
+      typeof value.status.signerKeyId !== "string" || typeof value.status.signature !== "string" ||
+      !isRecord(value.status.payload)) {
+    throw new Error("Invalid Rusty Identity authority status envelope")
   }
-  return value as unknown as RustyIdentityAuthorityStatus
+  if (!hasExactKeys(value.status.payload, ["kind", "version", "serviceId", "origin", "personId", "state", "requestNonce",
+      "requestHash", "issuedAt", "view", "enforcement"])) {
+    throw new Error(`Invalid Rusty Identity authority status fields: ${Object.keys(value.status.payload).join(",")}`)
+  }
+  return value.status as unknown as RustyIdentityAuthorityStatus
 }
 
 async function readStaleAuthorityResponse(response: Response): Promise<RustyIdentityAuthorityStatus> {
