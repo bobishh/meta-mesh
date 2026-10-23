@@ -631,6 +631,32 @@ export async function certificateHash(certificate: DeviceCertificate): Promise<s
   return sha256Base64Url(new TextEncoder().encode(canonicalizeJson(certificate)))
 }
 
+/** Return the active device's exact leaf-to-root certificate chain from a verified catalog. */
+export async function identityDeviceCertificateChain(
+  identity: PublicIdentity,
+  evidence: IdentityDeviceAuthorityEvidence,
+  deviceId: DeviceId,
+  domain = "MATCH/1",
+): Promise<DeviceCertificate[]> {
+  const authority = await verifyIdentityDeviceAuthority(identity, evidence, domain)
+  const state = verifiedDeviceAuthorityState.get(authority)
+  if (!state || state.blockedDeviceIds.has(deviceId)) throw new Error("Identity device access is revoked")
+  const byDevice = new Map(state.certificates.map(certificate => [certificate.payload.deviceId, certificate]))
+  const byHash = new Map<string, DeviceCertificate>()
+  for (const certificate of state.certificates) byHash.set(await certificateHash(certificate), certificate)
+  const chain: DeviceCertificate[] = []
+  let current = byDevice.get(deviceId)
+  if (!current) throw new Error("Missing device certificate")
+  while (current) {
+    chain.unshift(structuredClone(current))
+    const parentHash = current.payload.issuerCertificateHash
+    if (parentHash === null) return chain
+    current = byHash.get(parentHash)
+    if (!current) throw new Error("Invalid device certificate chain")
+  }
+  throw new Error("Invalid device certificate chain")
+}
+
 export async function verifyDeviceCertificateChain(
   identity: PublicIdentity,
   deviceId: string,
