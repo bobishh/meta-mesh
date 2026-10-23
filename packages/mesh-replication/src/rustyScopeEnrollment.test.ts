@@ -8,7 +8,7 @@ const scopeId = "scope-private"
 const readToken = "read-token-never-put-in-url"
 const writeToken = "write-token-never-put-in-url"
 
-async function fixture() {
+async function fixture(scopeManagement: unknown = 0) {
   const owner = await createRecoverableIdentity("better", "Owner", new Uint8Array(32).fill(4))
   const serviceKeys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair
   const servicePublicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", serviceKeys.publicKey)))
@@ -20,7 +20,7 @@ async function fixture() {
     if (url === `${origin}/.well-known/mesh-lighthouse`) return Response.json({
       protocolVersions: [2], publicOrigin: origin, service: { publicKey: servicePublicKey, serviceId },
       capabilities: { modes: ["blind"], applicationWrites: false, classification: false,
-        scopeManagement: 0, scopeEnrollmentRetry: 1, writerPolicy: { version: 1, maximumWriterVersion: 2 } },
+        scopeManagement, scopeEnrollmentRetry: 1, writerPolicy: { version: 1, maximumWriterVersion: 2 } },
     })
     if (url === `${origin}/v2/enrollment/challenge`) {
       const body = JSON.parse(String(init?.body)) as { identity: { personId: string }; deviceId: string }
@@ -77,6 +77,36 @@ it("Given a pinned Rusty service and current Identity device, When enrolling sco
   expect(journal.prepare).toHaveBeenCalledOnce()
   expect(journal.complete).toHaveBeenCalledOnce()
   expect(ensureCurrent.mock.calls.length).toBeGreaterThan(0)
+})
+
+it("Given a managed Rusty service with no signed capability, When no adapter attests verified unmanaged status, Then reject before enrollment", async () => {
+  const f = await fixture({ version: 1 })
+  const client = createRustyScopeEnrollmentClient({
+    access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
+    identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId, devicePublicKey: f.owner.profile.device.publicKey,
+    certificates: [f.owner.profile.certificate], fetcher: f.fetcher, ensureCurrent: async () => {},
+    getManagementCapability: async () => undefined, ensureManagementCurrent: async () => {},
+    signAuthorization: async payload => signEnvelope(f.owner.profile.privateKeys.devicePrivateKey, payload, f.owner.profile.device.deviceId),
+    journal: { read: async () => undefined, prepare: vi.fn(), replace: vi.fn(), complete: vi.fn() },
+  })
+
+  await expect(client.enroll()).rejects.toThrow(/management authority/i)
+  expect(f.requestBodies).toEqual([])
+})
+
+it("Given a managed service whose signed status confirms no scope or parent policy, When the adapter explicitly permits legacy unmanaged use, Then enroll without inventing a management capability", async () => {
+  const f = await fixture({ version: 1 })
+  const client = createRustyScopeEnrollmentClient({
+    access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
+    identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId, devicePublicKey: f.owner.profile.device.publicKey,
+    certificates: [f.owner.profile.certificate], fetcher: f.fetcher, ensureCurrent: async () => {},
+    getManagementCapability: async () => undefined, ensureManagementCurrent: async () => {},
+    signAuthorization: async payload => signEnvelope(f.owner.profile.privateKeys.devicePrivateKey, payload, f.owner.profile.device.deviceId),
+    journal: { read: async () => undefined, prepare: vi.fn(), replace: vi.fn(), complete: vi.fn() },
+  })
+
+  await expect(client.enroll({ minimumWriterVersion: 2, allowLegacyUnmanagedScope: true })).resolves.toMatchObject({ policyRevision: 0 })
+  expect(f.requestBodies[0]).not.toHaveProperty("managementCapability")
 })
 
 it("Given a saved enrollment request with substituted token evidence, When retrying, Then reject before requesting a fresh challenge or mutating policy", async () => {

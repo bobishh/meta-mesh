@@ -115,6 +115,8 @@ export type RustyScopeEnrollmentOptions = {
   minimumWriterVersion?: 2
   requireExactRetry?: boolean
   expectedPolicyRevision?: number
+  /** Explicit compatibility for legacy scopes with no signed scope policy or person management policy; Rusty still enforces managed scopes. */
+  allowLegacyUnmanagedScope?: boolean
   confirmed?: (receipt: RustyScopePolicyReceipt) => void | Promise<void>
 }
 
@@ -161,9 +163,6 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
     }
     const managementCapability = await options.getManagementCapability(service)
     await ensureCurrent(managementCapability)
-    if (featureFlag(service, "scopeManagement") === 1 && !managementCapability) {
-      throw new Error("Current Rusty scope management authority is required")
-    }
     if (managementCapability) {
       await verifyRustyManagementCapability(managementCapability, access, {
         personId: identity.personId, deviceId: options.deviceId, resourceKind: "scope", resourceId: access.scopeId,
@@ -191,6 +190,9 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
     const initialRequest = await verifyRequest(initialBody, { access, identity, deviceId: options.deviceId,
       devicePublicKey: options.devicePublicKey, certificates,
       binding, service, managementCapability, allowExpired: Boolean(pending), now })
+    if (featureFlag(service, "scopeManagement") === 1 && !managementCapability && !enrollmentOptions.allowLegacyUnmanagedScope) {
+      throw new Error("Current Rusty scope management authority is required")
+    }
     if (expectedPolicyRevision !== undefined && initialRequest.authorization.payload.expectedRevision !== expectedPolicyRevision) {
       throw new Error("Concurrent Rusty scope policy revision changed; original credentials retained for review")
     }
