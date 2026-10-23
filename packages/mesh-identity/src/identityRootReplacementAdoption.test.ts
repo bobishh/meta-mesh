@@ -1,9 +1,11 @@
 import { expect, it } from "vitest"
 import { BrowserIdentityStore, createIdentityAuthorityView, createRecoverableIdentity,
-  emptyIdentityProfileState, type LocalProfile } from "./index"
+  emptyIdentityProfileState, toBase64Url, type LocalProfile } from "./index"
 import { createIdentityRootReplacementOffer, createIdentityRootReplacementRequest } from "./identityRootReplacement"
 
 async function fixture(previous?: LocalProfile) {
+  const ecdh = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]) as CryptoKeyPair
+  const scopeHandoffPublicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", ecdh.publicKey)))
   previous ??= (await createRecoverableIdentity("better", "Previous", new Uint8Array(32).fill(51))).profile
   const previousProfileState = emptyIdentityProfileState(previous.identity.personId)
   const previousAuthority = await createIdentityAuthorityView(previous.identity,
@@ -14,10 +16,10 @@ async function fixture(previous?: LocalProfile) {
     successorDevice: { deviceId: freshApp.device.deviceId, publicKey: freshApp.device.publicKey,
       privateKey: freshApp.privateKeys.devicePrivateKey },
     applicationOrigin: "https://boards.example", challenge: "e".repeat(64), expiresAt: Date.now() + 60_000,
-    rustyServicePins: [] })
+    scopeHandoffPublicKey, rustyServicePins: [] })
   const successor = (await createRecoverableIdentity("better", "Successor", new Uint8Array(32).fill(54))).profile
   const offer = await createIdentityRootReplacementOffer(previous, successor, request, previousAuthority,
-    previousProfileState, { consentedRustyServicePins: [] })
+    previousProfileState, { consentedRustyServicePins: [], successorScopeConnections: [] })
   const candidate: LocalProfile = { identity: offer.successorIdentity,
     device: { deviceId: freshApp.device.deviceId, publicKey: freshApp.device.publicKey, displayName: "Fresh app" },
     certificate: offer.certificate, privateKeys: { devicePrivateKey: freshApp.privateKeys.devicePrivateKey } }

@@ -147,11 +147,13 @@ export { createIdentityRootSuccession, verifyIdentityRootSuccession } from "./id
 export type { IdentityRootSuccession, IdentityRootSuccessionPayload,
   IdentityRootSuccessionAcceptancePayload } from "./identityRootSuccession"
 export { createIdentityRootReplacementRequest, verifyIdentityRootReplacementRequest,
-  createIdentityRootReplacementOffer, verifyIdentityRootReplacementOffer } from "./identityRootReplacement"
+  createIdentityRootReplacementOffer, verifyIdentityRootReplacementOffer,
+  createIdentityRootReplacementScopeHandoff, decryptIdentityRootReplacementScopeHandoff } from "./identityRootReplacement"
 export type { IdentityRootReplacementRequester, IdentityRootReplacementRequestPayload,
   IdentityRootReplacementKeyProofPayload, IdentityRootReplacementRequest,
   IdentityRootReplacementOfferAuthorization, IdentityRootReplacementOfferAcceptance, IdentityRootReplacementOffer,
-  RootReplacementBinding } from "./identityRootReplacement"
+  IdentityRootReplacementScopeHandoff, IdentityRootReplacementScopeConnection,
+  IdentityRootReplacementScopeHandoffPayload, RootReplacementBinding } from "./identityRootReplacement"
 
 export {
   assertServiceLoginSession,
