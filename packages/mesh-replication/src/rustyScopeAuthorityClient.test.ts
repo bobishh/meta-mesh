@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest"
 import { canonicalizeJson, createIdentityAuthorityView, createRecoverableIdentity, emptyIdentityProfileState, publicKeyId,
   sha256Base64Url,
   signEnvelope } from "@meta-uber/mesh-identity"
-import { publishRustyScopeAuthoritySnapshot } from "./rustyScopeAuthorityClient"
+import { publishRustyScopeAuthoritySnapshot, readRustyScopeAuthorityStatus } from "./rustyScopeAuthorityClient"
 
 it("Given an enrolled workspace scope with missing Rusty authority, When publishing, Then bind signed update and receipt to the active controller and full snapshot", async () => {
   const owner = (await createRecoverableIdentity("better", "Owner")).profile
@@ -60,4 +60,37 @@ it("Given an enrolled workspace scope with missing Rusty authority, When publish
   expect(update?.authorization.payload.requestId).toMatch(/^[A-Za-z0-9_-]{43}$/u)
   expect(receipt.payload.enforcement).toEqual({ mode: "additive", epoch: 0 })
   expect(current).toHaveBeenCalledTimes(4)
+})
+
+it("Given a workspace participant without controller authority, When reading scope status, Then verify and return the signed current ledger", async () => {
+  const owner = (await createRecoverableIdentity("better", "Workspace owner")).profile
+  const service = (await createRecoverableIdentity("better", "Rusty service")).profile
+  const serviceId = await publicKeyId(service.identity.publicKey)
+  const snapshot = { genesis: { payload: { scopeId: "workspace-2", controlEpoch: 1 } }, controlTransfers: [] }
+  let requestUrl = ""
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    requestUrl = String(input)
+    const url = new URL(requestUrl)
+    const requestId = url.searchParams.get("requestId")!
+    const requestHash = url.searchParams.get("requestHash")!
+    return Response.json({ status: await signEnvelope(service.privateKeys.identityPrivateKey!, {
+      kind: "rusty-scope-authority-status" as const, version: 1 as const, serviceId,
+      origin: "https://rusty.example", scopeId: "scope-2", workspaceId: "workspace-2", state: "ready" as const,
+      controllerPersonId: owner.identity.personId, controlEpoch: 1, requestId, requestHash, issuedAt: 50_000,
+      enforcement: { mode: "additive" as const, epoch: 0 as const }, scopeAuthority: snapshot,
+    }, service.identity.personId, "RUSTY/2") })
+  })
+  const validateSnapshot = (value: unknown) => ({ workspaceId: "workspace-2", controllerPersonId: owner.identity.personId,
+    controllerPublicKey: owner.identity.publicKey, controlEpoch: 1, snapshot: value })
+
+  const result = await readRustyScopeAuthorityStatus({ origin: "https://rusty.example", servicePublicKey: service.identity.publicKey,
+    scopeId: "scope-2", fetcher, validateSnapshot, now: () => 50_000 })
+
+  const request = new URL(requestUrl)
+  expect(request.pathname).toBe("/v2/scopes/scope-2/authority/status")
+  expect(request.searchParams.get("requestId")).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+  expect(request.searchParams.get("requestHash")).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+  expect(result.status.payload.state).toBe("ready")
+  expect(result.authority).toEqual(validateSnapshot(snapshot))
+  expect(fetcher).toHaveBeenCalledTimes(1)
 })
