@@ -5,8 +5,9 @@ import { authorizeIdentityDataDevice, authorizeIdentityDevice, canonicalizeJson,
   type DeviceCertificate, type IdentityAuthorityHead, type IdentityAuthorityView, type LocalProfile,
   type PublicIdentity, type SignedEnvelope } from "./index"
 import { verifyIdentityRootSuccession, type IdentityRootSuccession } from "./identityRootSuccession"
-import { createIdentityRustyServicePinOperation, identityProfileRustyServicePins,
-  readIdentityProfileState, readIdentityProfileStateWithRevocations, type IdentityProfileState } from "./identityProfile"
+import { createIdentityRustyServicePinOperation, identityProfileRustyServicePins, normalizeIdentityRustyServicePins,
+  readIdentityProfileState, readIdentityProfileStateWithRevocations, type IdentityProfileState,
+  type IdentityRustyServicePin } from "./identityProfile"
 
 const requestDomain = "MESH-DEVICE-AUTHORIZATION/1"
 const keyProofDomain = "MESH-IDENTITY-ROOT-REPLACEMENT-KEY/1"
@@ -25,6 +26,7 @@ export type IdentityRootReplacementRequestPayload = {
   requesterDevicePublicKey: string
   successorDeviceId: string
   successorDevicePublicKey: string
+  rustyServicePins: IdentityRustyServicePin[]
 }
 
 export type IdentityRootReplacementKeyProofPayload = {
@@ -93,7 +95,9 @@ export type RootReplacementBinding = { applicationOrigin: string; challenge: str
 /** Bind the old app session and a freshly generated successor app key to one explicit request. */
 export async function createIdentityRootReplacementRequest(requester: IdentityRootReplacementRequester,
   options: { successorDevice: { deviceId: string; publicKey: string; privateKey: CryptoKey };
-    applicationOrigin: string; challenge: string; expiresAt: number }): Promise<IdentityRootReplacementRequest> {
+    applicationOrigin: string; challenge: string; expiresAt: number;
+    rustyServicePins: IdentityRustyServicePin[] }): Promise<IdentityRootReplacementRequest> {
+  const rustyServicePins = await normalizeIdentityRustyServicePins(options.rustyServicePins)
   if (!requester.privateKeys.devicePrivateKey || requester.identity.personId !== await publicKeyId(requester.identity.publicKey) ||
       requester.device.deviceId !== await publicKeyId(requester.device.publicKey) ||
       options.successorDevice.deviceId !== await publicKeyId(options.successorDevice.publicKey) ||
@@ -108,7 +112,7 @@ export async function createIdentityRootReplacementRequest(requester: IdentityRo
     previousPersonId: requester.identity.personId,
     requesterDeviceId: requester.device.deviceId,
     requesterDevicePublicKey: requester.device.publicKey, successorDeviceId: options.successorDevice.deviceId,
-    successorDevicePublicKey: options.successorDevice.publicKey,
+    successorDevicePublicKey: options.successorDevice.publicKey, rustyServicePins,
   }
   const authorization = await signEnvelope(requester.privateKeys.devicePrivateKey, payload,
     requester.device.deviceId, requestDomain)
@@ -138,7 +142,7 @@ export async function verifyIdentityRootReplacementRequest(requestValue: Identit
   const payload = authorization?.payload
   const now = (binding.now ?? Date.now)()
   const requestKeys = ["kind", "version", "applicationOrigin", "challenge", "expiresAt", "previousPersonId",
-    "requesterDeviceId", "requesterDevicePublicKey", "successorDeviceId", "successorDevicePublicKey"]
+    "requesterDeviceId", "requesterDevicePublicKey", "successorDeviceId", "successorDevicePublicKey", "rustyServicePins"]
   if (!isRecord(request) || !hasExactKeys(request, ["authorization", "successorKeyProof"]) ||
       !isSignedEnvelope(authorization) || !hasExactKeys(payload, requestKeys) ||
       payload.kind !== "mesh-identity-root-replacement-request" || payload.version !== 1 ||
@@ -153,6 +157,10 @@ export async function verifyIdentityRootReplacementRequest(requestValue: Identit
       payload.successorDeviceId === payload.requesterDeviceId ||
       !await verifyEnvelope(authorization, payload.requesterDevicePublicKey, requestDomain)) {
     throw new Error("Invalid or expired Identity root replacement request")
+  }
+  const normalizedPins = await normalizeIdentityRustyServicePins(payload.rustyServicePins)
+  if (canonicalizeJson(normalizedPins) !== canonicalizeJson(payload.rustyServicePins)) {
+    throw new Error("Identity root replacement request has a non-canonical Rusty service catalog")
   }
   const activeRequesterKey = await authorizeIdentityDataDevice(previousAuthority, payload.requesterDeviceId)
   if (activeRequesterKey !== payload.requesterDevicePublicKey) {
@@ -180,15 +188,28 @@ export async function verifyIdentityRootReplacementRequest(requestValue: Identit
 export async function createIdentityRootReplacementOffer(previous: LocalProfile, successor: LocalProfile,
   requestValue: IdentityRootReplacementRequest, previousAuthorityValue: IdentityAuthorityView,
   previousProfileStateValue: IdentityProfileState,
-  options: { successorProfileState?: IdentityProfileState; now?: () => number } = {}): Promise<IdentityRootReplacementOffer> {
+  options: { successorProfileState?: IdentityProfileState; consentedRustyServicePins: IdentityRustyServicePin[];
+    now?: () => number }): Promise<IdentityRootReplacementOffer> {
   const previousAuthority = await verifyIdentityAuthorityView(previousAuthorityValue)
-  const previousProfileState = await readIdentityProfileStateWithRevocations(previousProfileStateValue,
+  let previousProfileState = await readIdentityProfileStateWithRevocations(previousProfileStateValue,
     previous.identity, previousAuthority.certificates, previousAuthority.revocations)
   const request = structuredClone(requestValue)
   const requestPayload = request.authorization.payload
   await verifyIdentityRootReplacementRequest(request, previousAuthority, {
     applicationOrigin: requestPayload.applicationOrigin, challenge: requestPayload.challenge, now: options.now,
   })
+  const consentedPins = await normalizeIdentityRustyServicePins(options.consentedRustyServicePins)
+  if (canonicalizeJson(consentedPins) !== canonicalizeJson(requestPayload.rustyServicePins)) {
+    throw new Error("Rusty service pins require explicit consent for this root replacement")
+  }
+  for (const pin of consentedPins) {
+    const operation = await createIdentityRustyServicePinOperation(previous, previousProfileState, pin,
+      previousAuthority.certificates)
+    if (operation) previousProfileState = await readIdentityProfileState({ ...previousProfileState,
+      operations: [...previousProfileState.operations, operation] }, previous.identity, previousAuthority.certificates)
+  }
+  const acceptedPreviousAuthority = await createIdentityAuthorityView(previous.identity,
+    { certificates: previousAuthority.certificates, revocations: previousAuthority.revocations }, previousProfileState)
   const oldRootAuthority = await verifyIdentityDeviceAuthority(previous.identity,
     { certificates: previousAuthority.certificates, revocations: previousAuthority.revocations })
   await authorizeIdentityDevice(oldRootAuthority, previous.device.deviceId)
@@ -213,13 +234,13 @@ export async function createIdentityRootReplacementOffer(previous: LocalProfile,
   }
   const authorityView = await createIdentityAuthorityView(successor.identity,
     { certificates, revocations: [] }, successorProfileState)
-  const succession = await createIdentityRootSuccession(previous, successor, previousAuthority)
+  const succession = await createIdentityRootSuccession(previous, successor, acceptedPreviousAuthority)
   const issuedAt = (options.now ?? Date.now)()
   if (!Number.isSafeInteger(issuedAt) || issuedAt >= requestPayload.expiresAt) throw new Error("Root replacement request expired")
   const authorizationPayload: IdentityRootReplacementOfferAuthorization = {
     kind: "mesh-identity-root-replacement-offer", version: 1, requestHash: await envelopeHash(request),
     previousPersonId: previous.identity.personId, previousProfileStateHash: await identityProfileRevision(previousProfileState),
-    previousAuthorityHead: structuredClone(previousAuthority.revocationHead), previousViewDigest: previousAuthority.viewDigest,
+    previousAuthorityHead: structuredClone(acceptedPreviousAuthority.revocationHead), previousViewDigest: acceptedPreviousAuthority.viewDigest,
     successorPersonId: successor.identity.personId,
     successorAuthorityHead: structuredClone(authorityView.revocationHead), successorViewDigest: authorityView.viewDigest,
     deviceId: candidateCertificate.payload.deviceId, devicePublicKey: candidateCertificate.payload.devicePublicKey,
@@ -238,7 +259,7 @@ export async function createIdentityRootReplacementOffer(previous: LocalProfile,
   const acceptance = await signEnvelope(successor.privateKeys.identityPrivateKey, acceptancePayload,
     successor.identity.personId, offerDomain)
   const offer: IdentityRootReplacementOffer = { version: 1, request,
-    previousAuthorityView: JSON.parse(JSON.stringify(previousAuthority)) as IdentityAuthorityView,
+    previousAuthorityView: JSON.parse(JSON.stringify(acceptedPreviousAuthority)) as IdentityAuthorityView,
     previousProfileState: structuredClone(previousProfileState), successorIdentity: structuredClone(successor.identity),
     certificate: candidateCertificate, certificates, authorityView, successorProfileState, succession, authorization, acceptance }
   await verifyIdentityRootReplacementOffer(offer, request, previous.identity, { now: options.now })
@@ -275,6 +296,12 @@ export async function verifyIdentityRootReplacementOffer(offerValue: unknown,
   }
   const previousProfileState = await readIdentityProfileStateWithRevocations(offer.previousProfileState,
     previousIdentity, previousAuthority.certificates, previousAuthority.revocations)
+  const acceptedPins = identityProfileRustyServicePins(previousProfileState)
+  for (const requestedPin of requestPins(offer.request)) {
+    if (!acceptedPins.some(pin => canonicalizeJson(pin) === canonicalizeJson(requestedPin))) {
+      throw new Error("Root replacement offer omitted an app-requested Rusty service pin")
+    }
+  }
   const request = await verifyIdentityRootReplacementRequest(offer.request, previousAuthority, {
     applicationOrigin: requestValue.authorization.payload.applicationOrigin,
     challenge: requestValue.authorization.payload.challenge, now: options.now,
@@ -353,6 +380,10 @@ async function envelopeHash(value: unknown): Promise<string> {
 
 function canonicalEqual(left: unknown, right: unknown): boolean {
   try { return canonicalizeJson(left) === canonicalizeJson(right) } catch { return false }
+}
+
+function requestPins(request: IdentityRootReplacementRequest): IdentityRustyServicePin[] {
+  return request.authorization.payload.rustyServicePins
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
