@@ -1,6 +1,9 @@
 import { canonicalizeJson, publicKeyId, signEnvelope, toBase64Url, verifyEnvelope,
   certificateHash, verifyDeviceCertificateChain,
-  type DeviceCertificate, type LocalProfile, type SignedEnvelope } from "./index"
+  createIdentityAuthorityView, verifyIdentityAuthorityView,
+  type DeviceCertificate, type IdentityAuthorityHead, type IdentityAuthorityView,
+  type IdentityDeviceRevocation, type LocalProfile, type SignedEnvelope } from "./index"
+import type { IdentityProfileState } from "./identityProfile"
 
 export type DeviceAuthorizationRequest = SignedEnvelope<{
   kind: "mesh-device-authorization-request"
@@ -13,7 +16,7 @@ export type DeviceAuthorizationRequest = SignedEnvelope<{
   devicePublicKey: string
 }>
 
-export type DeviceAuthorizationApprovalPayload = {
+type DeviceAuthorizationApprovalPayloadV1 = {
   kind: "mesh-device-authorization-approval"
   version: 1
   request: DeviceAuthorizationRequest
@@ -22,11 +25,19 @@ export type DeviceAuthorizationApprovalPayload = {
   expiresAt: number
 }
 
+type DeviceAuthorizationApprovalPayloadV2 = Omit<DeviceAuthorizationApprovalPayloadV1, "version"> & {
+  version: 2
+  authorityViewDigest: string
+  revocationHead: IdentityAuthorityHead
+}
+export type DeviceAuthorizationApprovalPayload = DeviceAuthorizationApprovalPayloadV1 | DeviceAuthorizationApprovalPayloadV2
+
 export type DeviceAuthorizationApproval = {
   identity: LocalProfile["identity"]
   issuerDeviceId: string
   certificates: DeviceCertificate[]
   certificate: DeviceCertificate
+  authorityView?: IdentityAuthorityView
   proof: SignedEnvelope<DeviceAuthorizationApprovalPayload>
 }
 
@@ -158,7 +169,8 @@ export async function issueDeviceAuthorization(
 export async function createDeviceAuthorizationApproval(
   issuerValue: LocalProfile,
   requestValue: DeviceAuthorizationRequest,
-  options: Binding & { ensureCurrent?: () => void | Promise<void> },
+  options: Binding & { ensureCurrent?: () => void | Promise<void>; profileState?: IdentityProfileState;
+    revocations?: readonly IdentityDeviceRevocation[] },
 ): Promise<DeviceAuthorizationApproval> {
   const issuer: LocalProfile = { ...issuerValue, identity: structuredClone(issuerValue.identity),
     device: structuredClone(issuerValue.device), certificate: structuredClone(issuerValue.certificate),
@@ -172,22 +184,35 @@ export async function createDeviceAuthorizationApproval(
   }
   await options.ensureCurrent?.()
   const certificate = await issueDeviceAuthorization(issuer, request, { ...options, certificates })
+  const allCertificates = [...certificates, certificate]
   const issuedAt = (options.now ?? Date.now)()
   if (!Number.isSafeInteger(issuedAt) || issuedAt >= request.payload.expiresAt) throw new Error("Application device request expired")
-  const proof = await signEnvelope(issuer.privateKeys.devicePrivateKey, {
-    kind: "mesh-device-authorization-approval" as const,
-    version: 1 as const,
-    request,
-    certificateHash: await certificateHash(certificate),
-    issuedAt,
-    expiresAt: request.payload.expiresAt,
-  }, issuer.device.deviceId, "MESH-APP-DEVICE-AUTHORIZATION/1")
+  let authorityView: IdentityAuthorityView | undefined
+  let proofPayload: DeviceAuthorizationApprovalPayload
+  if (options.profileState !== undefined || options.revocations !== undefined) {
+    if (!options.profileState || !options.revocations) throw new Error("Application device approval requires complete Identity authority state")
+    const verifiedView = await createIdentityAuthorityView(issuer.identity,
+      { certificates: allCertificates, revocations: Array.from(options.revocations) }, options.profileState)
+    authorityView = JSON.parse(JSON.stringify(verifiedView)) as IdentityAuthorityView
+    proofPayload = {
+      kind: "mesh-device-authorization-approval", version: 2, request,
+      certificateHash: await certificateHash(certificate), issuedAt, expiresAt: request.payload.expiresAt,
+      authorityViewDigest: authorityView.viewDigest, revocationHead: authorityView.revocationHead,
+    }
+  } else {
+    proofPayload = {
+      kind: "mesh-device-authorization-approval", version: 1, request,
+      certificateHash: await certificateHash(certificate), issuedAt, expiresAt: request.payload.expiresAt,
+    }
+  }
+  const proof = await signEnvelope(issuer.privateKeys.devicePrivateKey, proofPayload,
+    issuer.device.deviceId, "MESH-APP-DEVICE-AUTHORIZATION/1")
   if (!await verifyEnvelope(proof, issuer.device.publicKey, "MESH-APP-DEVICE-AUTHORIZATION/1")) {
     throw new Error("Identity device signing key mismatch")
   }
   await options.ensureCurrent?.()
   return { identity: issuer.identity, issuerDeviceId: issuer.device.deviceId,
-    certificates: [...certificates, certificate], certificate, proof }
+    certificates: allCertificates, certificate, ...(authorityView ? { authorityView } : {}), proof }
 }
 
 /** Validate the redirect payload against the caller's original request. */
@@ -200,7 +225,8 @@ export async function verifyDeviceAuthorizationApproval(
   const serialized = JSON.stringify(approvalValue)
   if (!serialized || serialized.length > 64_000) throw new Error("Invalid Identity device approval")
   const approval = JSON.parse(serialized) as DeviceAuthorizationApproval
-  if (!isRecord(approval) || !hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "proof"]) ||
+  if (!isRecord(approval) || !(hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "proof"]) ||
+      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "proof"])) ||
       !isRecord(approval.identity) || !Array.isArray(approval.certificates) || approval.certificates.length < 1 ||
       approval.certificates.length > 32 || typeof approval.issuerDeviceId !== "string" ||
       !isRecord(approval.certificate) || !isRecord(approval.proof) || !isRecord(approval.proof.payload)) {
@@ -208,8 +234,11 @@ export async function verifyDeviceAuthorizationApproval(
   }
   const payload = approval.proof.payload
   const now = (options.now ?? Date.now)()
-  if (!hasExactKeys(payload, ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt"]) ||
-      payload.kind !== "mesh-device-authorization-approval" || payload.version !== 1 ||
+  const version2 = payload.version === 2
+  if (!hasExactKeys(payload, version2
+      ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead"]
+      : ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt"]) ||
+      payload.kind !== "mesh-device-authorization-approval" || (payload.version !== 1 && payload.version !== 2) ||
       canonicalizeJson(payload.request) !== canonicalizeJson(request) ||
       payload.certificateHash !== await certificateHash(approval.certificate) ||
       payload.expiresAt !== request.payload.expiresAt || !Number.isSafeInteger(payload.issuedAt) ||
@@ -235,7 +264,28 @@ export async function verifyDeviceAuthorizationApproval(
       !await verifyEnvelope(approval.proof, issuerKey, "MESH-APP-DEVICE-AUTHORIZATION/1")) {
     throw new Error("Invalid Identity device approval signature")
   }
+  if (version2) {
+    if (!approval.authorityView) throw new Error("Missing Identity authority view")
+    const view = await verifyIdentityAuthorityView(approval.authorityView)
+    if (view.personId !== approval.identity.personId || view.identityPublicKey !== approval.identity.publicKey ||
+        view.viewDigest !== payload.authorityViewDigest ||
+        canonicalizeJson(view.revocationHead) !== canonicalizeJson(payload.revocationHead) ||
+        !view.certificates.some(value => canonicalizeJson(value) === exactAppCertificate) ||
+        await isDeviceBlockedByRevocation(view, request.payload.deviceId)) {
+      throw new Error("Application device approval authority view does not match")
+    }
+  } else if (approval.authorityView) {
+    throw new Error("Unexpected Identity authority view on a legacy approval")
+  }
   return approval
+}
+
+async function isDeviceBlockedByRevocation(view: IdentityAuthorityView, deviceId: string): Promise<boolean> {
+  try {
+    const { authorizeIdentityDataDevice } = await import("./index")
+    await authorizeIdentityDataDevice(await verifyIdentityAuthorityView(view), deviceId)
+    return false
+  } catch { return true }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

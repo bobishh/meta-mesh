@@ -2,6 +2,7 @@ import { getPublicKeyAsync } from "@noble/ed25519"
 import { entropyToMnemonic, generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39"
 import { wordlist } from "@scure/bip39/wordlists/english.js"
 import { EFF_LONG_WORDS } from "./eff-long"
+import { readIdentityProfileState, readIdentityProfileStateWithRevocations, type IdentityProfileState } from "./identityProfile"
 
 export type PersonId = string
 export type DeviceId = string
@@ -68,6 +69,56 @@ export type DeviceCertificate = SignedEnvelope<{
   canEnrollDevices: boolean
 }>
 
+export type IdentityDeviceRevocation = SignedEnvelope<{
+  kind: "mesh-identity-device-revocation"
+  version: 1
+  personId: PersonId
+  deviceId: DeviceId
+  revision: number
+  /** Per-device ordered signed-operation hashes observed before this revocation. */
+  profileOperationHashes: Record<DeviceId, string[]>
+}>
+
+export type IdentityDeviceAuthorityEvidence = {
+  certificates: DeviceCertificate[]
+  revocations: IdentityDeviceRevocation[]
+}
+
+/** Portable, self-verifying authority projection. Profile history remains in the Identity document. */
+export type IdentityAuthorityHead = { revision: number; recordHash: string }
+export type IdentityAuthorityView = {
+  kind: "mesh-identity-authority-view"
+  version: 1
+  personId: PersonId
+  identityPublicKey: string
+  certificates: DeviceCertificate[]
+  revocations: IdentityDeviceRevocation[]
+  /** Hash of the last signed revocation (or identity-bound genesis), independent of certificate enrollment. */
+  revocationHead: IdentityAuthorityHead
+  /** Digest of identity binding, full sorted certificate catalog and signed revocation history. */
+  viewDigest: string
+}
+
+const verifiedDeviceAuthority: unique symbol = Symbol("verifiedIdentityDeviceAuthority")
+const verifiedDeviceAuthorityState = new WeakMap<object, {
+  identity: PublicIdentity
+  certificates: DeviceCertificate[]
+  revocations: IdentityDeviceRevocation[]
+  revokedDeviceIds: Set<string>
+  blockedDeviceIds: Set<string>
+}>()
+const verifiedIdentityAuthorityView = Symbol("verifiedIdentityAuthorityView")
+const verifiedIdentityAuthorityViews = new WeakMap<object, IdentityAuthorityView>()
+export type VerifiedIdentityAuthorityView = IdentityAuthorityView & {
+  [verifiedIdentityAuthorityView]: true
+}
+export type VerifiedIdentityDeviceAuthority = IdentityDeviceAuthorityEvidence & {
+  identity: PublicIdentity
+  revokedDeviceIds: DeviceId[]
+  blockedDeviceIds: DeviceId[]
+  [verifiedDeviceAuthority]: true
+}
+
 export type LocalProfile = {
   identity: PublicIdentity
   device: {
@@ -110,7 +161,8 @@ export { createIdentityProfileRecovery, openIdentityProfileRecovery, parseIdenti
 export type { IdentityProfileRecoveryFile, IdentityProfileRecoveryPayload } from "./identityProfileRecovery"
 
 export { createIdentityProfileOperation, emptyIdentityProfileState, identityProfileRevision, identityProfileValue,
-  mergeIdentityProfileState, observeLegacyIdentityProfile, readIdentityProfileState } from "./identityProfile"
+  mergeIdentityProfileState, observeLegacyIdentityProfile, readIdentityProfileState,
+  readIdentityProfileStateWithRevocations } from "./identityProfile"
 export type { IdentityProfileField, IdentityProfileOperation, IdentityProfileState, IdentityProfileValue } from "./identityProfile"
 
 export type IdentityStoreOptions = {
@@ -498,6 +550,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+}
+
 export type IdentityAdoptionCommitPlan = {
   storageKey: string
   previousProfile: string | null
@@ -606,6 +662,345 @@ export async function verifyDeviceCertificateChain(
     current = issuer
   }
   throw new Error("Invalid certificate chain")
+}
+
+/** Verify an append-only, revision-ordered Identity device authority view. */
+export async function verifyIdentityDeviceAuthority(
+  identity: PublicIdentity,
+  evidenceValue: IdentityDeviceAuthorityEvidence,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityDeviceAuthority> {
+  const evidence = structuredClone(evidenceValue)
+  if (!evidence || !Array.isArray(evidence.certificates) || evidence.certificates.length < 1 ||
+      evidence.certificates.length > 256 || !Array.isArray(evidence.revocations) || evidence.revocations.length > 256) {
+    throw new Error("Invalid Identity device authority evidence")
+  }
+  const byDevice = new Map<string, DeviceCertificate>()
+  for (const certificate of evidence.certificates) {
+    const deviceId = certificate?.payload?.deviceId
+    if (typeof deviceId !== "string" || byDevice.has(deviceId)) throw new Error("Conflicting Identity device certificate")
+    byDevice.set(deviceId, certificate)
+  }
+  for (const deviceId of byDevice.keys()) {
+    await verifyDeviceCertificateChain(identity, deviceId, evidence.certificates, domain)
+  }
+
+  const ordered = [...evidence.revocations].sort((left, right) => left?.payload?.revision - right?.payload?.revision)
+  const revoked = new Set<string>()
+  const coveredSubtrees = new Set<string>()
+  let totalProfileOperations = 0
+  for (let index = 0; index < ordered.length; index += 1) {
+    const record = ordered[index]!
+    const payload = record?.payload
+    const signerId = record?.signerKeyId
+    if (!payload || payload.kind !== "mesh-identity-device-revocation" || payload.version !== 1 ||
+        Object.keys(payload).sort().join(",") !== "deviceId,kind,personId,profileOperationHashes,revision,version" ||
+        payload.personId !== identity.personId || !byDevice.has(payload.deviceId) ||
+        !Number.isSafeInteger(payload.revision) || payload.revision !== index + 1 ||
+        !payload.profileOperationHashes || typeof payload.profileOperationHashes !== "object" ||
+        Array.isArray(payload.profileOperationHashes) || Object.keys(payload.profileOperationHashes).length > 256 ||
+        typeof signerId !== "string" || signerId === payload.deviceId || revoked.has(payload.deviceId) ||
+        await isChainRevoked(signerId, revoked, evidence.certificates) ||
+        await isChainRevoked(payload.deviceId, revoked, evidence.certificates)) {
+      throw new Error("Invalid or stale Identity device revocation")
+    }
+    const subtree = await identityDeviceDescendants(payload.deviceId, evidence.certificates)
+    for (const deviceId of subtree) {
+      if (coveredSubtrees.has(deviceId)) throw new Error("Overlapping Identity device revocation subtrees")
+      coveredSubtrees.add(deviceId)
+    }
+    let observedOperationCount = 0
+    for (const [deviceId, hashes] of Object.entries(payload.profileOperationHashes)) {
+      if (!subtree.has(deviceId) || !Array.isArray(hashes) || hashes.length > 512 ||
+          hashes.some(hash => typeof hash !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(hash))) {
+        throw new Error("Invalid Identity profile revocation frontier")
+      }
+      observedOperationCount += hashes.length
+      if (observedOperationCount > 512) throw new Error("Identity profile revocation frontier exceeds the limit")
+    }
+    totalProfileOperations += observedOperationCount
+    if (totalProfileOperations > 512) throw new Error("Identity profile revocation history exceeds the limit")
+    const signer = byDevice.get(signerId)
+    if (!signer?.payload.canEnrollDevices) throw new Error("Identity device lacks revocation authority")
+    const signerKey = await verifyDeviceCertificateChain(identity, signerId, evidence.certificates, domain)
+    if (!await verifyEnvelope(record, signerKey, domain)) throw new Error("Invalid Identity device revocation signature")
+    revoked.add(payload.deviceId)
+    if (!(await activeManagementDevices(identity, evidence.certificates, revoked, domain))) {
+      throw new Error("Identity device revocation would remove the last management authority")
+    }
+  }
+  const blockedDeviceIds: string[] = []
+  for (const deviceId of byDevice.keys()) {
+    if (await isChainRevoked(deviceId, revoked, evidence.certificates)) blockedDeviceIds.push(deviceId)
+  }
+  const authority: VerifiedIdentityDeviceAuthority = { ...evidence, identity: structuredClone(identity),
+    revokedDeviceIds: [...revoked], blockedDeviceIds,
+    [verifiedDeviceAuthority]: true }
+  verifiedDeviceAuthorityState.set(authority, {
+    identity: structuredClone(identity),
+    certificates: structuredClone(evidence.certificates),
+    revocations: structuredClone(ordered),
+    revokedDeviceIds: new Set(revoked),
+    blockedDeviceIds: new Set(blockedDeviceIds),
+  })
+  return authority
+}
+
+/** Build the portable projection only after validating the signed profile cutoff history. */
+export async function createIdentityAuthorityView(
+  identity: PublicIdentity,
+  evidenceValue: IdentityDeviceAuthorityEvidence,
+  profileState: IdentityProfileState,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityAuthorityView> {
+  const evidence = structuredClone(evidenceValue)
+  const authority = await verifyIdentityDeviceAuthority(identity, evidence, domain)
+  const profile = await readIdentityProfileState(profileState, identity, authority.certificates)
+  const authorizedProfile = await readIdentityProfileStateWithRevocations(profile, identity,
+    authority.certificates, authority.revocations)
+  if (canonicalizeJson(profile) !== canonicalizeJson(authorizedProfile)) {
+    throw new Error("Identity profile history contains operations outside the signed authority view")
+  }
+  const view = await makeIdentityAuthorityView(identity, authority.certificates, authority.revocations)
+  return verifyIdentityAuthorityView(view, domain)
+}
+
+/** Verify a portable view before it is stored, merged or used to authorize an actor. */
+export async function verifyIdentityAuthorityView(
+  value: unknown,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityAuthorityView> {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "version", "personId", "identityPublicKey",
+    "certificates", "revocations", "revocationHead", "viewDigest"]) ||
+      value.kind !== "mesh-identity-authority-view" || value.version !== 1 ||
+      typeof value.personId !== "string" || typeof value.identityPublicKey !== "string" ||
+      !Array.isArray(value.certificates) || !Array.isArray(value.revocations) ||
+      !isRecord(value.revocationHead) || !hasExactKeys(value.revocationHead, ["revision", "recordHash"]) ||
+      !Number.isSafeInteger(value.revocationHead.revision) || typeof value.revocationHead.recordHash !== "string" ||
+      typeof value.viewDigest !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value.viewDigest)) {
+    throw new Error("Invalid Identity authority view")
+  }
+  const identity: PublicIdentity = { personId: value.personId, publicKey: value.identityPublicKey, displayName: "" }
+  const identityKeyId = await publicKeyId(identity.publicKey)
+  if (identityKeyId !== identity.personId) throw new Error("Identity authority view key does not match its person")
+  const evidence: IdentityDeviceAuthorityEvidence = {
+    certificates: structuredClone(value.certificates) as DeviceCertificate[],
+    revocations: structuredClone(value.revocations) as IdentityDeviceRevocation[],
+  }
+  await verifyIdentityDeviceAuthority(identity, evidence, domain)
+  const expectedHead = await identityAuthorityHead(identity, evidence.revocations)
+  if (canonicalizeJson(value.revocationHead) !== canonicalizeJson(expectedHead)) {
+    throw new Error("Identity authority view has an invalid revocation head")
+  }
+  const expected = await makeIdentityAuthorityView(identity, evidence.certificates, evidence.revocations)
+  if (value.viewDigest !== expected.viewDigest) throw new Error("Identity authority view digest mismatch")
+  const verified = structuredClone(expected) as VerifiedIdentityAuthorityView
+  Object.defineProperty(verified, verifiedIdentityAuthorityView, { value: true, enumerable: false })
+  verifiedIdentityAuthorityViews.set(verified, structuredClone(expected))
+  return verified
+}
+
+/** Merge an incoming view only when its signed revocation history extends the current head. */
+export async function mergeIdentityAuthorityViews(
+  currentValue: unknown,
+  incomingValue: unknown,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityAuthorityView> {
+  const current = await verifyIdentityAuthorityView(currentValue, domain)
+  const incoming = await verifyIdentityAuthorityView(incomingValue, domain)
+  if (current.personId !== incoming.personId || current.identityPublicKey !== incoming.identityPublicKey) {
+    throw new Error("Identity authority views belong to different people")
+  }
+  if (incoming.revocationHead.revision < current.revocationHead.revision) {
+    throw new Error("Stale Identity revocation head")
+  }
+  for (let index = 0; index < current.revocations.length; index += 1) {
+    if (canonicalizeJson(current.revocations[index]) !== canonicalizeJson(incoming.revocations[index])) {
+      throw new Error("Identity revocation history fork or missing prefix")
+    }
+  }
+  const certificates = new Map<string, DeviceCertificate>()
+  for (const certificate of [...current.certificates, ...incoming.certificates]) {
+    const previous = certificates.get(certificate.payload.deviceId)
+    if (previous && canonicalizeJson(previous) !== canonicalizeJson(certificate)) {
+      throw new Error("Conflicting Identity certificate catalog entries")
+    }
+    certificates.set(certificate.payload.deviceId, certificate)
+  }
+  return verifyIdentityAuthorityView(await makeIdentityAuthorityView(
+    { personId: current.personId, publicKey: current.identityPublicKey, displayName: "" },
+    [...certificates.values()], incoming.revocations), domain)
+}
+
+/** Return the certified key for an active data actor, including app-scoped certificates. */
+export async function authorizeIdentityDataDevice(
+  authorityView: VerifiedIdentityAuthorityView,
+  deviceId: DeviceId,
+  domain = "MATCH/1",
+): Promise<string> {
+  const view = verifiedIdentityAuthorityViews.get(authorityView)
+  if (!view || !authorityView[verifiedIdentityAuthorityView]) throw new Error("Identity authority view was not verified")
+  const identity: PublicIdentity = { personId: view.personId, publicKey: view.identityPublicKey, displayName: "" }
+  const authority = await verifyIdentityDeviceAuthority(identity,
+    { certificates: view.certificates, revocations: view.revocations }, domain)
+  const state = verifiedDeviceAuthorityState.get(authority)
+  if (!state || state.blockedDeviceIds.has(deviceId)) throw new Error("Identity device access is revoked")
+  return verifyDeviceCertificateChain(identity, deviceId, authority.certificates, domain)
+}
+
+async function makeIdentityAuthorityView(
+  identity: PublicIdentity,
+  certificatesValue: readonly DeviceCertificate[],
+  revocationsValue: readonly IdentityDeviceRevocation[],
+): Promise<IdentityAuthorityView> {
+  const certificates = structuredClone(Array.from(certificatesValue))
+    .sort((left, right) => left.payload.deviceId.localeCompare(right.payload.deviceId))
+  const revocations = structuredClone(Array.from(revocationsValue))
+    .sort((left, right) => left.payload.revision - right.payload.revision)
+  const head = await identityAuthorityHead(identity, revocations)
+  const digestPayload = { kind: "mesh-identity-authority-view" as const, version: 1 as const,
+    personId: identity.personId, identityPublicKey: identity.publicKey, certificates, revocations }
+  return { ...digestPayload, revocationHead: head,
+    viewDigest: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(digestPayload))) }
+}
+
+async function identityAuthorityHead(identity: Pick<PublicIdentity, "personId" | "publicKey">,
+  revocations: readonly IdentityDeviceRevocation[]): Promise<IdentityAuthorityHead> {
+  const last = revocations.at(-1)
+  const material = last ? canonicalizeJson(last) : canonicalizeJson({
+    kind: "mesh-identity-revocation-genesis", version: 1, personId: identity.personId,
+    identityPublicKey: identity.publicKey,
+  })
+  return { revision: revocations.length,
+    recordHash: await sha256Base64Url(new TextEncoder().encode(material)) }
+}
+
+/** Return the certified key only when the device and all its issuers remain authorized. */
+export async function authorizeIdentityDevice(
+  authority: VerifiedIdentityDeviceAuthority,
+  deviceId: DeviceId,
+  domain = "MATCH/1",
+): Promise<string> {
+  const state = verifiedDeviceAuthorityState.get(authority)
+  if (!state || !authority[verifiedDeviceAuthority]) throw new Error("Identity device authority was not verified")
+  if (state.blockedDeviceIds.has(deviceId)) throw new Error("Identity device access is revoked")
+  if (!state.certificates.find(value => value.payload.deviceId === deviceId)?.payload.canEnrollDevices) {
+    throw new Error("Device lacks Identity management authority")
+  }
+  return verifyDeviceCertificateChain(state.identity, deviceId, state.certificates, domain)
+}
+
+/** Create one revision against the exact authority view loaded by this profile. */
+export async function createDeviceRevocation(
+  profile: LocalProfile,
+  authority: VerifiedIdentityDeviceAuthority,
+  deviceId: DeviceId,
+  profileState: IdentityProfileState,
+  domain = "MATCH/1",
+): Promise<IdentityDeviceRevocation> {
+  const signerId = profile.device.deviceId
+  const state = verifiedDeviceAuthorityState.get(authority)
+  if (!state || !authority[verifiedDeviceAuthority]) throw new Error("Identity device authority was not verified")
+  if (state.identity.personId !== profile.identity.personId ||
+      state.identity.publicKey !== profile.identity.publicKey || deviceId === signerId ||
+      !state.certificates.some(value => canonicalizeJson(value) === canonicalizeJson(profile.certificate)) ||
+      !state.certificates.some(value => value.payload.deviceId === deviceId) ||
+      await isChainRevoked(signerId, state.revokedDeviceIds, state.certificates)) {
+    throw new Error("Current Identity device cannot revoke this device")
+  }
+  const signer = state.certificates.find(value => value.payload.deviceId === signerId)
+  if (!signer?.payload.canEnrollDevices) throw new Error("Current Identity device lacks revocation authority")
+  const validatedProfile = await readIdentityProfileState(profileState, profile.identity, state.certificates)
+  const currentProfile = await readIdentityProfileStateWithRevocations(validatedProfile, profile.identity,
+    state.certificates, state.revocations)
+  if (canonicalizeJson(currentProfile) !== canonicalizeJson(validatedProfile)) {
+    throw new Error("Identity profile history contains revoked device operations")
+  }
+  const subtree = await identityDeviceDescendants(deviceId, state.certificates)
+  const profileOperationHashes: Record<string, string[]> = {}
+  const operations = currentProfile.operations.filter(operation => subtree.has(operation.signed.payload.deviceId))
+    .sort((left, right) => left.signed.payload.counter - right.signed.payload.counter)
+  for (const operation of operations) {
+    const actor = operation.signed.payload.deviceId
+    if (!subtree.has(actor)) continue
+    const currentCertificate = state.certificates.find(value => value.payload.deviceId === actor)
+    const historicalLeaf = operation.certificates.find(value => value.payload.deviceId === actor)
+    if (!currentCertificate || !historicalLeaf || canonicalizeJson(currentCertificate) !== canonicalizeJson(historicalLeaf)) {
+      throw new Error("Identity profile history does not match current device authority")
+    }
+    const hashes = profileOperationHashes[actor] ??= []
+    const counter = operation.signed.payload.counter
+    if (counter !== hashes.length + 1) throw new Error("Identity profile history is not a complete device prefix")
+    hashes.push(await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(operation.signed))))
+  }
+  const record = await signEnvelope(profile.privateKeys.devicePrivateKey, {
+    kind: "mesh-identity-device-revocation" as const,
+    version: 1 as const,
+    personId: profile.identity.personId,
+    deviceId,
+    revision: state.revocations.length + 1,
+    profileOperationHashes,
+  }, signerId, domain)
+  await verifyIdentityDeviceAuthority(profile.identity, {
+    certificates: state.certificates,
+    revocations: [...state.revocations, record],
+  }, domain)
+  return record
+}
+
+async function isChainRevoked(deviceId: string, revoked: ReadonlySet<string>, certificates: readonly DeviceCertificate[]): Promise<boolean> {
+  const byHash = new Map<string, DeviceCertificate>()
+  for (const certificate of certificates) byHash.set(await certificateHash(certificate), certificate)
+  let current = certificates.find(certificate => certificate.payload.deviceId === deviceId)
+  const seen = new Set<string>()
+  while (current) {
+    const currentId = current.payload.deviceId
+    if (revoked.has(currentId) || seen.has(currentId)) return true
+    seen.add(currentId)
+    const issuerHash = current.payload.issuerCertificateHash
+    if (issuerHash === null) return false
+    current = byHash.get(issuerHash)
+  }
+  return true
+}
+
+export async function identityDeviceDescendants(rootId: string, certificates: readonly DeviceCertificate[]): Promise<Set<string>> {
+  const subtree = new Set<string>()
+  for (const certificate of certificates) {
+    if (await isCertificateDescendant(certificate, rootId, certificates)) subtree.add(certificate.payload.deviceId)
+  }
+  return subtree
+}
+
+async function isCertificateDescendant(certificate: DeviceCertificate, rootId: string,
+  certificates: readonly DeviceCertificate[]): Promise<boolean> {
+  const byHash = new Map<string, DeviceCertificate>()
+  for (const item of certificates) byHash.set(await certificateHash(item), item)
+  let current: DeviceCertificate | undefined = certificate
+  const seen = new Set<string>()
+  while (current) {
+    const currentId = current.payload.deviceId
+    if (currentId === rootId) return true
+    if (seen.has(currentId)) return false
+    seen.add(currentId)
+    const issuerHash = current.payload.issuerCertificateHash
+    if (issuerHash === null) return false
+    current = byHash.get(issuerHash)
+  }
+  return false
+}
+
+async function activeManagementDevices(identity: PublicIdentity, certificates: readonly DeviceCertificate[],
+  revoked: ReadonlySet<string>, domain: string): Promise<boolean> {
+  for (const certificate of certificates) {
+    if (certificate.payload.canEnrollDevices && !await isChainRevoked(certificate.payload.deviceId, revoked, certificates)) {
+      try {
+        await verifyDeviceCertificateChain(identity, certificate.payload.deviceId, Array.from(certificates), domain)
+        return true
+      } catch { /* Invalid certificates do not count as management authorities. */ }
+    }
+  }
+  return false
 }
 
 export function signatureInput(payloadKind: string, canonicalPayload: string, domain = "MATCH/1"): Uint8Array {
