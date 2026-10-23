@@ -102,4 +102,41 @@ describe("signed app device authorization roundtrip", () => {
       certificate: { ...approval.certificate, payload: { ...approval.certificate.payload, devicePublicKey: identity.device.publicKey } } }, request))
       .rejects.toThrow()
   })
+
+  it("Given a previously authorized app key, when delegated Identity reauthorizes it, then verify the newly approved certificate", async () => {
+    const root = (await createRecoverableIdentity("better", "Root")).profile
+    const delegated = (await createRecoverableIdentity("better", "Authorizing device")).profile
+    const app = (await createRecoverableIdentity("better", "Returning app device")).profile
+    const delegatedCertificate = await createDelegatedCertificate(root.privateKeys.devicePrivateKey,
+      root.device.deviceId, root.identity.personId, delegated.device.deviceId, delegated.device.publicKey,
+      await certificateHash(root.certificate))
+    const delegatedProfile = { ...delegated, identity: root.identity, certificate: delegatedCertificate,
+      privateKeys: { devicePrivateKey: delegated.privateKeys.devicePrivateKey } }
+    const chain = [root.certificate, delegatedCertificate]
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: root.identity.personId })
+    const previousCertificate = await issueDeviceAuthorization(root, request, { applicationOrigin, challenge })
+    const approval = await createDeviceAuthorizationApproval(delegatedProfile, request, {
+      applicationOrigin, challenge, certificates: [...chain, previousCertificate],
+    })
+
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({
+      certificate: { signature: approval.certificate.signature },
+    })
+    await expect(verifyDeviceAuthorizationApproval({ ...approval,
+      certificates: approval.certificates.filter(value => value.signature !== approval.certificate.signature),
+    }, request)).rejects.toThrow(/missing app device certificate/iu)
+  })
+
+  it("Given an approval certificate omitted from its chain, when verifying, then reject the incomplete proof", async () => {
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const app = (await createRecoverableIdentity("better", "App device")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: identity.identity.personId })
+    const approval = await createDeviceAuthorizationApproval(identity, request, { applicationOrigin, challenge })
+
+    await expect(verifyDeviceAuthorizationApproval({ ...approval,
+      certificates: approval.certificates.filter(value => value.signature !== approval.certificate.signature),
+    }, request)).rejects.toThrow(/certificate/u)
+  })
 })
