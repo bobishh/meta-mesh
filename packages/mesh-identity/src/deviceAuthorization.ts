@@ -219,9 +219,16 @@ export async function verifyDeviceAuthorizationApproval(
       approval.certificate.payload.personId !== approval.identity.personId || approval.certificate.payload.canEnrollDevices) {
     throw new Error("Identity device approval does not match this request")
   }
-  if (canonicalizeJson(approval.certificates.find(value => value.payload.deviceId === request.payload.deviceId)) !==
-      canonicalizeJson(approval.certificate)) throw new Error("Missing app device certificate")
-  const appKey = await verifyDeviceCertificateChain(approval.identity, request.payload.deviceId, approval.certificates)
+  const exactAppCertificate = canonicalizeJson(approval.certificate)
+  if (!approval.certificates.some(value => canonicalizeJson(value) === exactAppCertificate)) {
+    throw new Error("Missing app device certificate")
+  }
+  // A returning app key can have older certificates with the same deviceId in
+  // the signed history. Verify the leaf bound by this approval before following
+  // issuer hashes; selecting the first matching deviceId can pick stale history.
+  const certificateChain = [approval.certificate,
+    ...approval.certificates.filter(value => canonicalizeJson(value) !== exactAppCertificate)]
+  const appKey = await verifyDeviceCertificateChain(approval.identity, request.payload.deviceId, certificateChain)
   if (appKey !== request.payload.devicePublicKey) throw new Error("App device key mismatch")
   const issuerKey = await verifyDeviceCertificateChain(approval.identity, approval.issuerDeviceId, approval.certificates)
   if (approval.proof.signerKeyId !== approval.issuerDeviceId ||
