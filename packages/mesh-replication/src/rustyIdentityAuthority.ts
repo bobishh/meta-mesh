@@ -1,8 +1,10 @@
-import { authorizeIdentityDevice, canonicalizeJson, publicKeyId, sha256Base64Url,
-  verifyEnvelope, verifyIdentityAuthorityView, verifyIdentityDeviceAuthority,
+import { authorizeIdentityDataDevice, canonicalizeJson, publicKeyId, sha256Base64Url,
+  verifyEnvelope, verifyIdentityAuthorityView,
   type IdentityAuthorityHead, type IdentityAuthorityView, type PublicIdentity, type SignedEnvelope } from "@meta-uber/mesh-identity"
 import { rustyOrigin } from "./rustyReplica"
 import type { RustyFetch } from "./rustyDiscovery"
+
+const encoder = new TextEncoder()
 
 export type RustyIdentityAuthorityUpdateAuthorization = {
   kind: "rusty-identity-authority-update"
@@ -18,6 +20,11 @@ export type RustyIdentityAuthorityUpdateAuthorization = {
   requestHash: string
 }
 
+export type RustyIdentityEnforcement = {
+  mode: "additive" | "strict"
+  epoch: 0 | 1
+}
+
 export type RustyIdentityAuthorityReceipt = SignedEnvelope<{
   kind: "rusty-identity-authority-receipt"
   version: 1
@@ -28,7 +35,34 @@ export type RustyIdentityAuthorityReceipt = SignedEnvelope<{
   viewDigest: string
   requestHash: string
   committedAt: number
+  enforcement: RustyIdentityEnforcement
 }>
+
+export type RustyIdentityAuthorityStatus = SignedEnvelope<{
+  kind: "rusty-identity-authority-status"
+  version: 1
+  serviceId: string
+  origin: string
+  personId: string
+  state: "missing" | "ready"
+  requestNonce: string
+  requestHash: string
+  issuedAt: number
+  view: IdentityAuthorityView | null
+  enforcement: RustyIdentityEnforcement
+}>
+
+export class RustyIdentityAuthorityStaleError extends Error {
+  readonly status: RustyIdentityAuthorityStatus
+  readonly view: IdentityAuthorityView
+
+  constructor(status: RustyIdentityAuthorityStatus, view: IdentityAuthorityView) {
+    super("Rusty Identity authority changed; merge the signed current view and retry")
+    this.name = "RustyIdentityAuthorityStaleError"
+    this.status = status
+    this.view = view
+  }
+}
 
 export type RustyIdentityAuthorityRequest = {
   version: 1
@@ -49,6 +83,57 @@ export type PublishRustyIdentityAuthorityOptions = {
   now?: () => number
 }
 
+export type ReadRustyIdentityAuthorityStatusOptions = {
+  origin: string
+  servicePublicKey: string
+  identity: PublicIdentity
+  fetcher?: RustyFetch
+  now?: () => number
+}
+
+/** Read Rusty's signed high-water view without bearer access; transport failure never means an empty view. */
+export async function readRustyIdentityAuthorityStatus(
+  options: ReadRustyIdentityAuthorityStatusOptions,
+): Promise<RustyIdentityAuthorityStatus> {
+  const fetcher = options.fetcher ?? fetch
+  const now = options.now ?? Date.now
+  const origin = rustyOrigin(options.origin)
+  const serviceId = await publicKeyId(options.servicePublicKey)
+  const nonce = randomNonce()
+  const path = `/v2/identity/authority/${encodeURIComponent(options.identity.personId)}/status?nonce=${nonce}`
+  const requestHash = await sha256Base64Url(encoder.encode(canonicalizeJson({ method: "GET", path })))
+  const response = await fetcher(`${origin}${path}`, {
+    method: "GET", headers: { accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw new Error(`Rusty Identity authority status failed with HTTP ${response.status}`)
+  }
+  const status = await readAuthorityStatus(response)
+  const currentTime = now()
+  if (!Number.isSafeInteger(currentTime) || status.signerKeyId !== serviceId ||
+      !await verifyEnvelope(status, options.servicePublicKey, "RUSTY/2")) {
+    throw new Error("Invalid Rusty Identity authority status signature")
+  }
+  const payload = status.payload
+  if (payload.kind !== "rusty-identity-authority-status" || payload.version !== 1 ||
+      payload.serviceId !== serviceId || payload.origin !== origin || payload.personId !== options.identity.personId ||
+      payload.requestNonce !== nonce || payload.requestHash !== requestHash || !Number.isSafeInteger(payload.issuedAt) ||
+      Math.abs(currentTime - payload.issuedAt) > 120_000 ||
+      (payload.state !== "missing" && payload.state !== "ready") ||
+      (payload.state === "missing" ? payload.view !== null : payload.view === null) ||
+      !isRustyIdentityEnforcement(payload.enforcement)) {
+    throw new Error("Rusty Identity authority status does not match this request")
+  }
+  if (payload.view) {
+    const view = await verifyIdentityAuthorityView(payload.view)
+    if (view.personId !== options.identity.personId || view.identityPublicKey !== options.identity.publicKey) {
+      throw new Error("Rusty Identity authority status contains another Identity view")
+    }
+  }
+  return status
+}
+
 /** Advance Rusty's per-person authority high-water; resolve only after verifying its durable receipt. */
 export async function publishRustyIdentityAuthorityView(options: PublishRustyIdentityAuthorityOptions): Promise<RustyIdentityAuthorityReceipt> {
   const fetcher = options.fetcher ?? fetch
@@ -60,9 +145,7 @@ export async function publishRustyIdentityAuthorityView(options: PublishRustyIde
   if (view.personId !== identity.personId || view.identityPublicKey !== identity.publicKey) {
     throw new Error("Rusty Identity authority view belongs to another Identity")
   }
-  const authority = await verifyIdentityDeviceAuthority(identity,
-    { certificates: view.certificates, revocations: view.revocations })
-  const activeKey = await authorizeIdentityDevice(authority, options.deviceId)
+  const activeKey = await authorizeIdentityDataDevice(view, options.deviceId)
   if (activeKey !== options.devicePublicKey) throw new Error("Rusty Identity authority signer key does not match its active device")
   await options.ensureCurrent?.()
 
@@ -89,6 +172,25 @@ export async function publishRustyIdentityAuthorityView(options: PublishRustyIde
     body: JSON.stringify(request), cache: "no-store", signal: AbortSignal.timeout(10_000),
   })
   if (!response.ok) {
+    if (response.status === 409) {
+      const status = await readStaleAuthorityResponse(response)
+      const payload = status.payload
+      const currentTime = now()
+      if (status.signerKeyId !== serviceId || !await verifyEnvelope(status, options.servicePublicKey, "RUSTY/2") ||
+          payload.kind !== "rusty-identity-authority-status" || payload.version !== 1 ||
+          payload.serviceId !== serviceId || payload.origin !== origin || payload.personId !== identity.personId ||
+          payload.state !== "ready" || payload.requestNonce !== authorizationPayload.nonce ||
+          payload.requestHash !== requestHash || !Number.isSafeInteger(payload.issuedAt) ||
+          !Number.isSafeInteger(currentTime) || Math.abs(currentTime - payload.issuedAt) > 120_000 || !payload.view ||
+          !isRustyIdentityEnforcement(payload.enforcement)) {
+        throw new Error("Invalid Rusty Identity stale-authority response")
+      }
+      const currentView = await verifyIdentityAuthorityView(payload.view)
+      if (currentView.personId !== identity.personId || currentView.identityPublicKey !== identity.publicKey) {
+        throw new Error("Rusty stale-authority response belongs to another Identity")
+      }
+      throw new RustyIdentityAuthorityStaleError(status, currentView)
+    }
     await response.body?.cancel()
     throw new Error(`Rusty Identity authority update failed with HTTP ${response.status}`)
   }
@@ -103,10 +205,36 @@ export async function publishRustyIdentityAuthorityView(options: PublishRustyIde
       payload.serviceId !== serviceId || payload.origin !== origin || payload.personId !== identity.personId ||
       canonicalizeJson(payload.authorityHead) !== canonicalizeJson(view.revocationHead) ||
       payload.viewDigest !== view.viewDigest || payload.requestHash !== requestHash ||
-      !Number.isSafeInteger(payload.committedAt)) {
+      !Number.isSafeInteger(payload.committedAt) || !isRustyIdentityEnforcement(payload.enforcement)) {
     throw new Error("Rusty Identity authority receipt does not match the submitted view")
   }
   return receipt
+}
+
+/** Additive mode acknowledges storage only; strict mode enforces the authority view on data routes. */
+export function isRustyIdentityAuthorityStrict(value: RustyIdentityEnforcement): boolean {
+  return isRustyIdentityEnforcement(value) && value.mode === "strict"
+}
+
+/** Keep the highest enforcement mode observed from a service; signed downgrades must fail closed. */
+export function mergeRustyIdentityEnforcement(
+  previous: RustyIdentityEnforcement | null,
+  incoming: RustyIdentityEnforcement,
+): RustyIdentityEnforcement {
+  if (!isRustyIdentityEnforcement(incoming) || (previous !== null && !isRustyIdentityEnforcement(previous))) {
+    throw new Error("Invalid Rusty Identity enforcement state")
+  }
+  if (previous?.mode === "strict" && incoming.mode !== "strict") {
+    throw new Error("Rusty Identity enforcement was downgraded by the service")
+  }
+  return { ...incoming }
+}
+
+function isRustyIdentityEnforcement(value: unknown): value is RustyIdentityEnforcement {
+  if (!value || typeof value !== "object") return false
+  const enforcement = value as Partial<RustyIdentityEnforcement>
+  return (enforcement.mode === "additive" && enforcement.epoch === 0) ||
+    (enforcement.mode === "strict" && enforcement.epoch === 1)
 }
 
 function randomNonce(): string {
@@ -150,10 +278,87 @@ async function readReceipt(response: Response): Promise<RustyIdentityAuthorityRe
   if (!isRecord(value) || !hasExactKeys(value, ["payload", "signerKeyId", "signature"]) ||
       typeof value.signerKeyId !== "string" || typeof value.signature !== "string" || !isRecord(value.payload) ||
       !hasExactKeys(value.payload, ["kind", "version", "serviceId", "origin", "personId", "authorityHead",
-        "viewDigest", "requestHash", "committedAt"])) {
+        "viewDigest", "requestHash", "committedAt", "enforcement"])) {
     throw new Error("Invalid Rusty Identity authority receipt")
   }
   return value as unknown as RustyIdentityAuthorityReceipt
+}
+
+async function readAuthorityStatus(response: Response): Promise<RustyIdentityAuthorityStatus> {
+  const contentLength = response.headers.get("content-length")
+  if (contentLength !== null && (!/^\d+$/u.test(contentLength) || Number(contentLength) > 1_048_576)) {
+    await response.body?.cancel()
+    throw new Error("Rusty Identity authority status is too large")
+  }
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("Rusty Identity authority status is empty")
+  const chunks: Uint8Array[] = []
+  let length = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      length += value.byteLength
+      if (length > 1_048_576) {
+        await reader.cancel()
+        throw new Error("Rusty Identity authority status is too large")
+      }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  let value: unknown
+  try { value = JSON.parse(text) } catch { throw new Error("Invalid Rusty Identity authority status") }
+  if (!isRecord(value) || !hasExactKeys(value, ["payload", "signerKeyId", "signature"]) ||
+      typeof value.signerKeyId !== "string" || typeof value.signature !== "string" || !isRecord(value.payload) ||
+      !hasExactKeys(value.payload, ["kind", "version", "serviceId", "origin", "personId", "state", "requestNonce",
+        "requestHash", "issuedAt", "view", "enforcement"])) {
+    throw new Error("Invalid Rusty Identity authority status")
+  }
+  return value as unknown as RustyIdentityAuthorityStatus
+}
+
+async function readStaleAuthorityResponse(response: Response): Promise<RustyIdentityAuthorityStatus> {
+  const contentLength = response.headers.get("content-length")
+  if (contentLength !== null && (!/^\d+$/u.test(contentLength) || Number(contentLength) > 1_048_576)) {
+    await response.body?.cancel()
+    throw new Error("Rusty Identity stale-authority response is too large")
+  }
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("Rusty Identity stale-authority response is empty")
+  const chunks: Uint8Array[] = []
+  let length = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      length += value.byteLength
+      if (length > 1_048_576) {
+        await reader.cancel()
+        throw new Error("Rusty Identity stale-authority response is too large")
+      }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  let value: unknown
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) } catch {
+    throw new Error("Invalid Rusty Identity stale-authority response")
+  }
+  if (!isRecord(value) || value.code !== "identity_authority_stale" || !isRecord(value.authorityStatus) ||
+      !hasExactKeys(value.authorityStatus, ["payload", "signerKeyId", "signature"]) ||
+      typeof value.authorityStatus.signerKeyId !== "string" || typeof value.authorityStatus.signature !== "string" ||
+      !isRecord(value.authorityStatus.payload) ||
+      !hasExactKeys(value.authorityStatus.payload, ["kind", "version", "serviceId", "origin", "personId", "state",
+        "requestNonce", "requestHash", "issuedAt", "view", "enforcement"])) {
+    throw new Error("Invalid Rusty Identity stale-authority response")
+  }
+  return value.authorityStatus as unknown as RustyIdentityAuthorityStatus
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
