@@ -1,15 +1,17 @@
-import { canonicalizeJson, identityDeviceDescendants, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain,
+import { canonicalizeJson, identityDeviceDescendants, publicKeyId, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain,
   verifyEnvelope, verifyIdentityDeviceAuthority,
   type DeviceCertificate, type IdentityDeviceRevocation, type LocalProfile, type PublicIdentity, type SignedEnvelope } from "./index"
 import { isValidIdentityDisplayName, isValidIdentityProfilePhoto } from "./profileValidation"
 
-export type IdentityProfileField = "name" | "photo"
-export type IdentityProfileValue = string | { avatarData: string | null; changedAt: string }
+export type IdentityRustyServicePin = { origin: string; serviceId: string; servicePublicKey: string }
+export type IdentityProfileField = "name" | "photo" | "rustyServicePin"
+type IdentityProfilePresentationField = "name" | "photo"
+export type IdentityProfileValue = string | { avatarData: string | null; changedAt: string } | IdentityRustyServicePin
 type Clock = Record<string, number>
 type ProfilePayload = { kind: "identity-profile-update"; version: 1; personId: string; deviceId: string;
   counter: number; context: Clock; field: IdentityProfileField; value: IdentityProfileValue; supersedesLegacy: string[] }
 export type IdentityProfileOperation = { signed: SignedEnvelope<ProfilePayload>; certificates: DeviceCertificate[] }
-type LegacyObservation = { id: string; field: IdentityProfileField; value: IdentityProfileValue }
+type LegacyObservation = { id: string; field: IdentityProfilePresentationField; value: string | { avatarData: string | null; changedAt: string } }
 export type IdentityProfileState = { version: 1; personId: string; operations: IdentityProfileOperation[]; legacy: LegacyObservation[] }
 const maxOperations = 512
 const maxContextEntries = 256
@@ -44,9 +46,10 @@ export async function readIdentityProfileState(value: unknown, identity: PublicI
   const legacy = new Map<string, LegacyObservation>()
   for (const candidate of state.legacy) {
     if (!isRecord(candidate) || !onlyKeys(candidate, ["id", "field", "value"]) ||
-        typeof candidate.id !== "string" || !isProfileField(candidate.field)) throw new Error("Invalid legacy profile observation")
+        typeof candidate.id !== "string" || !isPresentationField(candidate.field)) throw new Error("Invalid legacy profile observation")
     validateValue(candidate.field, candidate.value)
-    const observation = { id: candidate.id, field: candidate.field, value: structuredClone(candidate.value) }
+    const observation = { id: candidate.id, field: candidate.field,
+      value: structuredClone(candidate.value) as string | { avatarData: string | null; changedAt: string } }
     if (await legacyId(observation.field, observation.value) !== observation.id) throw new Error("Imported profile contents do not match their proof")
     legacy.set(observation.id, observation)
   }
@@ -54,6 +57,7 @@ export async function readIdentityProfileState(value: unknown, identity: PublicI
     operations: [...operations.values()].sort((a, b) => compareOrdinal(operationId(a), operationId(b))),
     legacy: [...legacy.values()].sort((a, b) => compareOrdinal(a.id, b.id)) }
   validateCausality(result.operations)
+  identityProfileRustyServicePins(result)
   for (const operation of result.operations) for (const id of operation.signed.payload.supersedesLegacy) {
     const observation = legacy.get(id)
     if (!observation) throw new Error("Missing original profile observation")
@@ -201,9 +205,38 @@ export async function createIdentityProfileOperation(profileValue: LocalProfile,
   return operation
 }
 
+/** Append a manager-authorized, monotonic Rusty service pin to signed Identity history. */
+export async function createIdentityRustyServicePinOperation(profile: LocalProfile, state: IdentityProfileState,
+  pin: IdentityRustyServicePin, certificates: readonly DeviceCertificate[] = [profile.certificate],
+  ensureCurrent: () => void | Promise<void> = () => {}): Promise<IdentityProfileOperation | null> {
+  pin = await normalizeIdentityRustyServicePin(pin)
+  const current = await readIdentityProfileState(state, profile.identity, certificates)
+  const existing = identityProfileRustyServicePins(current).find(value => value.origin === pin.origin)
+  if (existing) {
+    if (canonicalizeJson(existing) !== canonicalizeJson(pin)) throw new Error("Conflicting Rusty service key for origin")
+    return null
+  }
+  return createIdentityProfileOperation(profile, current, "rustyServicePin", pin, certificates, ensureCurrent)
+}
+
+/** Project the validated append-only profile history into its unique service-origin catalog. */
+export function identityProfileRustyServicePins(state: IdentityProfileState): IdentityRustyServicePin[] {
+  const byOrigin = new Map<string, IdentityRustyServicePin>()
+  for (const operation of state.operations) {
+    if (operation.signed.payload.field !== "rustyServicePin") continue
+    const pin = operation.signed.payload.value as IdentityRustyServicePin
+    const existing = byOrigin.get(pin.origin)
+    if (existing && canonicalizeJson(existing) !== canonicalizeJson(pin)) {
+      throw new Error("Conflicting Rusty service key for origin")
+    }
+    byOrigin.set(pin.origin, structuredClone(pin))
+  }
+  return [...byOrigin.values()].sort((left, right) => compareOrdinal(left.origin, right.origin))
+}
+
 /** Import old unsigned presentation once, retaining it until an explicit signed edit supersedes it. */
 export async function observeLegacyIdentityProfile(stateValue: IdentityProfileState, identity: PublicIdentity,
-  field: IdentityProfileField, value: IdentityProfileValue): Promise<IdentityProfileState> {
+  field: IdentityProfilePresentationField, value: string | { avatarData: string | null; changedAt: string }): Promise<IdentityProfileState> {
   value = structuredClone(value)
   validateValue(field, value)
   const current = await readIdentityProfileState(stateValue, identity)
@@ -213,13 +246,23 @@ export async function observeLegacyIdentityProfile(stateValue: IdentityProfileSt
 }
 
 /** A conflict retains every incompatible value; only a later causal operation resolves it. */
+export function identityProfileValue(state: IdentityProfileState, field: "name" | "photo"):
+  { status: "empty" | "value" | "conflict"; values: (string | { avatarData: string | null; changedAt: string })[] }
+export function identityProfileValue(state: IdentityProfileState, field: "rustyServicePin"):
+  { status: "empty" | "value" | "conflict"; values: IdentityRustyServicePin[] }
+export function identityProfileValue(state: IdentityProfileState, field: IdentityProfileField):
+  { status: "empty" | "value" | "conflict"; values: IdentityProfileValue[] }
 export function identityProfileValue(state: IdentityProfileState, field: IdentityProfileField):
   { status: "empty" | "value" | "conflict"; values: IdentityProfileValue[] } {
+  if (field === "rustyServicePin") {
+    const values = identityProfileRustyServicePins(state)
+    return { status: values.length ? "value" : "empty", values }
+  }
   const operations = state.operations.filter(item => item.signed.payload.field === field)
   const superseded = new Set(operations.flatMap(item => item.signed.payload.supersedesLegacy))
   const values = [...operations.filter(item => !operations.some(other => precedes(item, other))).map(item => item.signed.payload.value),
     ...state.legacy.filter(item => item.field === field && !superseded.has(item.id)).map(item => item.value)]
-  const distinct = new Map(values.map(value => [typeof value === "string" ? value : value.avatarData ?? "", value]))
+  const distinct = new Map(values.map(value => [typeof value === "string" ? value : (value as { avatarData: string | null }).avatarData ?? "", value]))
   const selected = [...distinct.entries()].sort(([a], [b]) => compareOrdinal(a, b)).map(([, value]) => value)
   return { status: selected.length > 1 ? "conflict" : selected.length ? "value" : "empty", values: selected }
 }
@@ -278,9 +321,44 @@ function parseOperation(value: unknown): IdentityProfileOperation {
 function validateValue(field: IdentityProfileField, value: unknown): asserts value is IdentityProfileValue {
   if (field === "name") {
     if (!isValidIdentityDisplayName(value)) throw new Error("Invalid identity profile name")
+  } else if (field === "rustyServicePin") {
+    if (!isIdentityRustyServicePin(value)) throw new Error("Invalid Rusty service pin")
   } else if (!isValidIdentityProfilePhoto(value)) {
     throw new Error("Invalid identity profile photo")
   }
+}
+
+function isIdentityRustyServicePin(value: unknown): value is IdentityRustyServicePin {
+  if (!isRecord(value) || !onlyKeys(value, ["origin", "serviceId", "servicePublicKey"]) ||
+      typeof value.origin !== "string" || typeof value.serviceId !== "string" ||
+      typeof value.servicePublicKey !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value.serviceId)) return false
+  try {
+    const url = new URL(value.origin)
+    if (url.origin !== value.origin || url.username || url.password || url.pathname !== "/" || url.search || url.hash ||
+        (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) return false
+  } catch { return false }
+  return true
+}
+
+export async function normalizeIdentityRustyServicePin(value: unknown): Promise<IdentityRustyServicePin> {
+  if (!isIdentityRustyServicePin(value) || await publicKeyId(value.servicePublicKey) !== value.serviceId) {
+    throw new Error("Invalid Rusty service pin origin or key")
+  }
+  return structuredClone(value)
+}
+
+export async function normalizeIdentityRustyServicePins(value: unknown): Promise<IdentityRustyServicePin[]> {
+  if (!Array.isArray(value) || value.length > 128) throw new Error("Invalid Rusty service pin catalog")
+  const byOrigin = new Map<string, IdentityRustyServicePin>()
+  for (const candidate of value) {
+    const pin = await normalizeIdentityRustyServicePin(candidate)
+    const existing = byOrigin.get(pin.origin)
+    if (existing && canonicalizeJson(existing) !== canonicalizeJson(pin)) {
+      throw new Error("Conflicting Rusty service key for origin")
+    }
+    byOrigin.set(pin.origin, pin)
+  }
+  return [...byOrigin.values()].sort((left, right) => compareOrdinal(left.origin, right.origin))
 }
 
 async function legacyId(field: IdentityProfileField, value: IdentityProfileValue): Promise<string> {
@@ -299,6 +377,7 @@ function boundedSnapshot(value: unknown): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, any> { return value !== null && typeof value === "object" && !Array.isArray(value) }
 function onlyKeys(value: Record<string, unknown>, keys: string[]): boolean { return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key)) }
-function isProfileField(value: unknown): value is IdentityProfileField { return value === "name" || value === "photo" }
+function isProfileField(value: unknown): value is IdentityProfileField { return value === "name" || value === "photo" || value === "rustyServicePin" }
+function isPresentationField(value: unknown): value is IdentityProfilePresentationField { return value === "name" || value === "photo" }
 function isPersonId(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/u.test(value) }
 function isHash(value: unknown): value is string { return isPersonId(value) }
