@@ -3,6 +3,7 @@ import { entropyToMnemonic, generateMnemonic, mnemonicToEntropy, validateMnemoni
 import { wordlist } from "@scure/bip39/wordlists/english.js"
 import { EFF_LONG_WORDS } from "./eff-long"
 import { readIdentityProfileState, readIdentityProfileStateWithRevocations, type IdentityProfileState } from "./identityProfile"
+import { verifyIdentityRootReplacementOffer, type IdentityRootReplacementOffer } from "./identityRootReplacement"
 
 export type PersonId = string
 export type DeviceId = string
@@ -1521,6 +1522,59 @@ export class BrowserIdentityStore {
     certificates: DeviceCertificate[],
     options: { consentToReplaceExistingIdentity: true; commit?: IdentityAdoptionCommit },
   ): Promise<LocalProfile> {
+    return this.adoptCertifiedDevice(submitted, certificates, options, false)
+  }
+
+  /** Replace the current local profile only with the fresh app key authorized by a dual-root offer. */
+  async adoptRootReplacementDevice(
+    submitted: LocalProfile,
+    offer: IdentityRootReplacementOffer,
+    options: { consentToReplaceExistingIdentity: true; commit?: IdentityAdoptionCommit },
+  ): Promise<LocalProfile> {
+    if (options.consentToReplaceExistingIdentity !== true) {
+      throw new Error("Root replacement requires explicit consent to replace this browser's Identity")
+    }
+    if (submitted.privateKeys.identityPrivateKey) {
+      throw new Error("Root replacement app profile must not include an Identity root key")
+    }
+    const current = await this.bootstrap()
+    const verified = await verifyIdentityRootReplacementOffer(offer, offer.request, current.identity)
+    const request = offer.request.authorization.payload
+    if (request.requesterDeviceId !== current.device.deviceId ||
+        request.requesterDevicePublicKey !== current.device.publicKey ||
+        !offer.previousAuthorityView.certificates.some(certificate =>
+          canonicalizeJson(certificate) === canonicalizeJson(current.certificate))) {
+      throw new Error("Root replacement request is not bound to this browser's current Identity device")
+    }
+    if (submitted.identity.personId !== verified.successorPersonId ||
+        submitted.identity.publicKey !== offer.successorIdentity.publicKey ||
+        submitted.device.deviceId !== request.successorDeviceId ||
+        submitted.device.publicKey !== request.successorDevicePublicKey ||
+        canonicalizeJson(submitted.certificate) !== canonicalizeJson(verified.certificate)) {
+      throw new Error("Root replacement candidate does not match the signed offer")
+    }
+    const proofPayload = {
+      kind: "mesh-identity-root-replacement-adoption-check",
+      version: 1,
+      offerHash: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(offer.authorization))),
+      personId: verified.successorPersonId,
+      deviceId: submitted.device.deviceId,
+      devicePublicKey: submitted.device.publicKey,
+    }
+    const proof = await signEnvelope(submitted.privateKeys.devicePrivateKey, proofPayload,
+      submitted.device.deviceId, "MESH-IDENTITY-ROOT-REPLACEMENT-ADOPTION/1")
+    if (!await verifyEnvelope(proof, submitted.device.publicKey, "MESH-IDENTITY-ROOT-REPLACEMENT-ADOPTION/1")) {
+      throw new Error("Root replacement app private key does not match the signed offer")
+    }
+    return this.adoptCertifiedDevice(submitted, verified.certificates, options, true)
+  }
+
+  private async adoptCertifiedDevice(
+    submitted: LocalProfile,
+    certificates: DeviceCertificate[],
+    options: { consentToReplaceExistingIdentity: true; commit?: IdentityAdoptionCommit },
+    allowAppOnlyCertificate: boolean,
+  ): Promise<LocalProfile> {
     const commit = options.commit
     const identity = structuredClone(submitted.identity)
     const device = structuredClone(submitted.device)
@@ -1528,7 +1582,8 @@ export class BrowserIdentityStore {
     const chain = structuredClone(certificates)
     if (submitted.privateKeys.identityPrivateKey) throw new Error("Enrolled device profile must not include the Identity root key")
     if (certificate.payload.deviceId !== device.deviceId || certificate.payload.devicePublicKey !== device.publicKey ||
-      certificate.payload.personId !== identity.personId || !certificate.payload.canEnrollDevices ||
+      certificate.payload.personId !== identity.personId ||
+      certificate.payload.canEnrollDevices !== !allowAppOnlyCertificate ||
       canonicalizeJson(chain.find(item => item.payload.deviceId === device.deviceId)) !== canonicalizeJson(certificate)) {
       throw new Error("Enrolled device profile does not match its certificate chain")
     }
