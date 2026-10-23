@@ -142,6 +142,10 @@ export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, 
 export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "./identityEnrollment"
 export { createServiceLoginRequest, encodeServiceLoginRequest, verifyServiceLoginApproval } from "./serviceLoginClient"
 
+export { createIdentityRootSuccession, verifyIdentityRootSuccession } from "./identityRootSuccession"
+export type { IdentityRootSuccession, IdentityRootSuccessionPayload,
+  IdentityRootSuccessionAcceptancePayload } from "./identityRootSuccession"
+
 export {
   assertServiceLoginSession,
   createServiceLoginApproval,
