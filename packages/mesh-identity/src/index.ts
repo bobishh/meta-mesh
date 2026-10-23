@@ -765,6 +765,30 @@ export async function createIdentityAuthorityView(
   return verifyIdentityAuthorityView(view, domain)
 }
 
+/** Explicit local-first genesis path; adopted device certificates cannot bootstrap a person's Rusty authority. */
+export async function createLocalRootIdentityAuthorityView(
+  profile: LocalProfile,
+  evidenceValue: IdentityDeviceAuthorityEvidence,
+  profileState: IdentityProfileState,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityAuthorityView> {
+  const rootKey = profile.privateKeys.identityPrivateKey
+  if (!rootKey || profile.identity.personId !== await publicKeyId(profile.identity.publicKey) ||
+      profile.device.deviceId !== profile.certificate.payload.deviceId ||
+      profile.device.publicKey !== profile.certificate.payload.devicePublicKey ||
+      profile.certificate.signerKeyId !== profile.identity.personId ||
+      profile.certificate.payload.issuerCertificateHash !== null ||
+      !profile.certificate.payload.canEnrollDevices ||
+      !evidenceValue.certificates.some(value => canonicalizeJson(value) === canonicalizeJson(profile.certificate))) {
+    throw new Error("A local root profile with root authority is required to create Identity authority genesis")
+  }
+  const seed = await identitySeedFromPrivateKey(rootKey, profile.identity.personId)
+  seed.fill(0)
+  const authority = await verifyIdentityDeviceAuthority(profile.identity, evidenceValue, domain)
+  await authorizeIdentityDevice(authority, profile.device.deviceId, domain)
+  return createIdentityAuthorityView(profile.identity, evidenceValue, profileState, domain)
+}
+
 /** Verify a portable view before it is stored, merged or used to authorize an actor. */
 export async function verifyIdentityAuthorityView(
   value: unknown,

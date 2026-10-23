@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createRecoverableIdentity, createIdentityAuthorityView, verifyIdentityAuthorityView,
+import { createRecoverableIdentity, createIdentityAuthorityView, createLocalRootIdentityAuthorityView, verifyIdentityAuthorityView,
   mergeIdentityAuthorityViews, authorizeIdentityDataDevice, authorizeIdentityDevice, verifyIdentityDeviceAuthority, signEnvelope,
   type DeviceCertificate } from "./index"
 import { createIdentityEnrollmentDevice } from "./identityEnrollment"
@@ -45,6 +45,25 @@ describe("portable Identity authority view", () => {
       revocationHead: base.revocationHead,
       certificates: expect.arrayContaining([appCertificate]),
     })
+  })
+
+  it("Given a genuinely local root profile, when its first Rusty authority view is created, then allow genesis; adopted app profiles cannot create it", async () => {
+    const root = (await createRecoverableIdentity("better", "Root owner")).profile
+    await expect(createLocalRootIdentityAuthorityView(root,
+      { certificates: [root.certificate], revocations: [] }, emptyIdentityProfileState(root.identity.personId)))
+      .resolves.toMatchObject({ revocationHead: { revision: 0 } })
+
+    const app = await createIdentityEnrollmentDevice("App")
+    const appCertificate = await signEnvelope(root.privateKeys.identityPrivateKey!, {
+      kind: "device-certificate" as const, version: 1 as const, personId: root.identity.personId,
+      deviceId: app.device.deviceId, devicePublicKey: app.device.publicKey, issuerCertificateHash: null,
+      canEnrollDevices: false,
+    }, root.identity.personId)
+    const adoptedApp = { ...app, identity: root.identity, certificate: appCertificate,
+      privateKeys: { devicePrivateKey: app.privateKey } }
+    await expect(createLocalRootIdentityAuthorityView(adoptedApp as never,
+      { certificates: [root.certificate, appCertificate], revocations: [] },
+      emptyIdentityProfileState(root.identity.personId))).rejects.toThrow(/root authority/i)
   })
 
   it("Given a known newer revocation head, when an older view or same-revision fork is merged, then reject it", async () => {
