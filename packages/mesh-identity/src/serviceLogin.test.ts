@@ -35,9 +35,14 @@ describe("mesh service login", () => {
     ["wrong version", { ...request, version: 2 }],
     ["HTTP remote origin", { ...request, origin: "http://boards.example" }],
     ["malformed nonce", { ...request, challenge: "too short" }],
-    ["long lifetime", { ...request, expires_at: Math.floor(Date.now() / 1000) + 121 }],
   ])("Given %s, when parsed, then reject without legacy fallback", (_label, value) => {
     expect(() => parseServiceLoginRequest(encode(value), Math.floor(Date.now() / 1000))).toThrow()
+  })
+
+  it("Given a long lifetime, when parsed against the same clock, then reject without legacy fallback", () => {
+    const now = Math.floor(Date.now() / 1000)
+    const value = { ...request, expires_at: now + 121 }
+    expect(() => parseServiceLoginRequest(encode(value), now)).toThrow()
   })
 
   it("Given a request-bound active profile, when approved, then emit only a short-lived service proof", async () => {
