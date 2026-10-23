@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { createRecoverableIdentity, verifyDeviceCertificateChain } from "./index"
-import { createDeviceAuthorizationRequest, issueDeviceAuthorization } from "./deviceAuthorization"
+import { certificateHash, createRecoverableIdentity, verifyDeviceCertificateChain } from "./index"
+import { createDelegatedCertificate, createDeviceAuthorizationApproval, createDeviceAuthorizationRequest,
+  issueDeviceAuthorization, verifyDeviceAuthorizationApproval } from "./deviceAuthorization"
 
 const applicationOrigin = "https://boards.example"
 const challenge = "a".repeat(64)
@@ -43,5 +44,62 @@ describe("application device enrollment", () => {
       .rejects.toThrow(/expired/iu)
     await expect(issueDeviceAuthorization(identity, current, { applicationOrigin, challenge,
       ensureCurrent: () => { throw new Error("Identity changed") } })).rejects.toThrow(/changed/iu)
+  })
+})
+
+describe("delegated app device authorization", () => {
+  it("Given an authorized Identity device without the root key, when it approves an app key, then issues a non-enrolling certificate", async () => {
+    const root = (await createRecoverableIdentity("better", "Root")).profile
+    const delegated = (await createRecoverableIdentity("better", "Temporary")).profile
+    const app = (await createRecoverableIdentity("better", "App device")).profile
+    const delegatedCertificate = await createDelegatedCertificate(root.privateKeys.devicePrivateKey,
+      root.device.deviceId, root.identity.personId, delegated.device.deviceId, delegated.device.publicKey,
+      await certificateHash(root.certificate))
+    const delegatedProfile = { ...delegated, identity: root.identity, certificate: delegatedCertificate,
+      privateKeys: { devicePrivateKey: delegated.privateKeys.devicePrivateKey } }
+    const chain = [root.certificate, delegatedCertificate]
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: root.identity.personId })
+    const leaf = await issueDeviceAuthorization(delegatedProfile, request, {
+      applicationOrigin, challenge, certificates: chain,
+    })
+    expect(leaf.payload).toMatchObject({ personId: root.identity.personId, deviceId: app.device.deviceId,
+      devicePublicKey: app.device.publicKey, issuerCertificateHash: await certificateHash(delegatedCertificate),
+      canEnrollDevices: false })
+    expect(await verifyDeviceCertificateChain(root.identity, app.device.deviceId, [...chain, leaf])).toBe(app.device.publicKey)
+  })
+
+  it("Given an ordinary non-enrolling app certificate, when that app tries to authorize another device, then reject", async () => {
+    const root = (await createRecoverableIdentity("better", "Root")).profile
+    const app = (await createRecoverableIdentity("better", "App device")).profile
+    const next = (await createRecoverableIdentity("better", "Next device")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt })
+    const leaf = await issueDeviceAuthorization(root, request, { applicationOrigin, challenge })
+    const appProfile = { ...app, identity: root.identity, certificate: leaf,
+      privateKeys: { devicePrivateKey: app.privateKeys.devicePrivateKey } }
+    const nextRequest = await createDeviceAuthorizationRequest(next, { applicationOrigin, challenge, expiresAt })
+    await expect(issueDeviceAuthorization(appProfile, nextRequest, {
+      applicationOrigin, challenge, certificates: [root.certificate, leaf],
+    })).rejects.toThrow(/authorize|enroll|permission/iu)
+  })
+})
+
+describe("signed app device authorization roundtrip", () => {
+  it("Given a fresh app request, when Identity approves it, then only the exact request and non-enrolling app key return", async () => {
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const app = (await createRecoverableIdentity("better", "App device")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: identity.identity.personId })
+    const approval = await createDeviceAuthorizationApproval(identity, request, {
+      applicationOrigin, challenge, now: () => Date.now(),
+    })
+    const verified = await verifyDeviceAuthorizationApproval(approval, request)
+    expect(verified.certificate.payload).toMatchObject({ personId: identity.identity.personId,
+      deviceId: app.device.deviceId, devicePublicKey: app.device.publicKey, canEnrollDevices: false })
+    await expect(verifyDeviceAuthorizationApproval(approval, { ...request,
+      payload: { ...request.payload, challenge: "b".repeat(64) } })).rejects.toThrow(/match|request/iu)
+    await expect(verifyDeviceAuthorizationApproval({ ...approval,
+      certificate: { ...approval.certificate, payload: { ...approval.certificate.payload, devicePublicKey: identity.device.publicKey } } }, request))
+      .rejects.toThrow()
   })
 })
