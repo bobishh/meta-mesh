@@ -82,11 +82,61 @@ export type PublishRustyScopeAuthorityOptions = {
   now?: () => number
 }
 
+export type ReadRustyScopeAuthorityOptions = {
+  origin: string
+  servicePublicKey: string
+  scopeId: string
+  fetcher?: RustyFetch
+  validateSnapshot: (snapshot: unknown) => ScopeAuthorityValidation
+  now?: () => number
+}
+
+export type ReadRustyScopeAuthorityResult = {
+  status: RustyScopeAuthorityStatus
+  authority: ScopeAuthorityValidation | null
+}
+
 export class RustyScopeAuthorityStaleError extends Error {
   constructor(readonly status: RustyScopeAuthorityStatus, readonly scopeAuthority: unknown) {
     super("Rusty workspace scope authority changed; merge the signed current snapshot and retry")
     this.name = "RustyScopeAuthorityStaleError"
   }
+}
+
+/** Read Rusty's signed workspace authority without requiring the caller to control it. */
+export async function readRustyScopeAuthorityStatus(
+  options: ReadRustyScopeAuthorityOptions,
+): Promise<ReadRustyScopeAuthorityResult> {
+  const now = options.now ?? Date.now
+  const fetcher = options.fetcher ?? fetch
+  const origin = rustyOrigin(options.origin)
+  const scopeId = options.scopeId
+  const serviceId = await publicKeyId(options.servicePublicKey)
+  if (!idPattern.test(scopeId)) throw new Error("Invalid Rusty workspace scope authority binding")
+  const requestId = randomNonce()
+  const requestHash = await sha256Base64Url(encoder.encode(canonicalizeJson({ version: 1, scopeId, requestId })))
+  const query = new URLSearchParams({ requestId, requestHash })
+  const response = await fetcher(`${origin}/v2/scopes/${encodeURIComponent(scopeId)}/authority/status?${query.toString()}`, {
+    method: "GET", headers: { accept: "application/json" }, cache: "no-store", redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw new Error(`Rusty workspace scope authority status failed with HTTP ${response.status}`)
+  }
+  const status = await readSignedResponse<RustyScopeAuthorityStatus>(response, "status")
+  await assertStatus(status, { serviceId, servicePublicKey: options.servicePublicKey, origin, scopeId,
+    requestId, requestHash, now: now() })
+  if (status.payload.state === "missing") return { status, authority: null }
+  if (status.payload.workspaceId === null || status.payload.scopeAuthority === null) {
+    throw new Error("Rusty ready scope authority status omitted its workspace ledger")
+  }
+  const authority = options.validateSnapshot(status.payload.scopeAuthority)
+  assertSnapshotBinding(authority, status.payload.workspaceId)
+  if (authority.controllerPersonId !== status.payload.controllerPersonId || authority.controlEpoch !== status.payload.controlEpoch) {
+    throw new Error("Rusty signed scope authority status does not match its snapshot")
+  }
+  return { status, authority }
 }
 
 /** Register a workspace's signed succession ledger before its protected scope is used. */
