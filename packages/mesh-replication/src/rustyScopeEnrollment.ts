@@ -24,6 +24,7 @@ export type RustyScopeEnrollmentChallenge = {
   deviceId: string
   deviceKeyId: string
   expectedRevision: number
+  scopePurpose?: "workspace" | "person-identity"
   issuedAt: number
   expiresAt: number
 }
@@ -40,6 +41,7 @@ export type RustyScopeEnrollmentAuthorization = {
   deviceId: string
   deviceKeyId: string
   expectedRevision: number
+  scopePurpose?: "workspace" | "person-identity"
   readTokenHash: string
   writeTokenHash: string
   revoked: boolean
@@ -57,6 +59,7 @@ export type RustyScopePolicyReceiptPayload = {
   revision: number
   revoked: boolean
   challengeId: string
+  scopePurpose?: "workspace" | "person-identity"
   authorizationHash: string
   minimumWriterVersion?: 2
 }
@@ -80,6 +83,7 @@ export type RustyScopeEnrollmentBinding = {
   servicePublicKey: string
   personId: string
   deviceId: string
+  scopePurpose?: "workspace" | "person-identity"
   readTokenHash: string
   writeTokenHash: string
   revoked: boolean
@@ -95,6 +99,8 @@ export type RustyScopeEnrollmentJournal = {
 }
 
 export type RustyScopeEnrollmentClientOptions = {
+  /** Omit only for recovery of legacy enrollment wire records. */
+  scopePurpose?: "workspace" | "person-identity"
   access: RustyScopeEnrollmentAccess
   identity: PublicIdentity
   deviceId: string
@@ -132,6 +138,9 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
   if (!identity.personId || !identity.publicKey || !options.deviceId || !options.devicePublicKey || !certificates.length || certificates.length > 32 ||
     !access.scopeId || !access.servicePublicKey || !access.readToken || !access.writeToken) {
     throw new Error("Invalid Rusty scope enrollment input")
+  }
+  if (options.scopePurpose !== undefined && options.scopePurpose !== "workspace" && options.scopePurpose !== "person-identity") {
+    throw new Error("Invalid Rusty scope purpose")
   }
 
   const ensureCurrent = async (capability?: SignedEnvelope<RustyManagementCapability>) => {
@@ -173,7 +182,7 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
 
     const binding: RustyScopeEnrollmentBinding = {
       origin: access.origin, scopeId: access.scopeId, servicePublicKey: access.servicePublicKey,
-      personId: identity.personId, deviceId: options.deviceId,
+      personId: identity.personId, deviceId: options.deviceId, ...(options.scopePurpose ? { scopePurpose: options.scopePurpose } : {}),
       readTokenHash: await sha256Base64Url(new TextEncoder().encode(access.readToken)),
       writeTokenHash: await sha256Base64Url(new TextEncoder().encode(access.writeToken)), revoked,
       ...(minimumWriterVersion === undefined ? {} : { minimumWriterVersion }),
@@ -185,9 +194,11 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
     }
 
     const initialBody = pending?.body ?? await createRequest({ access, identity, deviceId: options.deviceId, certificates,
+      scopePurpose: options.scopePurpose,
       binding, service, managementCapability, signAuthorization: options.signAuthorization, fetcher, now,
       ensureCurrent: () => ensureCurrent(managementCapability) })
     const initialRequest = await verifyRequest(initialBody, { access, identity, deviceId: options.deviceId,
+      scopePurpose: options.scopePurpose,
       devicePublicKey: options.devicePublicKey, certificates,
       binding, service, managementCapability, allowExpired: Boolean(pending), now })
     if (featureFlag(service, "scopeManagement") === 1 && !managementCapability && !enrollmentOptions.allowLegacyUnmanagedScope) {
@@ -208,10 +219,11 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
     } catch (error) {
       if (!pending || !(error instanceof RustyScopeEnrollmentHttpError) || error.status !== 410) throw error
       await ensureCurrent(managementCapability)
-      const freshBody = await createRequest({ access, identity, deviceId: options.deviceId, certificates, binding, service,
+      const freshBody = await createRequest({ access, identity, deviceId: options.deviceId, certificates, scopePurpose: options.scopePurpose, binding, service,
         managementCapability, signAuthorization: options.signAuthorization, fetcher, now,
         ensureCurrent: () => ensureCurrent(managementCapability) })
       const freshRequest = await verifyRequest(freshBody, { access, identity, deviceId: options.deviceId,
+        scopePurpose: options.scopePurpose,
         devicePublicKey: options.devicePublicKey, certificates,
         binding, service, managementCapability, allowExpired: false, now })
       if (freshRequest.challenge.payload.expectedRevision !== request.challenge.payload.expectedRevision ||
@@ -231,7 +243,8 @@ export function createRustyScopeEnrollmentClient(options: RustyScopeEnrollmentCl
     const authorizationHash = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(request.authorization)))
     if (!receiptCoversEnrollment(receipt.payload, { serviceId: service.serviceId, scopeId: access.scopeId,
       personId: identity.personId, revision: request.authorization.payload.expectedRevision, revoked,
-      challengeId: request.authorization.payload.challengeId, authorizationHash, minimumWriterVersion })) {
+      challengeId: request.authorization.payload.challengeId, authorizationHash, minimumWriterVersion,
+      scopePurpose: options.scopePurpose })) {
       throw new Error("Rusty receipt does not cover this connection")
     }
     await ensureCurrent(managementCapability)
@@ -253,6 +266,7 @@ async function createRequest(input: {
   identity: PublicIdentity
   deviceId: string
   certificates: DeviceCertificate[]
+  scopePurpose?: "workspace" | "person-identity"
   binding: RustyScopeEnrollmentBinding
   service: RustyServicePin
   managementCapability?: SignedEnvelope<RustyManagementCapability>
@@ -266,7 +280,8 @@ async function createRequest(input: {
   await input.ensureCurrent()
   const response = await fetcher(`${access.origin}/v2/enrollment/challenge`, {
     method: "POST", signal: AbortSignal.timeout(15_000), headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version: 1, scopeId: access.scopeId, identity, deviceId, certificates, ...optionalManagement }),
+    body: JSON.stringify({ version: 1, scopeId: access.scopeId, ...(input.scopePurpose ? { scopePurpose: input.scopePurpose } : {}),
+      identity, deviceId, certificates, ...optionalManagement }),
   })
   await input.ensureCurrent()
   const { challenge } = await readJson<{ challenge: SignedEnvelope<RustyScopeEnrollmentChallenge> }>(response, 65_536)
@@ -280,6 +295,7 @@ async function createRequest(input: {
     writeTokenHash: binding.writeTokenHash, revoked: binding.revoked, expiresAt: challenge.payload.expiresAt,
     ...(binding.minimumWriterVersion === undefined ? {} : { minimumWriterVersion: binding.minimumWriterVersion }),
     ...(managementCapability ? { managementRevision: managementCapability.payload.revision } : {}),
+    ...(input.scopePurpose ? { scopePurpose: input.scopePurpose } : {}),
   }
   await input.ensureCurrent()
   const authorization = await input.signAuthorization(payload, challenge)
@@ -293,6 +309,7 @@ async function verifyRequest(body: string, expected: {
   access: RustyScopeEnrollmentAccess
   identity: PublicIdentity
   deviceId: string
+  scopePurpose?: "workspace" | "person-identity"
   devicePublicKey: string
   certificates: DeviceCertificate[]
   binding: RustyScopeEnrollmentBinding
@@ -317,9 +334,12 @@ async function verifyRequest(body: string, expected: {
   await verifyServiceEnvelope(request.challenge, expected.access, expected.service.serviceId)
   validateChallenge(request.challenge.payload, expected.access, expected.identity, expected.deviceId,
     expected.service.serviceId, expected.now(), expected.allowExpired)
+  if (request.challenge.payload.scopePurpose !== expected.scopePurpose) {
+    throw new Error("Rusty challenge scope purpose does not match this connection")
+  }
   const authorization = request.authorization.payload
   exactKeys(authorization, ["kind", "version", "challengeId", "nonce", "serviceId", "publicOrigin", "scopeId", "personId", "deviceId",
-    "deviceKeyId", "expectedRevision", "readTokenHash", "writeTokenHash", "revoked", "expiresAt"], ["minimumWriterVersion", "managementRevision"])
+    "deviceKeyId", "expectedRevision", "readTokenHash", "writeTokenHash", "revoked", "expiresAt"], ["minimumWriterVersion", "managementRevision", "scopePurpose"])
   const challenge = request.challenge.payload
   const expectedAuthorization: RustyScopeEnrollmentAuthorization = {
     kind: "rusty-scope-enrollment", version: 1, challengeId: challenge.challengeId, nonce: challenge.nonce,
@@ -329,6 +349,7 @@ async function verifyRequest(body: string, expected: {
     writeTokenHash: expected.binding.writeTokenHash, revoked: expected.binding.revoked, expiresAt: challenge.expiresAt,
     ...(expected.binding.minimumWriterVersion === undefined ? {} : { minimumWriterVersion: expected.binding.minimumWriterVersion }),
     ...(expected.managementCapability ? { managementRevision: expected.managementCapability.payload.revision } : {}),
+    ...(expected.scopePurpose ? { scopePurpose: expected.scopePurpose } : {}),
   }
   if (request.authorization.signerKeyId !== expected.deviceId ||
     canonicalizeJson(authorization) !== canonicalizeJson(expectedAuthorization)) {
@@ -409,7 +430,7 @@ async function readBoundedText(response: Response, maximumBytes: number): Promis
 
 function receiptCoversEnrollment(receipt: RustyScopePolicyReceiptPayload, expected: {
   serviceId: string; scopeId: string; personId: string; revision: number; revoked: boolean; challengeId: string;
-  authorizationHash: string; minimumWriterVersion?: 2
+  authorizationHash: string; minimumWriterVersion?: 2; scopePurpose?: "workspace" | "person-identity"
 }): boolean {
   const revisionMatches = receipt.revision === expected.revision + 1 ||
     (expected.minimumWriterVersion === 2 && receipt.revision === expected.revision)
@@ -419,6 +440,7 @@ function receiptCoversEnrollment(receipt: RustyScopePolicyReceiptPayload, expect
   return receipt.kind === "rusty-scope-policy-receipt" && receipt.version === 1 && receipt.serviceId === expected.serviceId &&
     receipt.scopeId === expected.scopeId && receipt.personId === expected.personId && revisionMatches &&
     receipt.revoked === expected.revoked && receipt.challengeId === expected.challengeId &&
+    receipt.scopePurpose === expected.scopePurpose &&
     receipt.authorizationHash === expected.authorizationHash && writerVersionMatches
 }
 
