@@ -125,7 +125,7 @@ export function createRustyManagementMutationClient(options: RustyManagementMuta
       personId: identity.personId, deviceId: options.deviceId, resourceKind: binding.resourceKind,
       resourceId: binding.resourceId, expectedRevision: capability?.payload.revision ?? 0,
       ...policy, requestId: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + 120_000,
-      ...(parentCapability ? { personManagementRevision: parentCapability.payload.revision } : {}),
+      ...(!capability && parentCapability ? { personManagementRevision: parentCapability.payload.revision } : {}),
     }
     await ensureCurrent(capability, parentCapability)
     const authorization = await options.signAuthorization(authorizationPayload)
@@ -133,7 +133,7 @@ export function createRustyManagementMutationClient(options: RustyManagementMuta
     const request: RustyManagementUpdateRequest = {
       version: 1, identity, deviceId: options.deviceId, certificates,
       ...(capability ? { managementCapability: capability } : {}),
-      ...(parentCapability ? { personManagementCapability: parentCapability } : {}), authorization,
+      ...(!capability && parentCapability ? { personManagementCapability: parentCapability } : {}), authorization,
     }
     const body = canonicalizeJson(request)
     await verifyRequest(request, body, { binding, identity, deviceId: options.deviceId, devicePublicKey: options.devicePublicKey,
@@ -207,10 +207,11 @@ async function verifyRequest(request: RustyManagementUpdateRequest, body: string
   exactKeys(request, ["version", "identity", "deviceId", "certificates", "authorization"], ["managementCapability", "personManagementCapability"])
   exactKeys(request.identity, ["personId", "publicKey", "displayName"])
   exactKeys(request.authorization, ["payload", "signerKeyId", "signature"])
+  const requestParentCapability = expected.capability ? undefined : expected.parentCapability
   if (request.version !== 1 || canonicalizeJson(request.identity) !== canonicalizeJson(expected.identity) ||
     request.deviceId !== expected.deviceId || canonicalizeJson(request.certificates) !== canonicalizeJson(expected.certificates) ||
     canonicalizeJson(request.managementCapability ?? null) !== canonicalizeJson(expected.capability ?? null) ||
-    canonicalizeJson(request.personManagementCapability ?? null) !== canonicalizeJson(expected.parentCapability ?? null) ||
+    canonicalizeJson(request.personManagementCapability ?? null) !== canonicalizeJson(requestParentCapability ?? null) ||
     new TextEncoder().encode(body).byteLength > 1_048_576) throw new Error("Rusty management request authority changed")
   const authorization = request.authorization.payload
   exactKeys(authorization, ["kind", "version", "serviceId", "origin", "personId", "deviceId", "resourceKind", "resourceId",
@@ -222,7 +223,7 @@ async function verifyRequest(request: RustyManagementUpdateRequest, body: string
     expectedPayload.origin !== expected.binding.origin || expectedPayload.personId !== expected.identity.personId ||
     expectedPayload.deviceId !== expected.deviceId || expectedPayload.resourceKind !== expected.binding.resourceKind ||
     expectedPayload.resourceId !== expected.binding.resourceId || expectedPayload.expectedRevision !== expectedRevision ||
-    expectedPayload.personManagementRevision !== expected.parentCapability?.payload.revision ||
+    expectedPayload.personManagementRevision !== requestParentCapability?.payload.revision ||
     !validId(expectedPayload.requestId) || !Number.isSafeInteger(expectedPayload.issuedAt) ||
     !Number.isSafeInteger(expectedPayload.expiresAt) || expectedPayload.expiresAt - expectedPayload.issuedAt !== 120_000 ||
     expectedPayload.issuedAt > expected.now() + 30_000 || (!expected.allowExpired && expectedPayload.expiresAt <= expected.now())) {
@@ -236,15 +237,15 @@ async function verifyRequest(request: RustyManagementUpdateRequest, body: string
   if (expected.binding.resourceKind === "person") {
     if (expected.parentCapability || expectedPayload.personManagementRevision !== undefined) throw new Error("Person management policy cannot use a parent capability")
   } else if (!expected.capability) {
-    if (!expected.parentCapability && expected.allowUnparentedScopeCreation) return
-    if (!expected.parentCapability || expectedPayload.personManagementRevision !== expected.parentCapability.payload.revision ||
-      !expected.parentCapability.payload.operations.includes("resource.create")) {
+    if (!requestParentCapability && expected.allowUnparentedScopeCreation) return
+    if (!requestParentCapability || expectedPayload.personManagementRevision !== requestParentCapability.payload.revision ||
+      !requestParentCapability.payload.operations.includes("resource.create")) {
       throw new Error("Person resource.create capability is required before creating a Rusty scope policy")
     }
-    await verifyRustyManagementCapability(expected.parentCapability, {
+    await verifyRustyManagementCapability(requestParentCapability, {
       origin: expected.binding.origin, servicePublicKey: expected.binding.servicePublicKey,
     }, { personId: expected.identity.personId, deviceId: expected.deviceId, resourceKind: "person",
-      resourceId: expected.identity.personId, operation: "resource.create", minimumRevision: expected.parentCapability.payload.revision })
+      resourceId: expected.identity.personId, operation: "resource.create", minimumRevision: requestParentCapability.payload.revision })
   }
 }
 
