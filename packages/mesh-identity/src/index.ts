@@ -648,7 +648,7 @@ export async function identityDeviceCertificateChain(
   let current = byDevice.get(deviceId)
   if (!current) throw new Error("Missing device certificate")
   while (current) {
-    chain.unshift(structuredClone(current))
+    chain.push(structuredClone(current))
     const parentHash = current.payload.issuerCertificateHash
     if (parentHash === null) return chain
     current = byHash.get(parentHash)
