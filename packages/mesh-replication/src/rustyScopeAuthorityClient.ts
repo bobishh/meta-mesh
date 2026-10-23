@@ -142,7 +142,7 @@ export async function readRustyScopeAuthorityStatus(
 /** Register a workspace's signed succession ledger before its protected scope is used. */
 export async function publishRustyScopeAuthoritySnapshot(
   options: PublishRustyScopeAuthorityOptions,
-): Promise<RustyScopeAuthorityReceipt> {
+): Promise<{ receipt: RustyScopeAuthorityReceipt; scopeAuthority: ScopeAuthorityValidation }> {
   const now = options.now ?? Date.now
   const fetcher = options.fetcher ?? fetch
   const origin = rustyOrigin(options.origin)
@@ -259,7 +259,7 @@ export async function publishRustyScopeAuthoritySnapshot(
     throw new Error("Rusty scope authority receipt returned a different snapshot")
   }
   await options.observeEnforcement?.(receiptPayload.enforcement)
-  return receipt
+  return { receipt, scopeAuthority: echoed }
 }
 
 async function assertStatus(status: RustyScopeAuthorityStatus, expected: { serviceId: string; servicePublicKey: string; origin: string;
