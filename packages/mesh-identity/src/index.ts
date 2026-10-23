@@ -145,6 +145,12 @@ export { createServiceLoginRequest, encodeServiceLoginRequest, verifyServiceLogi
 export { createIdentityRootSuccession, verifyIdentityRootSuccession } from "./identityRootSuccession"
 export type { IdentityRootSuccession, IdentityRootSuccessionPayload,
   IdentityRootSuccessionAcceptancePayload } from "./identityRootSuccession"
+export { createIdentityRootReplacementRequest, verifyIdentityRootReplacementRequest,
+  createIdentityRootReplacementOffer, verifyIdentityRootReplacementOffer } from "./identityRootReplacement"
+export type { IdentityRootReplacementRequester, IdentityRootReplacementRequestPayload,
+  IdentityRootReplacementKeyProofPayload, IdentityRootReplacementRequest,
+  IdentityRootReplacementOfferAuthorization, IdentityRootReplacementOfferAcceptance, IdentityRootReplacementOffer,
+  RootReplacementBinding } from "./identityRootReplacement"
 
 export {
   assertServiceLoginSession,
