@@ -103,6 +103,28 @@ describe("signed app device authorization roundtrip", () => {
       .rejects.toThrow()
   })
 
+  it("Given a complete Identity profile, when approving an app device, then bind a verified portable authority view to the signed approval", async () => {
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const app = (await createRecoverableIdentity("better", "App device")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: identity.identity.personId })
+    const profileState = { version: 1 as const, personId: identity.identity.personId, operations: [], legacy: [] }
+    const approval = await createDeviceAuthorizationApproval(identity, request, {
+      applicationOrigin, challenge, now: () => Date.now(), profileState, revocations: [],
+    })
+    expect(approval.authorityView).toMatchObject({ kind: "mesh-identity-authority-view", version: 1,
+      personId: identity.identity.personId })
+    expect(approval.proof.payload).toMatchObject({ version: 2,
+      authorityViewDigest: approval.authorityView!.viewDigest,
+      revocationHead: approval.authorityView!.revocationHead })
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({
+      certificate: { payload: { deviceId: app.device.deviceId } },
+    })
+    await expect(verifyDeviceAuthorizationApproval({ ...approval,
+      authorityView: { ...approval.authorityView!, viewDigest: "A".repeat(43) },
+    }, request)).rejects.toThrow(/digest|authority view/i)
+  })
+
   it("Given a previously authorized app key, when delegated Identity reauthorizes it, then verify the newly approved certificate", async () => {
     const root = (await createRecoverableIdentity("better", "Root")).profile
     const delegated = (await createRecoverableIdentity("better", "Authorizing device")).profile

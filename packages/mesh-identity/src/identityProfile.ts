@@ -1,5 +1,6 @@
-import { canonicalizeJson, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain, verifyEnvelope,
-  type DeviceCertificate, type LocalProfile, type PublicIdentity, type SignedEnvelope } from "./index"
+import { canonicalizeJson, identityDeviceDescendants, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain,
+  verifyEnvelope, verifyIdentityDeviceAuthority,
+  type DeviceCertificate, type IdentityDeviceRevocation, type LocalProfile, type PublicIdentity, type SignedEnvelope } from "./index"
 import { isValidIdentityDisplayName, isValidIdentityProfilePhoto } from "./profileValidation"
 
 export type IdentityProfileField = "name" | "photo"
@@ -59,6 +60,92 @@ export async function readIdentityProfileState(value: unknown, identity: PublicI
     if (observation.field !== operation.signed.payload.field) throw new Error("Profile observation field does not match its update")
   }
   return result
+}
+
+/** Validate profile history while enforcing every signed device-revocation snapshot. */
+export async function readIdentityProfileStateWithRevocations(value: unknown, identity: PublicIdentity,
+  certificates: readonly DeviceCertificate[], revocations: readonly IdentityDeviceRevocation[]): Promise<IdentityProfileState> {
+  await verifyIdentityDeviceAuthority(identity, { certificates: Array.from(certificates), revocations: Array.from(revocations) })
+  const snapshot = boundedSnapshot(value)
+  if (!Array.isArray(snapshot.operations)) throw new Error("Invalid identity profile state")
+  const revokedDevices = new Map<string, string[]>()
+  for (const revocation of revocations) {
+    const payload = revocation?.payload
+    if (!payload || !payload.profileOperationHashes || typeof payload.profileOperationHashes !== "object") {
+      throw new Error("Invalid Identity profile revocation frontier")
+    }
+    const descendants = await identityDeviceDescendants(payload.deviceId, certificates)
+    for (const [deviceId, hashes] of Object.entries(payload.profileOperationHashes)) {
+      if (!descendants.has(deviceId) || !Array.isArray(hashes) || hashes.length > maxOperations ||
+          hashes.some(hash => typeof hash !== "string" || !isHash(hash))) {
+        throw new Error("Invalid Identity profile revocation frontier")
+      }
+      const existing = revokedDevices.get(deviceId)
+      if (existing && canonicalizeJson(existing) !== canonicalizeJson(hashes)) {
+        throw new Error("Conflicting Identity profile revocation history")
+      }
+      revokedDevices.set(deviceId, structuredClone(hashes))
+    }
+    for (const deviceId of descendants) {
+      if (!revokedDevices.has(deviceId)) revokedDevices.set(deviceId, [])
+    }
+  }
+
+  const candidates = snapshot.operations as unknown[]
+  const kept = new Set<number>()
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index]
+    const payload = isRecord(candidate) && isRecord(candidate.signed) && isRecord(candidate.signed.payload)
+      ? candidate.signed.payload : undefined
+    const actor = payload && typeof payload.deviceId === "string" ? payload.deviceId : undefined
+    const counter = payload && Number.isSafeInteger(payload.counter) ? payload.counter as number : undefined
+    const hashes = actor ? revokedDevices.get(actor) : undefined
+    if (hashes && (counter === undefined || counter < 1 || counter > hashes.length ||
+        !isRecord(candidate) || !isRecord(candidate.signed) ||
+        hashes[counter - 1] !== await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(candidate.signed))))) continue
+    kept.add(index)
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    const removed = new Set<string>()
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (kept.has(index)) continue
+      const candidate = candidates[index]
+      if (isRecord(candidate) && isRecord(candidate.signed) && isRecord(candidate.signed.payload)) {
+        const payload = candidate.signed.payload
+        if (typeof payload.deviceId === "string" && Number.isSafeInteger(payload.counter)) {
+          removed.add(`${payload.deviceId}:${payload.counter}`)
+        }
+      }
+    }
+    for (const index of kept) {
+      const candidate = candidates[index]
+      if (isRecord(candidate) && isRecord(candidate.signed) && isRecord(candidate.signed.payload)) {
+        const payload = candidate.signed.payload
+        if (typeof payload.deviceId === "string" && Number.isSafeInteger(payload.counter)) {
+          removed.delete(`${payload.deviceId}:${payload.counter}`)
+        }
+      }
+    }
+    for (const index of [...kept]) {
+      const candidate = candidates[index]
+      if (!isRecord(candidate) || !isRecord(candidate.signed) || !isRecord(candidate.signed.payload)) continue
+      const context = candidate.signed.payload.context
+      if (!isRecord(context)) continue
+      if ([...removed].some(key => {
+        const separator = key.lastIndexOf(":")
+        const actor = key.slice(0, separator), counter = Number(key.slice(separator + 1))
+        return (context[actor] ?? 0) >= counter
+      })) {
+        kept.delete(index)
+        changed = true
+      }
+    }
+  }
+  const operations = candidates.filter((_, index) => kept.has(index))
+  return readIdentityProfileState({ ...snapshot, operations }, identity, certificates)
 }
 
 export async function mergeIdentityProfileState(left: IdentityProfileState, right: IdentityProfileState,

@@ -1,11 +1,14 @@
 import * as Automerge from "@automerge/automerge"
-import { createIdentityProfileOperation, createRecoverableIdentity, identityProfileValue, openIdentityRecoveryEnvelope,
-  canonicalizeJson, identityProfileRevision, mergeIdentityProfileState, readIdentityProfileState } from "@meta-uber/mesh-identity"
+import { createDelegatedCertificate, createIdentityEnrollmentDevice, createDeviceRevocation, createIdentityProfileOperation, createRecoverableIdentity, identityProfileValue,
+  openIdentityRecoveryEnvelope, canonicalizeJson, sha256Base64Url, identityProfileRevision, mergeIdentityProfileState,
+  readIdentityProfileState, readIdentityProfileStateWithRevocations, verifyIdentityDeviceAuthority,
+  authorizeIdentityDevice, certificateHash } from "@meta-uber/mesh-identity"
 import { describe, expect, it } from "vitest"
 import { createSignedDeviceRoute, verifySignedDeviceRoute } from "./protocol"
 import { AutomergeAntiEntropy } from "./automerge"
 import { createPersonalIdentityAdapter, createPersonalIdentityDocument, PersonalIdentityMeshSync, type PersonalIdentityDocument,
   type PersonalIdentitySyncConnection, type PersonalIdentitySyncStream } from "./identityMesh"
+import { normalizePersonalIdentityDocument } from "./identityMesh"
 
 describe("independent personal Identity mesh", () => {
   it("Given simultaneous incoming profile histories, when both receive commits race, then rebase without losing either signed operation", async () => {
@@ -84,6 +87,157 @@ describe("independent personal Identity mesh", () => {
       commit: () => {} })
 
     await expect(adapter.authorize(stranger.device.deviceId, undefined, "receive")).resolves.toBe(false)
+  })
+
+  it("Given a paired device and a delegated child, when revocation syncs and reloads, then both lose admission and certificate history remains", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const owner = recovery.profile
+    const removed = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const child = await createIdentityEnrollmentDevice("Child")
+    const childCertificate = await createDelegatedCertificate(removed.privateKeys.devicePrivateKey,
+      removed.device.deviceId, owner.identity.personId, child.device.deviceId, child.device.publicKey,
+      await certificateHash(removed.certificate))
+    const initial = Automerge.from<PersonalIdentityDocument>(createPersonalIdentityDocument(owner.identity,
+      [owner.certificate, removed.certificate, childCertificate]))
+    const revokedView = await verifyIdentityDeviceAuthority(owner.identity,
+      { certificates: initial.certificates, revocations: initial.revocations })
+    const revocation = await createDeviceRevocation(owner, revokedView, removed.device.deviceId, initial.profileState)
+    const updated = Automerge.change(initial, draft => { draft.revocations.push(revocation) })
+    const serialized = Automerge.save(updated)
+    const reloaded = Automerge.load<PersonalIdentityDocument>(serialized)
+    const stalePeer = Automerge.from<PersonalIdentityDocument>(createPersonalIdentityDocument(owner.identity,
+      initial.certificates))
+    const replicated = await normalizePersonalIdentityDocument(Automerge.merge(stalePeer, reloaded), owner.identity)
+    const verified = await verifyIdentityDeviceAuthority(owner.identity,
+      { certificates: replicated.certificates, revocations: replicated.revocations })
+    const adapter = createPersonalIdentityAdapter({ identity: owner.identity, current: async () => replicated,
+      commit: () => {} })
+
+    await expect(authorizeIdentityDevice(verified, removed.device.deviceId)).rejects.toThrow(/revoked/i)
+    await expect(authorizeIdentityDevice(verified, child.device.deviceId)).rejects.toThrow(/revoked/i)
+    await expect(adapter.authorize(removed.device.deviceId, undefined, "receive")).resolves.toBe(false)
+    expect(replicated.certificates).toHaveLength(3)
+    expect(replicated.revocations).toHaveLength(1)
+  })
+
+  it("Given two concurrent revocation branches, when their signed revision numbers collide, then fail closed for explicit retry", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const owner = recovery.profile
+    const peer = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const initial = Automerge.from<PersonalIdentityDocument>(createPersonalIdentityDocument(owner.identity,
+      [owner.certificate, peer.certificate]))
+    const authority = await verifyIdentityDeviceAuthority(owner.identity,
+      { certificates: initial.certificates, revocations: initial.revocations })
+    const [fromOwner, fromPeer] = await Promise.all([
+      createDeviceRevocation(owner, authority, peer.device.deviceId, initial.profileState),
+      createDeviceRevocation(peer, authority, owner.device.deviceId, initial.profileState),
+    ])
+    const left = Automerge.change(Automerge.clone(initial), draft => { draft.revocations.push(fromOwner) })
+    const right = Automerge.change(Automerge.clone(initial), draft => { draft.revocations.push(fromPeer) })
+
+    await expect(normalizePersonalIdentityDocument(Automerge.merge(left, right), owner.identity))
+      .rejects.toThrow(/revocation/i)
+  })
+
+  it("Given a legacy Identity document, when normalized, then upgrade it with an explicit empty revocation history", async () => {
+    const owner = (await createRecoverableIdentity("better", "Owner")).profile
+    const legacy = { ...createPersonalIdentityDocument(owner.identity, [owner.certificate]), version: 1 }
+    delete (legacy as Partial<PersonalIdentityDocument>).revocations
+    const normalized = await normalizePersonalIdentityDocument(
+      Automerge.from(legacy as unknown as PersonalIdentityDocument), owner.identity)
+
+    expect(normalized.version).toBe(2)
+    expect(normalized.revocations).toEqual([])
+  })
+
+  it("Given a legacy Identity document, when an enrolled peer asks to sync, then authorize with its normalized authority view", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const peer = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const current = { ...createPersonalIdentityDocument(recovery.profile.identity,
+      [recovery.profile.certificate, peer.certificate]), version: 1 as const } as unknown as PersonalIdentityDocument
+    delete (current as Partial<PersonalIdentityDocument>).revocations
+    const adapter = createPersonalIdentityAdapter({ identity: recovery.profile.identity,
+      current: async () => current, commit: () => {} })
+
+    await expect(adapter.authorize(peer.device.deviceId, undefined, "receive")).resolves.toBe(true)
+  })
+
+  it("Given a forged cutoff record, when the public revocation-aware reader receives it, then reject the unsigned authority data", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const owner = recovery.profile
+    const peer = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const certificates = [owner.certificate, peer.certificate]
+    const document = createPersonalIdentityDocument(owner.identity, certificates)
+    const authority = await verifyIdentityDeviceAuthority(owner.identity, { certificates, revocations: [] })
+    const record = await createDeviceRevocation(owner, authority, peer.device.deviceId, document.profileState)
+    const forged = { ...record, payload: { ...record.payload,
+      profileOperationHashes: { [peer.device.deviceId]: ["A".repeat(43)] } } }
+
+    await expect(readIdentityProfileStateWithRevocations(document.profileState, owner.identity, certificates, [forged]))
+      .rejects.toThrow(/signature/i)
+  })
+
+  it("Given a revoked device and observed history, when a forwarder brings later signed operations, then keep only the signed frontier", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const owner = recovery.profile
+    const revoked = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const peer = await createIdentityEnrollmentDevice("Independent peer")
+    const peerCertificate = await createDelegatedCertificate(owner.privateKeys.devicePrivateKey, owner.device.deviceId,
+      owner.identity.personId, peer.device.deviceId, peer.device.publicKey, await certificateHash(owner.certificate))
+    const peerProfile = { identity: owner.identity, device: peer.device, certificate: peerCertificate,
+      privateKeys: { devicePrivateKey: peer.privateKey } }
+    const certificates = [owner.certificate, revoked.certificate, peerCertificate]
+    const base = createPersonalIdentityDocument(owner.identity, certificates)
+    const before = await createIdentityProfileOperation(revoked, base.profileState, "name", "Observed name", certificates)
+    const observed = { ...base.profileState, operations: [before] }
+    const authority = await verifyIdentityDeviceAuthority(owner.identity,
+      { certificates, revocations: [] })
+    const record = await createDeviceRevocation(owner, authority, revoked.device.deviceId, observed)
+    expect(record.payload.profileOperationHashes).toEqual({ [revoked.device.deviceId]: [
+      await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(before.signed))),
+    ] })
+
+    const after = await createIdentityProfileOperation(revoked, observed, "name", "Late name", certificates)
+    const peerOperation = await createIdentityProfileOperation(peerProfile, observed, "name", "Peer after observed name", certificates)
+    const sameCounterReplay = await createIdentityProfileOperation(revoked, base.profileState,
+      "name", "Different operation at observed counter", certificates)
+    const futureChild = await createIdentityEnrollmentDevice("Future child")
+    const futureChildCertificate = await createDelegatedCertificate(revoked.privateKeys.devicePrivateKey,
+      revoked.device.deviceId, owner.identity.personId, futureChild.device.deviceId, futureChild.device.publicKey,
+      await certificateHash(revoked.certificate))
+    const futureChildProfile = { identity: owner.identity, device: futureChild.device, certificate: futureChildCertificate,
+      privateKeys: { devicePrivateKey: futureChild.privateKey } }
+    const childOperation = await createIdentityProfileOperation(futureChildProfile, observed, "photo",
+      { avatarData: null, changedAt: "2026-10-23T00:00:00.000Z" }, [...certificates, futureChildCertificate])
+    const forwarded = Automerge.from<PersonalIdentityDocument>({ ...base, revocations: [record],
+      certificates,
+      profileState: { ...observed, operations: [...observed.operations, sameCounterReplay, after, peerOperation, childOperation] } })
+    const normalized = await normalizePersonalIdentityDocument(forwarded, owner.identity)
+
+    expect(normalized.profileState.operations.map(operation => `${operation.signed.payload.deviceId}:${operation.signed.payload.counter}`).sort())
+      .toEqual([before, peerOperation].map(operation => `${operation.signed.payload.deviceId}:${operation.signed.payload.counter}`).sort())
+    expect(identityProfileValue(normalized.profileState, "name")).toMatchObject({ status: "value", values: ["Peer after observed name"] })
+    expect(normalized.certificates).toHaveLength(4)
+  })
+
+  it("Given ten or more observed operations, when creating a revocation cutoff, then hash counters in numeric order", async () => {
+    const recovery = await createRecoverableIdentity("better", "Owner")
+    const owner = recovery.profile
+    const revoked = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+    const certificates = [owner.certificate, revoked.certificate]
+    let state: PersonalIdentityDocument["profileState"] = { version: 1, personId: owner.identity.personId, operations: [], legacy: [] }
+    for (let index = 1; index <= 12; index += 1) {
+      const operation = await createIdentityProfileOperation(revoked, state, "name", `Observed ${index}`, certificates)
+      state = { ...state, operations: [...state.operations, operation] }
+    }
+    const authority = await verifyIdentityDeviceAuthority(owner.identity, { certificates, revocations: [] })
+    const record = await createDeviceRevocation(owner, authority, revoked.device.deviceId, state)
+
+    expect(record.payload.profileOperationHashes[revoked.device.deviceId]).toHaveLength(12)
+    const forwarded = Automerge.from<PersonalIdentityDocument>({ ...createPersonalIdentityDocument(owner.identity, certificates),
+      revocations: [record], profileState: state })
+    const normalized = await normalizePersonalIdentityDocument(forwarded, owner.identity)
+    expect(normalized.profileState.operations).toHaveLength(12)
   })
 
   it("Given two paired MetaMesh device streams, when one syncs a personal document, then the other persists verified profile changes", async () => {
