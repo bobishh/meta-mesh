@@ -8,7 +8,7 @@ const scopeId = "scope-private"
 const readToken = "read-token-never-put-in-url"
 const writeToken = "write-token-never-put-in-url"
 
-async function fixture(scopeManagement: unknown = 0) {
+async function fixture(scopeManagement: unknown = 0, challengePurposeOverride?: string) {
   const owner = await createRecoverableIdentity("better", "Owner", new Uint8Array(32).fill(4))
   const serviceKeys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair
   const servicePublicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", serviceKeys.publicKey)))
@@ -23,22 +23,25 @@ async function fixture(scopeManagement: unknown = 0) {
         scopeManagement, scopeEnrollmentRetry: 1, writerPolicy: { version: 1, maximumWriterVersion: 2 } },
     })
     if (url === `${origin}/v2/enrollment/challenge`) {
-      const body = JSON.parse(String(init?.body)) as { identity: { personId: string }; deviceId: string }
+      const body = JSON.parse(String(init?.body)) as { identity: { personId: string }; deviceId: string; scopePurpose?: string }
       const challenge = await signEnvelope(serviceKeys.privateKey, {
         kind: "rusty-enrollment-challenge", version: 1, challengeId: "challenge-1", nonce: "nonce-1", serviceId,
         publicOrigin: origin, scopeId, personId: body.identity.personId, deviceId: body.deviceId, deviceKeyId: body.deviceId,
         expectedRevision: 0, issuedAt: now, expiresAt: now + 60_000,
+        ...(body.scopePurpose ? { scopePurpose: challengePurposeOverride ?? body.scopePurpose } : {}),
       }, serviceId, "RUSTY/2")
       return Response.json({ challenge })
     }
     if (url === `${origin}/v2/scopes/${scopeId}`) {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>
       requestBodies.push(body)
-      const authorization = body.authorization as { payload: Record<string, unknown> }
+      const authorization = (body.authorization as { payload: Record<string, unknown> }).payload
       const receipt = await signEnvelope(serviceKeys.privateKey, {
         kind: "rusty-scope-policy-receipt", version: 1, serviceId, scopeId,
-        personId: owner.profile.identity.personId, revision: 0, revoked: false, challengeId: "challenge-1",
+        personId: owner.profile.identity.personId, revision: authorization.minimumWriterVersion === 2 ? 0 : 1,
+        revoked: false, challengeId: "challenge-1",
         authorizationHash: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(body.authorization))), minimumWriterVersion: 2,
+        ...(authorization.scopePurpose ? { scopePurpose: authorization.scopePurpose } : {}),
       }, serviceId, "RUSTY/2")
       return Response.json({ receipt })
     }
@@ -54,6 +57,7 @@ it("Given a pinned Rusty service and current Identity device, When enrolling sco
     signEnvelope(f.owner.profile.privateKeys.devicePrivateKey, payload, f.owner.profile.device.deviceId))
   const journal = { read: vi.fn(async () => undefined), prepare: vi.fn(), replace: vi.fn(), complete: vi.fn() }
   const client = createRustyScopeEnrollmentClient({
+    scopePurpose: "person-identity",
     access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
     identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId, devicePublicKey: f.owner.profile.device.publicKey,
     certificates: [f.owner.profile.certificate],
@@ -61,8 +65,11 @@ it("Given a pinned Rusty service and current Identity device, When enrolling sco
     ensureManagementCurrent: async () => {}, signAuthorization, journal,
   })
 
-  await expect(client.enroll({ minimumWriterVersion: 2, requireExactRetry: true })).resolves.toMatchObject({ policyRevision: 0 })
+  const result = await client.enroll({ minimumWriterVersion: 2, requireExactRetry: true })
+  expect(result).toMatchObject({ policyRevision: 0, receipt: { payload: { scopePurpose: "person-identity" } } })
   const request = f.requestBodies[0]!
+  expect(JSON.parse(String(f.fetcher.mock.calls.find(([url]) => String(url) === `${origin}/v2/enrollment/challenge`)?.[1]?.body)))
+    .toMatchObject({ scopePurpose: "person-identity" })
   expect(request).toMatchObject({ identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId,
     certificates: [f.owner.profile.certificate], readToken, writeToken, revoked: false })
   expect((request.authorization as { payload: Record<string, unknown> }).payload).toMatchObject({
@@ -70,7 +77,9 @@ it("Given a pinned Rusty service and current Identity device, When enrolling sco
     personId: f.owner.profile.identity.personId, deviceId: f.owner.profile.device.deviceId,
     readTokenHash: await sha256Base64Url(new TextEncoder().encode(readToken)),
     writeTokenHash: await sha256Base64Url(new TextEncoder().encode(writeToken)), minimumWriterVersion: 2,
+    scopePurpose: "person-identity",
   })
+  expect((request.challenge as { payload: Record<string, unknown> }).payload.scopePurpose).toBe("person-identity")
   expect(f.fetcher.mock.calls.map(([url]) => String(url))).toEqual([
     `${origin}/.well-known/mesh-lighthouse`, `${origin}/v2/enrollment/challenge`, `${origin}/v2/scopes/${scopeId}`,
   ])
@@ -82,6 +91,7 @@ it("Given a pinned Rusty service and current Identity device, When enrolling sco
 it("Given a managed Rusty service with no signed capability, When no adapter attests verified unmanaged status, Then reject before enrollment", async () => {
   const f = await fixture({ version: 1 })
   const client = createRustyScopeEnrollmentClient({
+    scopePurpose: "workspace",
     access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
     identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId, devicePublicKey: f.owner.profile.device.publicKey,
     certificates: [f.owner.profile.certificate], fetcher: f.fetcher, ensureCurrent: async () => {},
@@ -97,6 +107,7 @@ it("Given a managed Rusty service with no signed capability, When no adapter att
 it("Given a managed service whose signed status confirms no scope or parent policy, When the adapter explicitly permits legacy unmanaged use, Then enroll without inventing a management capability", async () => {
   const f = await fixture({ version: 1 })
   const client = createRustyScopeEnrollmentClient({
+    scopePurpose: "workspace",
     access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
     identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId, devicePublicKey: f.owner.profile.device.publicKey,
     certificates: [f.owner.profile.certificate], fetcher: f.fetcher, ensureCurrent: async () => {},
@@ -112,6 +123,7 @@ it("Given a managed service whose signed status confirms no scope or parent poli
 it("Given a saved enrollment request with substituted token evidence, When retrying, Then reject before requesting a fresh challenge or mutating policy", async () => {
   const f = await fixture()
   const base = {
+    scopePurpose: "workspace" as const,
     access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
     identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId,
     devicePublicKey: f.owner.profile.device.publicKey, certificates: [f.owner.profile.certificate],
@@ -135,4 +147,42 @@ it("Given a saved enrollment request with substituted token evidence, When retry
   await expect(retry.enroll({ minimumWriterVersion: 2, requireExactRetry: true })).rejects.toThrow(/binding|signature/i)
   expect(f.fetcher.mock.calls.map(([url]) => String(url))).toEqual([`${origin}/.well-known/mesh-lighthouse`])
   expect(f.requestBodies).toEqual([])
+})
+
+it("Given a signed challenge for another scope purpose, When enrolling, Then reject before policy mutation", async () => {
+  const f = await fixture(0, "person-identity")
+  const client = createRustyScopeEnrollmentClient({
+    scopePurpose: "workspace",
+    access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
+    identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId,
+    devicePublicKey: f.owner.profile.device.publicKey, certificates: [f.owner.profile.certificate],
+    fetcher: f.fetcher, ensureCurrent: async () => {}, getManagementCapability: async () => undefined,
+    ensureManagementCurrent: async () => {},
+    signAuthorization: async payload => signEnvelope(f.owner.profile.privateKeys.devicePrivateKey, payload, f.owner.profile.device.deviceId),
+    journal: { read: async () => undefined, prepare: vi.fn(), replace: vi.fn(), complete: vi.fn() },
+  })
+
+  await expect(client.enroll()).rejects.toThrow(/scope purpose/i)
+  expect(f.requestBodies).toEqual([])
+})
+
+it("Given a legacy enrollment client, When retrying an old unclassified scope in additive mode, Then preserve the original wire shape", async () => {
+  const f = await fixture()
+  const client = createRustyScopeEnrollmentClient({
+    access: { origin, scopeId, servicePublicKey: f.servicePublicKey, readToken, writeToken },
+    identity: f.owner.profile.identity, deviceId: f.owner.profile.device.deviceId,
+    devicePublicKey: f.owner.profile.device.publicKey, certificates: [f.owner.profile.certificate],
+    fetcher: f.fetcher, ensureCurrent: async () => {}, getManagementCapability: async () => undefined,
+    ensureManagementCurrent: async () => {},
+    signAuthorization: async payload => signEnvelope(f.owner.profile.privateKeys.devicePrivateKey, payload, f.owner.profile.device.deviceId),
+    journal: { read: async () => undefined, prepare: vi.fn(), replace: vi.fn(), complete: vi.fn() },
+  })
+
+  await expect(client.enroll()).resolves.toMatchObject({ policyRevision: 1 })
+  const challengeBody = JSON.parse(String(f.fetcher.mock.calls.find(([url]) =>
+    String(url) === `${origin}/v2/enrollment/challenge`)?.[1]?.body)) as Record<string, unknown>
+  const request = f.requestBodies[0]!
+  expect(challengeBody).not.toHaveProperty("scopePurpose")
+  expect((request.challenge as { payload: Record<string, unknown> }).payload).not.toHaveProperty("scopePurpose")
+  expect((request.authorization as { payload: Record<string, unknown> }).payload).not.toHaveProperty("scopePurpose")
 })
