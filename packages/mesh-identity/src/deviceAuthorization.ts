@@ -64,7 +64,7 @@ export async function createDeviceAuthorizationRequest(
   return request
 }
 
-export function encodeDeviceAuthorizationRequest(request: DeviceAuthorizationRequest, now = Date.now()): string {
+export function encodeDeviceAuthorizationRequest(request: DeviceAuthorizationRequest): string {
   return toBase64Url(new TextEncoder().encode(JSON.stringify(request)))
 }
 
