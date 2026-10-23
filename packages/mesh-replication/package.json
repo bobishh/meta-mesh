@@ -13,6 +13,7 @@
     "./rusty-replica": "./src/rustyReplica.ts",
     "./rusty-management": "./src/rustyManagement.ts",
     "./rusty-management-mutation": "./src/rustyManagementMutation.ts",
+    "./rusty-identity-authority": "./src/rustyIdentityAuthority.ts",
     "./rusty-scope-enrollment": "./src/rustyScopeEnrollment.ts",
     "./replica-engine": "./src/replicaEngine.ts",
     "./history-archive": "./src/historyArchive.ts",
