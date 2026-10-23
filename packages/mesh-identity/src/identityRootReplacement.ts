@@ -269,7 +269,7 @@ export async function createIdentityRootReplacementOffer(previous: LocalProfile,
 /** Validate the request, both roots, successor authority view, and the fresh candidate app key. */
 export async function verifyIdentityRootReplacementOffer(offerValue: unknown,
   requestValue: IdentityRootReplacementRequest, previousIdentity: PublicIdentity,
-  options: { now?: () => number } = {}): Promise<{
+  options: { now?: () => number; allowExpiredRequest?: boolean } = {}): Promise<{
     previousPersonId: string
     successorPersonId: string
     successorIdentity: PublicIdentity
@@ -302,9 +302,13 @@ export async function verifyIdentityRootReplacementOffer(offerValue: unknown,
       throw new Error("Root replacement offer omitted an app-requested Rusty service pin")
     }
   }
+  const now = (options.now ?? Date.now)()
+  const requestNow = options.allowExpiredRequest
+    ? () => Math.min(now, requestValue.authorization.payload.expiresAt - 1)
+    : options.now
   const request = await verifyIdentityRootReplacementRequest(offer.request, previousAuthority, {
     applicationOrigin: requestValue.authorization.payload.applicationOrigin,
-    challenge: requestValue.authorization.payload.challenge, now: options.now,
+    challenge: requestValue.authorization.payload.challenge, now: requestNow,
   })
   const successorAuthority = await verifyIdentityAuthorityView(offer.authorityView)
   if (!isRecord(offer.successorIdentity) || offer.successorIdentity.personId !== successorAuthority.personId ||
@@ -340,7 +344,6 @@ export async function verifyIdentityRootReplacementOffer(offerValue: unknown,
     transitionHash: await transitionHash(offer.succession),
     issuedAt: payload?.issuedAt as number, expiresAt: request.expiresAt,
   }
-  const now = (options.now ?? Date.now)()
   if (!isSignedEnvelope(offer.authorization) || !hasExactKeys(payload, ["kind", "version", "requestHash", "previousPersonId",
       "previousProfileStateHash", "previousAuthorityHead", "previousViewDigest", "successorPersonId", "successorAuthorityHead", "successorViewDigest", "deviceId",
       "devicePublicKey", "certificateHash", "successorProfileStateHash", "transitionHash", "issuedAt", "expiresAt"]) ||

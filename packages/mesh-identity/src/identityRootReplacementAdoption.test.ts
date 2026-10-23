@@ -21,7 +21,7 @@ async function fixture(previous?: LocalProfile) {
   const candidate: LocalProfile = { identity: offer.successorIdentity,
     device: { deviceId: freshApp.device.deviceId, publicKey: freshApp.device.publicKey, displayName: "Fresh app" },
     certificate: offer.certificate, privateKeys: { devicePrivateKey: freshApp.privateKeys.devicePrivateKey } }
-  return { previous, offer, candidate }
+  return { previous, successor, offer, candidate }
 }
 
 it("Given a verified root-replacement offer, when adopted, then persist fresh app-only key and back up the old identity without moving root keys", async () => {
@@ -50,4 +50,21 @@ it("rejects a root-replacement candidate with an Identity root private key", asy
     identityPrivateKey: f.offer.acceptance ? f.previous.privateKeys.identityPrivateKey : undefined } }
   await expect(store.adoptRootReplacementDevice(candidate, f.offer,
     { consentToReplaceExistingIdentity: true })).rejects.toThrow(/root key/i)
+})
+
+it("activates the recovery-authorized successor root with an atomic backup of the old profile", async () => {
+  const values = new Map<string, string>()
+  const store = new BrowserIdentityStore({ storageKey: "portal", asyncStorage: {
+    getItem: async key => values.get(key) ?? null,
+    setItem: async (key, value) => { values.set(key, value) },
+    removeItem: async key => { values.delete(key) },
+  } })
+  await store.createRecoverable("better", "Previous")
+  const f = await fixture(await store.bootstrap())
+  const activated = await store.activateRootReplacementIdentity(f.successor, f.offer,
+    { consentToReplaceExistingIdentity: true })
+  expect(activated.identity.personId).toBe(f.successor.identity.personId)
+  expect(activated.privateKeys.identityPrivateKey).toBe(f.successor.privateKeys.identityPrivateKey)
+  expect(JSON.parse(values.get("portal")!).identity.personId).toBe(f.successor.identity.personId)
+  expect(values.has(`portal.backup.${f.previous.identity.personId}`)).toBe(true)
 })

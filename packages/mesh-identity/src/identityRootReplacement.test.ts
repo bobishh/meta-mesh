@@ -85,6 +85,17 @@ describe("Identity root replacement offer", () => {
     await expect(verifyIdentityRootReplacementOffer(offer, substituted, f.previous.identity)).rejects.toThrow(/request|binding/i)
   })
 
+  it("Given a root-signed offer already durably staged, when a retry resumes after request expiry, then verify the exact accepted offer", async () => {
+    const f = await fixture()
+    const offer = await createIdentityRootReplacementOffer(f.previous, f.successor, f.request, f.previousAuthority,
+      f.previousProfileState, { consentedRustyServicePins: [] })
+    const now = () => f.request.authorization.payload.expiresAt + 5_000
+    await expect(verifyIdentityRootReplacementOffer(offer, f.request, f.previous.identity, { now }))
+      .rejects.toThrow(/expired/i)
+    await expect(verifyIdentityRootReplacementOffer(offer, f.request, f.previous.identity,
+      { now, allowExpiredRequest: true })).resolves.toMatchObject({ successorPersonId: f.successor.identity.personId })
+  })
+
   it("rejects a candidate certificate for a different app device key", async () => {
     const f = await fixture()
     const offer = await createIdentityRootReplacementOffer(f.previous, f.successor, f.request, f.previousAuthority,

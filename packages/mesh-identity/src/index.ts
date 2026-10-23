@@ -1538,7 +1538,8 @@ export class BrowserIdentityStore {
       throw new Error("Root replacement app profile must not include an Identity root key")
     }
     const current = await this.bootstrap()
-    const verified = await verifyIdentityRootReplacementOffer(offer, offer.request, current.identity)
+    const verified = await verifyIdentityRootReplacementOffer(offer, offer.request, current.identity,
+      { allowExpiredRequest: true })
     const request = offer.request.authorization.payload
     if (request.requesterDeviceId !== current.device.deviceId ||
         request.requesterDevicePublicKey !== current.device.publicKey ||
@@ -1567,6 +1568,79 @@ export class BrowserIdentityStore {
       throw new Error("Root replacement app private key does not match the signed offer")
     }
     return this.adoptCertifiedDevice(submitted, verified.certificates, options, true)
+  }
+
+  /** Activate the portal's recovery-authorized successor root after external scope transfers complete. */
+  async activateRootReplacementIdentity(
+    submitted: LocalProfile,
+    offer: IdentityRootReplacementOffer,
+    options: { consentToReplaceExistingIdentity: true; commit?: IdentityAdoptionCommit },
+  ): Promise<LocalProfile> {
+    if (options.consentToReplaceExistingIdentity !== true) {
+      throw new Error("Root replacement requires explicit consent to replace this browser's Identity")
+    }
+    const current = await this.bootstrap()
+    const verified = await verifyIdentityRootReplacementOffer(offer, offer.request, current.identity,
+      { allowExpiredRequest: true })
+    const request = offer.request.authorization.payload
+    if (request.requesterDeviceId !== current.device.deviceId ||
+        request.requesterDevicePublicKey !== current.device.publicKey ||
+        !offer.previousAuthorityView.certificates.some(certificate =>
+          canonicalizeJson(certificate) === canonicalizeJson(current.certificate))) {
+      throw new Error("Root replacement request is not bound to this browser's current Identity device")
+    }
+    if (submitted.identity.personId !== verified.successorPersonId ||
+        submitted.identity.publicKey !== offer.successorIdentity.publicKey ||
+        !submitted.privateKeys.identityPrivateKey ||
+        !verified.certificates.some(certificate => canonicalizeJson(certificate) === canonicalizeJson(submitted.certificate)) ||
+        await verifyDeviceCertificateChain(submitted.identity, submitted.device.deviceId, verified.certificates, this.domain) !== submitted.device.publicKey ||
+        await authorizeIdentityDevice(await verifyIdentityDeviceAuthority(submitted.identity,
+          { certificates: verified.certificates, revocations: verified.authorityView.revocations }), submitted.device.deviceId) !== submitted.device.publicKey) {
+      throw new Error("Successor Identity profile does not match the verified root replacement offer")
+    }
+    const proofPayload = { kind: "mesh-identity-root-replacement-root-check", version: 1,
+      offerHash: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(offer.authorization))),
+      personId: submitted.identity.personId, publicKey: submitted.identity.publicKey }
+    const proof = await signEnvelope(submitted.privateKeys.identityPrivateKey, proofPayload,
+      submitted.identity.personId, "MESH-IDENTITY-ROOT-REPLACEMENT-ROOT/1")
+    if (!await verifyEnvelope(proof, submitted.identity.publicKey, "MESH-IDENTITY-ROOT-REPLACEMENT-ROOT/1")) {
+      throw new Error("Successor Identity recovery key does not match its public root")
+    }
+    const active = this.profile
+    const keys = { ...current.privateKeys }
+    const currentPublic = canonicalizeJson({ identity: current.identity, device: current.device, certificate: current.certificate })
+    const ensureCurrent = () => {
+      if (!active || this.profile !== active || active.privateKeys.devicePrivateKey !== keys.devicePrivateKey ||
+          active.privateKeys.identityPrivateKey !== keys.identityPrivateKey ||
+          canonicalizeJson({ identity: active.identity, device: active.device, certificate: active.certificate }) !== currentPublic) {
+        throw new Error("Identity changed during root replacement")
+      }
+    }
+    const previous = await this.get(this.options.storageKey)
+    ensureCurrent()
+    const saved = previous ? JSON.parse(previous) as SerializedProfile : null
+    if (!saved || previous !== await this.serialize(current)) {
+      if (this.profile === current) this.clearMemory()
+      throw new Error("Durable Identity changed before root replacement")
+    }
+    const candidateProfile = await this.serialize(submitted)
+    const plan: IdentityAdoptionCommitPlan = {
+      storageKey: this.options.storageKey, previousProfile: previous, candidateProfile,
+      publicProfile: { identity: structuredClone(submitted.identity), device: structuredClone(submitted.device),
+        certificate: structuredClone(submitted.certificate) },
+      backup: { key: `${this.options.storageKey}.backup.${current.identity.personId}`, value: previous },
+    }
+    ensureCurrent()
+    if (options.commit) await options.commit(structuredClone(plan), ensureCurrent)
+    else {
+      await this.set(plan.backup!.key, previous, true)
+      ensureCurrent()
+      if (await this.get(this.options.storageKey) !== previous) throw new Error("Durable Identity changed before root replacement")
+      await this.set(this.options.storageKey, candidateProfile, true)
+    }
+    ensureCurrent()
+    this.profile = submitted
+    return submitted
   }
 
   private async adoptCertifiedDevice(
