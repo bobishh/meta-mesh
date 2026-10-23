@@ -225,7 +225,7 @@ impl NativeBrowserConnection {
         };
         let result = tokio::time::timeout(
             Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
-            read_pairing_frame(&mut receive),
+            read_pairing_frame(&mut receive, false),
         )
         .await;
         match result {
@@ -289,7 +289,7 @@ impl NativeBrowserConnection {
         let result = tokio::time::timeout(timeout.saturating_sub(started.elapsed()), async {
             send.write_all(payload).await?;
             send.finish()?;
-            read_pairing_frame(&mut receive).await
+            read_pairing_frame(&mut receive, true).await
         })
         .await;
         match result {
@@ -316,7 +316,10 @@ impl NativeBrowserConnection {
     }
 }
 
-async fn read_pairing_frame(receive: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>, BoxError> {
+async fn read_pairing_frame(
+    receive: &mut iroh::endpoint::RecvStream,
+    allow_empty_response: bool,
+) -> Result<Vec<u8>, BoxError> {
     let mut bytes = Vec::new();
     let mut buffer = [0u8; 16 * 1024];
     let header = loop {
@@ -328,6 +331,9 @@ async fn read_pairing_frame(receive: &mut iroh::endpoint::RecvStream) -> Result<
         }
         let read_limit = remaining.min(buffer.len());
         let Some(length) = receive.read(&mut buffer[..read_limit]).await? else {
+            if allow_empty_response && bytes.is_empty() {
+                return Ok(bytes);
+            }
             return Err(io_error("Pairing header incomplete: stage=stream"));
         };
         let chunk = &buffer[..length];
@@ -1075,6 +1081,60 @@ mod tests {
         second_session.close();
         first_guest.close().await.unwrap();
         second_guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pairing_exchange_accepts_empty_noop_ack_but_rejects_truncated_header() {
+        let guest = NativeNode::start(Some([61; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([62; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let session = guest
+            .connect_browser(host.addr(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let responder = tokio::spawn(async move {
+            let noop = inbox.receive().await.unwrap();
+            assert_eq!(noop.payload(), b"noop");
+            noop.respond(Vec::new()).unwrap();
+
+            let truncated = inbox.receive().await.unwrap();
+            assert_eq!(truncated.payload(), b"truncated");
+            truncated.respond(b"{\"header\"".to_vec()).unwrap();
+
+            let valid = inbox.receive().await.unwrap();
+            assert_eq!(valid.payload(), b"valid");
+            valid
+                .respond(PairingCodec::encode("sync-heartbeat-ack", "secret", &[]).unwrap())
+                .unwrap();
+        });
+
+        assert!(
+            session
+                .exchange_pairing(b"noop", Duration::from_secs(5))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let truncated = session
+            .exchange_pairing(b"truncated", Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert!(truncated.to_string().contains("Pairing header incomplete"));
+        let valid = session
+            .exchange_pairing(b"valid", Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(
+            PairingCodec::inspect(&valid).unwrap().frame_type,
+            "sync-heartbeat-ack"
+        );
+
+        responder.await.unwrap();
+        session.close();
+        guest.close().await.unwrap();
         host.close().await.unwrap();
     }
 
