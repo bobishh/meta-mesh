@@ -82,9 +82,10 @@ export type LocalProfile = {
   }
 }
 
-export { createDelegatedCertificate, createDeviceAuthorizationRequest, issueDeviceAuthorization,
-  verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
-export type { DeviceAuthorizationRequest } from "./deviceAuthorization"
+export { createDelegatedCertificate, createDeviceAuthorizationRequest, encodeDeviceAuthorizationRequest,
+  parseDeviceAuthorizationRequest, createDeviceAuthorizationApproval, issueDeviceAuthorization,
+  verifyDeviceAuthorizationApproval, verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
+export type { DeviceAuthorizationRequest, DeviceAuthorizationApproval, DeviceAuthorizationApprovalPayload } from "./deviceAuthorization"
 export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, issueIdentityDeviceEnrollment,
   verifyIdentityDeviceEnrollmentRequest, identityRequestAllowsRecoveryTransfer } from "./identityEnrollment"
 export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "./identityEnrollment"
