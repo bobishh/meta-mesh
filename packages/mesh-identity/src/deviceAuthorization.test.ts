@@ -1,13 +1,53 @@
 import { describe, expect, it } from "vitest"
-import { certificateHash, createRecoverableIdentity, verifyDeviceCertificateChain } from "./index"
+import { authorizeIdentityDataDevice, certificateHash, createRecoverableIdentity, createDeviceRevocation,
+  openIdentityRecoveryEnvelope, publicKeyId, signEnvelope, verifyDeviceCertificateChain, verifyIdentityDeviceAuthority } from "./index"
 import { createDelegatedCertificate, createDeviceAuthorizationApproval, createDeviceAuthorizationRequest,
-  issueDeviceAuthorization, verifyDeviceAuthorizationApproval } from "./deviceAuthorization"
+  issueDeviceAuthorization, verifyDeviceAuthorizationApproval, verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
+import { createIdentityRustyServicePinOperation, emptyIdentityProfileState, readIdentityProfileState } from "./identityProfile"
 
 const applicationOrigin = "https://boards.example"
 const challenge = "a".repeat(64)
 const expiresAt = Date.now() + 90_000
 
 describe("application device enrollment", () => {
+  it("Given a signed app pin inventory, when Identity validates the request, then bind normalized service origins to the app key", async () => {
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const client = (await createRecoverableIdentity("better", "Client")).profile
+    const pin = { origin: "https://rusty.example", serviceId: await publicKeyId(client.device.publicKey),
+      servicePublicKey: client.device.publicKey }
+    const request = await createDeviceAuthorizationRequest(client, { applicationOrigin, challenge, expiresAt,
+      personId: identity.identity.personId, rustyServicePins: [pin] })
+    expect(request.payload).toMatchObject({ version: 2, rustyServicePins: [pin] })
+    const initial = emptyIdentityProfileState(identity.identity.personId)
+    const pinOperation = await createIdentityRustyServicePinOperation(identity, initial, pin, [identity.certificate])
+    const profileState = await readIdentityProfileState({ ...initial, operations: pinOperation ? [pinOperation] : [] },
+      identity.identity, [identity.certificate])
+    const approval = await createDeviceAuthorizationApproval(identity, request, { applicationOrigin, challenge,
+      certificates: [identity.certificate], profileState, revocations: [] })
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({
+      proof: { payload: { request: { payload: { rustyServicePins: [pin] } } } },
+    })
+    await expect(verifyDeviceAuthorizationRequest({ ...request, payload: { ...request.payload,
+      rustyServicePins: [{ ...pin, serviceId: "b".repeat(43) }] } } as typeof request, { applicationOrigin, challenge }))
+      .rejects.toThrow()
+    expect(approval.proof.payload.version).toBe(3)
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, rustyServicePins: [
+      { ...pin, origin: "https://substituted.example" },
+    ] }, request)).rejects.toThrow(/catalog/i)
+  })
+
+  it("Given an app request for a Rusty service, when the Identity catalog lacks its signed manager operation, then refuse approval", async () => {
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const client = (await createRecoverableIdentity("better", "Client")).profile
+    const pin = { origin: "https://rusty.example", serviceId: await publicKeyId(client.device.publicKey),
+      servicePublicKey: client.device.publicKey }
+    const request = await createDeviceAuthorizationRequest(client, { applicationOrigin, challenge, expiresAt,
+      personId: identity.identity.personId, rustyServicePins: [pin] })
+    await expect(createDeviceAuthorizationApproval(identity, request, { applicationOrigin, challenge,
+      certificates: [identity.certificate], profileState: emptyIdentityProfileState(identity.identity.personId),
+      revocations: [] })).rejects.toThrow(/not committed/i)
+  })
+
   it("Given an application-owned device key, when Identity approves, then certify that key without transferring private keys", async () => {
     const identity = (await createRecoverableIdentity("better", "Owner")).profile
     const client = (await createRecoverableIdentity("better", "Temporary client")).profile
@@ -15,9 +55,66 @@ describe("application device enrollment", () => {
     const certificate = await issueDeviceAuthorization(identity, request, { applicationOrigin, challenge })
     expect(certificate.payload).toMatchObject({ personId: identity.identity.personId,
       deviceId: client.device.deviceId, devicePublicKey: client.device.publicKey, canEnrollDevices: false })
-    expect(await verifyDeviceCertificateChain(identity.identity, client.device.deviceId, [certificate]))
+    expect(certificate.payload.issuerCertificateHash).toBe(await certificateHash(identity.certificate))
+    expect(await verifyDeviceCertificateChain(identity.identity, client.device.deviceId, [identity.certificate, certificate]))
       .toBe(client.device.publicKey)
     expect(JSON.stringify({ request, certificate })).not.toMatch(/privateKey|recoveryKey/u)
+  })
+
+  it("Given a root-capable manager approving an app key, when that manager is revoked, then the approved app key is revoked with it", async () => {
+    const recovered = await createRecoverableIdentity("better", "Owner")
+    const manager = recovered.profile
+    const remainingManager = await openIdentityRecoveryEnvelope(recovered.recoveryEnvelope, recovered.recoveryKey, "Owner")
+    const client = (await createRecoverableIdentity("better", "Client")).profile
+    const request = await createDeviceAuthorizationRequest(client, { applicationOrigin, challenge, expiresAt })
+    const appCertificate = await issueDeviceAuthorization(manager, request, { applicationOrigin, challenge,
+      certificates: [manager.certificate, remainingManager.certificate] })
+    expect(appCertificate.payload.issuerCertificateHash).toBe(await certificateHash(manager.certificate))
+    const certificates = [manager.certificate, remainingManager.certificate, appCertificate]
+    const before = await verifyIdentityDeviceAuthority(manager.identity, { certificates, revocations: [] })
+    const revocation = await createDeviceRevocation(remainingManager, before, manager.device.deviceId,
+      { version: 1, personId: manager.identity.personId, operations: [], legacy: [] })
+    const after = await verifyIdentityDeviceAuthority(manager.identity, { certificates, revocations: [revocation] })
+    expect(after.blockedDeviceIds).toContain(client.device.deviceId)
+  })
+
+  it("Given a legacy root-sibling app certificate, when the same device ID is reparented, then reject conflicting certificate history", async () => {
+    const owner = (await createRecoverableIdentity("better", "Owner")).profile
+    const app = (await createRecoverableIdentity("better", "App")).profile
+    const payload = { kind: "device-certificate" as const, version: 1 as const,
+      personId: owner.identity.personId, deviceId: app.device.deviceId,
+      devicePublicKey: app.device.publicKey, canEnrollDevices: false }
+    const legacy = await signEnvelope(owner.privateKeys.identityPrivateKey!, {
+      ...payload, issuerCertificateHash: null,
+    }, owner.identity.personId)
+    const reparented = await signEnvelope(owner.privateKeys.devicePrivateKey, {
+      ...payload, issuerCertificateHash: await certificateHash(owner.certificate),
+    }, owner.device.deviceId)
+    await expect(verifyIdentityDeviceAuthority(owner.identity, {
+      certificates: [owner.certificate, legacy, reparented], revocations: [],
+    })).rejects.toThrow(/conflicting Identity device certificate/i)
+  })
+
+  it("Given an existing legacy root-sibling app key, when it signs in again, then retain its verified certificate without reparenting", async () => {
+    const owner = (await createRecoverableIdentity("better", "Owner")).profile
+    const app = (await createRecoverableIdentity("better", "Existing app")).profile
+    const legacyCertificate = await signEnvelope(owner.privateKeys.identityPrivateKey!, {
+      kind: "device-certificate" as const, version: 1 as const, personId: owner.identity.personId,
+      deviceId: app.device.deviceId, devicePublicKey: app.device.publicKey,
+      issuerCertificateHash: null, canEnrollDevices: false,
+    }, owner.identity.personId)
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt,
+      personId: owner.identity.personId })
+    const profileState = emptyIdentityProfileState(owner.identity.personId)
+    const approval = await createDeviceAuthorizationApproval(owner, request, {
+      applicationOrigin, challenge, certificates: [owner.certificate, legacyCertificate],
+      profileState, revocations: [],
+    })
+    expect(approval.certificate).toEqual(legacyCertificate)
+    expect(new Set(approval.certificates.map(item => item.payload.deviceId)).size).toBe(approval.certificates.length)
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({
+      certificate: { signature: legacyCertificate.signature },
+    })
   })
 
   it("Given a substituted device key or another application challenge, when approved, then refuse enrollment", async () => {

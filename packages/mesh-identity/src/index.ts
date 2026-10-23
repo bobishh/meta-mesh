@@ -161,9 +161,11 @@ export { createIdentityProfileRecovery, openIdentityProfileRecovery, parseIdenti
 export type { IdentityProfileRecoveryFile, IdentityProfileRecoveryPayload } from "./identityProfileRecovery"
 
 export { createIdentityProfileOperation, emptyIdentityProfileState, identityProfileRevision, identityProfileValue,
-  mergeIdentityProfileState, observeLegacyIdentityProfile, readIdentityProfileState,
+  createIdentityRustyServicePinOperation, identityProfileRustyServicePins, mergeIdentityProfileState,
+  normalizeIdentityRustyServicePin, normalizeIdentityRustyServicePins, observeLegacyIdentityProfile, readIdentityProfileState,
   readIdentityProfileStateWithRevocations } from "./identityProfile"
-export type { IdentityProfileField, IdentityProfileOperation, IdentityProfileState, IdentityProfileValue } from "./identityProfile"
+export type { IdentityProfileField, IdentityProfileOperation, IdentityProfileState, IdentityProfileValue,
+  IdentityRustyServicePin } from "./identityProfile"
 
 export type IdentityStoreOptions = {
   storageKey: string
