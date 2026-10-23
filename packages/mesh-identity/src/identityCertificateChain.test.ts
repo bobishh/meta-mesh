@@ -19,7 +19,7 @@ describe("active Identity device certificate chain", () => {
     await expect(identityDeviceCertificateChain(owner.identity, evidence, owner.device.deviceId))
       .resolves.toEqual([owner.certificate])
     await expect(identityDeviceCertificateChain(owner.identity, evidence, app.device.deviceId))
-      .resolves.toEqual([owner.certificate, appCertificate])
+      .resolves.toEqual([appCertificate, owner.certificate])
   })
 
   it("Given a revoked app key, when deriving its Rusty signer chain, then reject the key", async () => {
