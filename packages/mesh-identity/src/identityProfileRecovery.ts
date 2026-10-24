@@ -1,4 +1,4 @@
-import { canonicalizeJson, fromBase64Url, generateIdentityRecovery, identitySeedFromPrivateKey,
+import { canonicalizeJson, fromBase64Url, identitySeedFromPrivateKey,
   openIdentityRecoveryEnvelope, profileFromIdentitySeedForDevice, sealIdentitySeed, toBase64Url,
   type IdentityRecoveryEnvelope, type IdentitySecurity, type LocalProfile } from "./index"
 import { createIdentityProfileOperation, emptyIdentityProfileState, identityProfileValue,
@@ -124,6 +124,7 @@ export async function createIdentityProfileRecovery(
 ): Promise<{ recoveryKey: string; recoveryEnvelope: IdentityRecoveryEnvelope; file: IdentityProfileRecoveryFile }> {
   const seed = await identitySeedFromPrivateKey(profile.privateKeys.identityPrivateKey!, profile.identity.personId)
   try {
+    const { generateIdentityRecovery } = await import("./recovery")
     const recoveryKey = generateIdentityRecovery(security)
     const recoveryEnvelope = await sealIdentitySeed(seed, profile.identity.personId, recoveryKey, security)
     const state = payloadValue.profileState ?? await createInitialIdentityProfileState(profile, payloadValue, certificates)
