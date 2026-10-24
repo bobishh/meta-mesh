@@ -1,8 +1,6 @@
 import {
   BrowserIdentityStore,
   fromBase64Url,
-  chatKeyIsValid,
-  normalizeRecoveryPhrase,
   sha256Base64Url,
   signEnvelope,
   toBase64Url,
@@ -15,6 +13,7 @@ import {
   type PublicIdentity,
   type SignedEnvelope,
 } from "../../packages/mesh-identity/src/index"
+import { chatKeyIsValid, normalizeRecoveryPhrase } from "../../packages/mesh-identity/src/recovery"
 import {
   CONTACT_SIGNATURE_DOMAIN,
   appendContactMessage,

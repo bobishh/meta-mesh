@@ -1,22 +1,24 @@
 import { describe, expect, it } from "vitest"
 import {
   BrowserIdentityStore,
-  chatKeyIsValid,
   createPassphraseIdentity,
   createRecoverableIdentity,
+  openIdentityRecoveryEnvelope,
+  openIdentityPassphraseEnvelope,
+  rewrapIdentityRecoveryEnvelope,
+  verifyDeviceCertificateChain,
+} from "./index"
+import {
+  chatKeyIsValid,
   generateChatKey,
   generateIdentityRecovery,
   generateRecoveryPhrase,
   identitySecurityForRecovery,
   identitySecurityWordCount,
-  openIdentityRecoveryEnvelope,
-  openIdentityPassphraseEnvelope,
   recoveryPhraseFromEntropy,
   recoveryPhraseIsValid,
   recoveryPhraseToEntropy,
-  rewrapIdentityRecoveryEnvelope,
-  verifyDeviceCertificateChain,
-} from "./index"
+} from "./recovery"
 
 describe("mesh recovery phrase", () => {
   it.each([
