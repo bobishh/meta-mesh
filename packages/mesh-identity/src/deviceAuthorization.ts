@@ -273,6 +273,23 @@ export async function verifyDeviceAuthorizationApproval(
   requestValue: DeviceAuthorizationRequest,
   options: { now?: () => number } = {},
 ): Promise<DeviceAuthorizationApproval> {
+  return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, options, false)
+}
+
+/** Reverify retained signed approval evidence after its redirect request expires. */
+export async function verifyRetainedDeviceAuthorizationApproval(
+  approvalValue: unknown,
+  requestValue: DeviceAuthorizationRequest,
+): Promise<DeviceAuthorizationApproval> {
+  return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, {}, true)
+}
+
+async function verifyDeviceAuthorizationApprovalEvidence(
+  approvalValue: unknown,
+  requestValue: DeviceAuthorizationRequest,
+  options: { now?: () => number },
+  retained: boolean,
+): Promise<DeviceAuthorizationApproval> {
   const request = structuredClone(requestValue)
   const serialized = JSON.stringify(approvalValue)
   if (!serialized || serialized.length > 256_000) throw new Error("Invalid Identity device approval")
@@ -286,7 +303,7 @@ export async function verifyDeviceAuthorizationApproval(
     throw new Error("Invalid Identity device approval")
   }
   const payload = approval.proof.payload
-  const now = (options.now ?? Date.now)()
+  const now = retained ? null : (options.now ?? Date.now)()
   const version2 = payload.version === 2 || payload.version === 3
   const version3 = payload.version === 3
   if (!hasExactKeys(payload, version3
@@ -297,7 +314,8 @@ export async function verifyDeviceAuthorizationApproval(
       canonicalizeJson(payload.request) !== canonicalizeJson(request) ||
       payload.certificateHash !== await certificateHash(approval.certificate) ||
       payload.expiresAt !== request.payload.expiresAt || !Number.isSafeInteger(payload.issuedAt) ||
-      payload.issuedAt > now + 30_000 || payload.issuedAt >= payload.expiresAt || now >= payload.expiresAt ||
+      (!retained && payload.issuedAt > now! + 30_000) || payload.issuedAt >= payload.expiresAt ||
+      (!retained && now! >= payload.expiresAt) ||
       approval.certificate.payload.deviceId !== request.payload.deviceId ||
       approval.certificate.payload.devicePublicKey !== request.payload.devicePublicKey ||
       approval.certificate.payload.personId !== approval.identity.personId || approval.certificate.payload.canEnrollDevices) {

@@ -73,7 +73,8 @@ it("Given a workspace participant without controller authority, When reading sco
   const serviceId = await publicKeyId(service.identity.publicKey)
   const snapshot = { genesis: { payload: { scopeId: "workspace-2", controlEpoch: 1 } }, controlTransfers: [] }
   let requestUrl = ""
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    void init
     requestUrl = String(input)
     const url = new URL(requestUrl)
     const requestId = url.searchParams.get("requestId")!
@@ -108,7 +109,8 @@ it("Given Rusty already has the exact accepted authority snapshot, When reconcil
     { certificates: [owner.certificate], revocations: [] }, emptyIdentityProfileState(owner.identity.personId))
   const snapshot = { genesis: { payload: { scopeId: "workspace-3", controlEpoch: 1 } }, grants: [], grantIssuers: [],
     revocations: [], controlTransfers: [], successionTransfers: [] }
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    void init
     const url = new URL(String(input))
     const requestId = url.searchParams.get("requestId")!
     const requestHash = url.searchParams.get("requestHash")!

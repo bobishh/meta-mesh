@@ -5,7 +5,8 @@ import { createServiceLoginRequest, verifyServiceLoginApproval } from "./service
 describe("session-only Identity login client", () => {
   it("Given a fresh application browser without local identity, when it starts login, then request only a short session", () => {
     const request = createServiceLoginRequest("https://boards.example")
-    expect(Object.keys(request).sort()).toEqual(["challenge", "expires_at", "kind", "origin", "version"])
+    expect(Object.keys(request).sort()).toEqual(["challenge", "expires_at", "kind", "origin", "return_to", "version"])
+    expect(request.return_to).toBe("https://boards.example/.well-known/mesh-service-login/callback")
     expect(request.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000))
     expect(request.expires_at).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 120)
   })

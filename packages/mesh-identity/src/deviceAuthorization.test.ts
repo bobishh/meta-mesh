@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import { authorizeIdentityDataDevice, certificateHash, createRecoverableIdentity, createDeviceRevocation,
   openIdentityRecoveryEnvelope, publicKeyId, signEnvelope, verifyDeviceCertificateChain, verifyIdentityDeviceAuthority } from "./index"
 import { createDelegatedCertificate, createDeviceAuthorizationApproval, createDeviceAuthorizationRequest,
-  issueDeviceAuthorization, verifyDeviceAuthorizationApproval, verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
+  issueDeviceAuthorization, verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
+  verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
 import { createIdentityRustyServicePinOperation, emptyIdentityProfileState, readIdentityProfileState } from "./identityProfile"
 
 const applicationOrigin = "https://boards.example"
@@ -34,6 +35,27 @@ describe("application device enrollment", () => {
     await expect(verifyDeviceAuthorizationApproval({ ...approval, rustyServicePins: [
       { ...pin, origin: "https://substituted.example" },
     ] }, request)).rejects.toThrow(/catalog/i)
+  })
+
+  it("Given an approved Rusty catalog, when its redirect request expires, then retained evidence stays verifiable without renewing consent", async () => {
+    const now = Date.now()
+    const identity = (await createRecoverableIdentity("better", "Owner")).profile
+    const client = (await createRecoverableIdentity("better", "Client")).profile
+    const service = (await createRecoverableIdentity("better", "Rusty")).profile
+    const pin = { origin: "https://rusty.example", serviceId: await publicKeyId(service.identity.publicKey),
+      servicePublicKey: service.identity.publicKey }
+    const request = await createDeviceAuthorizationRequest(client, { applicationOrigin, challenge,
+      expiresAt: now + 10_000, personId: identity.identity.personId, rustyServicePins: [pin] })
+    const initial = emptyIdentityProfileState(identity.identity.personId)
+    const operation = await createIdentityRustyServicePinOperation(identity, initial, pin, [identity.certificate])
+    const profileState = await readIdentityProfileState({ ...initial, operations: operation ? [operation] : [] },
+      identity.identity, [identity.certificate])
+    const approval = await createDeviceAuthorizationApproval(identity, request, { applicationOrigin, challenge,
+      certificates: [identity.certificate], profileState, revocations: [], now: () => now + 1_000 })
+
+    await expect(verifyDeviceAuthorizationApproval(approval, request, { now: () => now + 2_000 })).resolves.toBeDefined()
+    await expect(verifyDeviceAuthorizationApproval(approval, request, { now: () => now + 10_001 })).rejects.toThrow(/does not match/u)
+    await expect(verifyRetainedDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({ rustyServicePins: [pin] })
   })
 
   it("Given an app request for a Rusty service, when the Identity catalog lacks its signed manager operation, then refuse approval", async () => {

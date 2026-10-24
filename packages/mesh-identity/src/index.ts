@@ -135,7 +135,8 @@ export type LocalProfile = {
 
 export { createDelegatedCertificate, createDeviceAuthorizationRequest, encodeDeviceAuthorizationRequest,
   parseDeviceAuthorizationRequest, createDeviceAuthorizationApproval, issueDeviceAuthorization,
-  verifyDeviceAuthorizationApproval, verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
+  verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
+  verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
 export type { DeviceAuthorizationRequest, DeviceAuthorizationApproval, DeviceAuthorizationApprovalPayload } from "./deviceAuthorization"
 export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, issueIdentityDeviceEnrollment,
   verifyIdentityDeviceEnrollmentRequest, identityRequestAllowsRecoveryTransfer } from "./identityEnrollment"
