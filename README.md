@@ -11,6 +11,8 @@ Rust layout:
 
 The npm workspace is marked `private` so root-package publishing cannot happen accidentally. Packages are consumed from a pinned Git submodule until their API stabilizes. Repository visibility is a separate GitHub setting.
 
+Shared Identity sign-in, service sessions and resource ownership contracts are described in [Identity and resource access](docs/identity-and-resource-access.md).
+
 ## Independent Rusty replica clients
 
 `@meta-uber/mesh-replication/rusty-replica` exports the shared Rusty origin,
