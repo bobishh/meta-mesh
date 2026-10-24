@@ -267,7 +267,8 @@ export async function createDeviceAuthorizationApproval(
   }
   await options.ensureCurrent?.()
   const signedName = approvedProfileState ? identityProfileValue(approvedProfileState, "name").values[0] : undefined
-  const identity = typeof signedName === "string" ? { ...issuer.identity, displayName: signedName } : issuer.identity
+  const identity = approvedProfileState
+    ? { ...issuer.identity, displayName: typeof signedName === "string" ? signedName : "" } : issuer.identity
   const approval: DeviceAuthorizationApproval = { identity, issuerDeviceId: issuer.device.deviceId,
     certificates: allCertificates, certificate, ...(authorityView ? { authorityView } : {}),
     ...(rustyServicePins ? { rustyServicePins } : {}), ...(approvedProfileState ? { profileState: approvedProfileState } : {}), proof }
@@ -400,7 +401,7 @@ async function verifyDeviceAuthorizationApprovalEvidence(
           throw new Error("Identity approval profile does not match its signed digest")
         }
         const name = identityProfileValue(profile, "name").values[0]
-        if (typeof name === "string" && name !== approval.identity.displayName) {
+        if ((typeof name === "string" ? name : "") !== approval.identity.displayName) {
           throw new Error("Identity approval name does not match its signed profile")
         }
       }

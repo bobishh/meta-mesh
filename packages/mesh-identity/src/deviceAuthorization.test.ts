@@ -30,6 +30,19 @@ describe("application device enrollment", () => {
     await expect(verifyDeviceAuthorizationApproval({ ...approval, profileState: undefined }, request)).rejects.toThrow(/profile/u)
   })
 
+  it("Given a confirmed profile without a name, when its outer label is substituted, then reject the unsigned label", async () => {
+    const owner = (await createRecoverableIdentity("better", "Local label")).profile
+    const app = (await createRecoverableIdentity("better", "App")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt })
+    const approval = await createDeviceAuthorizationApproval(owner, request, { applicationOrigin, challenge,
+      certificates: [owner.certificate], profileState: emptyIdentityProfileState(owner.identity.personId),
+      revocations: [], includeProfileState: true })
+    expect(approval.identity.displayName).toBe("")
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toBeDefined()
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, identity: { ...approval.identity, displayName: "Fake name" } }, request))
+      .rejects.toThrow(/profile/u)
+  })
+
   it("Given a signed app pin inventory, when Identity validates the request, then bind normalized service origins to the app key", async () => {
     const identity = (await createRecoverableIdentity("better", "Owner")).profile
     const client = (await createRecoverableIdentity("better", "Client")).profile
