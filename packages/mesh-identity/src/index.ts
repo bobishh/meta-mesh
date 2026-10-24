@@ -143,9 +143,10 @@ export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "
 export { createServiceLoginRequest, encodeServiceLoginRequest, verifyServiceLoginApproval } from "./serviceLoginClient"
 
 export {
-  assertServiceLoginSession,
+  assertServiceLoginRequest,
   createServiceLoginApproval,
   parseServiceLoginRequest,
+  SERVICE_LOGIN_CALLBACK_PATH,
   serviceLoginPayload,
   snapshotServiceLoginRequest,
 } from "./serviceLogin"
@@ -155,6 +156,8 @@ export type {
   ServiceLoginPayload,
   ServiceLoginRequest,
 } from "./serviceLogin"
+export { beginServiceLogin, captureServiceLoginCallback, serviceLoginApprovalReturnUrl } from "./serviceLoginBrowser"
+export type { ServiceLoginChallenge } from "./serviceLoginBrowser"
 
 export { createIdentityProfileRecovery, openIdentityProfileRecovery, parseIdentityProfileRecoveryFile,
   sealIdentityProfileRecovery } from "./identityProfileRecovery"

@@ -7,8 +7,9 @@ export function createServiceLoginRequest(origin: string,
   options: { now?: () => number } = {}): ServiceLoginRequest {
   const now = (options.now ?? Date.now)()
   const challenge = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, "0")).join("")
-  const request: ServiceLoginRequest = { kind: "mesh-service-login-request", version: 1, origin, challenge,
-    expires_at: Math.floor(now / 1000) + 120 }
+  const request: ServiceLoginRequest = { kind: "mesh-service-login-request", version: 2, origin, challenge,
+    expires_at: Math.floor(now / 1000) + 120,
+    return_to: new URL("/.well-known/mesh-service-login/callback", origin).href }
   encodeServiceLoginRequest(request, now)
   return request
 }

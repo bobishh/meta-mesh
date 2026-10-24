@@ -12,10 +12,11 @@ describe("native service-login verifier CLI", () => {
     const now = Date.now()
     const request: ServiceLoginRequest = {
       kind: "mesh-service-login-request",
-      version: 1,
+      version: 2,
       origin: "https://acidreflux.example",
       challenge: "a".repeat(64),
       expires_at: Math.floor(now / 1_000) + 90,
+      return_to: "https://acidreflux.example/.well-known/mesh-service-login/callback",
     }
     const profile = await profileFromIdentitySeedForDevice(crypto.getRandomValues(new Uint8Array(32)), "Owner")
     const approval = await createServiceLoginApproval(profile, request, { now: () => now })
