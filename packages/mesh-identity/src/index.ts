@@ -3,18 +3,6 @@ import { readIdentityProfileState, readIdentityProfileStateWithRevocations, type
 import { type IdentitySecurity } from "./recovery"
 import { normalizeRecoveryPhrase } from "./recoveryNormalization"
 
-export {
-  chatKeyIsValid,
-  generateChatKey,
-  generateIdentityRecovery,
-  generateRecoveryPhrase,
-  identitySecurityForRecovery,
-  identitySecurityWordCount,
-  recoveryPhraseFromEntropy,
-  recoveryPhraseIsValid,
-  recoveryPhraseToEntropy,
-} from "./recovery"
-export { normalizeRecoveryPhrase } from "./recoveryNormalization"
 export type { IdentitySecurity, RecoveryStrengthBits } from "./recovery"
 
 export type PersonId = string
