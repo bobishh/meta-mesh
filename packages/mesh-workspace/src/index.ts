@@ -12,6 +12,8 @@ import { signWorkspaceRecord, workspaceSignerCertificates, type WorkspaceRecordS
 export type { WorkspaceRecordSigner } from "./signing"
 
 export * from "./coownership"
+export { createAutomationWorkspaceGrant, parseAutomationGrantScope,
+  type AutomationGrantScope, type AutomationWorkspaceGrantIntent } from "./automationGrant"
 export { createDelegatedCertificate } from "@meta-uber/mesh-identity"
 
 export type WorkspaceRole = "owner" | "editor" | "visitor" | "automation"
@@ -447,7 +449,7 @@ export async function verifyWorkspaceRevocation(raw: unknown, workspaceId: strin
 
 export async function verifyWorkspaceGrant(grant: WorkspaceGrant | undefined, scope: {
   workspaceId: string; personId: string; ownerPersonId: string; ownerPublicKey: string; ownerCertificates: DeviceCertificate[]
-}): Promise<"owner" | "editor" | "visitor"> {
+}): Promise<WorkspaceRole> {
   if (!grant) throw new Error("Missing workspace grant for non-owner member")
   return meshRustRuntime().state.verifyWorkspaceGrant(grant, scope.workspaceId, scope.personId, {
     personId: scope.ownerPersonId, publicKey: scope.ownerPublicKey, certificates: scope.ownerCertificates,
