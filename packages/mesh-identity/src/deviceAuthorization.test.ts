@@ -4,13 +4,32 @@ import { authorizeIdentityDataDevice, certificateHash, createRecoverableIdentity
 import { createDelegatedCertificate, createDeviceAuthorizationApproval, createDeviceAuthorizationRequest,
   issueDeviceAuthorization, verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
   verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
-import { createIdentityRustyServicePinOperation, emptyIdentityProfileState, readIdentityProfileState } from "./identityProfile"
+import { createIdentityProfileOperation, createIdentityRustyServicePinOperation, emptyIdentityProfileState, readIdentityProfileState } from "./identityProfile"
 
 const applicationOrigin = "https://boards.example"
 const challenge = "a".repeat(64)
 const expiresAt = Date.now() + 90_000
 
 describe("application device enrollment", () => {
+  it("Given an Identity profile with a photo, when approving browser sign-in, then bind the complete profile and reject a substituted snapshot", async () => {
+    const owner = (await createRecoverableIdentity("better", "Profile owner")).profile
+    const app = (await createRecoverableIdentity("better", "App")).profile
+    const request = await createDeviceAuthorizationRequest(app, { applicationOrigin, challenge, expiresAt })
+    const initial = emptyIdentityProfileState(owner.identity.personId)
+    const name = await createIdentityProfileOperation(owner, initial, "name", "Profile owner")
+    const named = await readIdentityProfileState({ ...initial, operations: [name] }, owner.identity)
+    const photo = await createIdentityProfileOperation(owner, named, "photo", { avatarData: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA", changedAt: new Date().toISOString() })
+    const profileState = await readIdentityProfileState({ ...named, operations: [...named.operations, photo] }, owner.identity)
+    const approval = await createDeviceAuthorizationApproval(owner, request, { applicationOrigin, challenge,
+      certificates: [owner.certificate], profileState, revocations: [], includeProfileState: true })
+    expect(approval.proof.payload.version).toBe(4)
+    expect(approval.profileState).toEqual(profileState)
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({ profileState })
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, identity: { ...approval.identity, displayName: "Substituted" } }, request)).rejects.toThrow(/profile/u)
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, profileState: initial }, request)).rejects.toThrow(/profile/u)
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, profileState: undefined }, request)).rejects.toThrow(/profile/u)
+  })
+
   it("Given a signed app pin inventory, when Identity validates the request, then bind normalized service origins to the app key", async () => {
     const identity = (await createRecoverableIdentity("better", "Owner")).profile
     const client = (await createRecoverableIdentity("better", "Client")).profile

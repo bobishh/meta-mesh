@@ -4,7 +4,7 @@ import { canonicalizeJson, publicKeyId, signEnvelope, toBase64Url, verifyEnvelop
   createIdentityAuthorityView, verifyIdentityAuthorityView,
   type DeviceCertificate, type IdentityAuthorityHead, type IdentityAuthorityView,
   type IdentityDeviceRevocation, type LocalProfile, type SignedEnvelope } from "./index"
-import { identityProfileRevision, identityProfileRustyServicePins, normalizeIdentityRustyServicePins,
+import { identityProfileRevision, identityProfileValue, identityProfileRustyServicePins, normalizeIdentityRustyServicePins,
   readIdentityProfileStateWithRevocations, type IdentityProfileState, type IdentityRustyServicePin } from "./identityProfile"
 
 type DeviceAuthorizationRequestFields = {
@@ -40,8 +40,9 @@ type DeviceAuthorizationApprovalPayloadV3 = Omit<DeviceAuthorizationApprovalPayl
   rustyServicePinsDigest: string
   profileStateDigest: string
 }
+type DeviceAuthorizationApprovalPayloadV4 = Omit<DeviceAuthorizationApprovalPayloadV3, "version"> & { version: 4 }
 export type DeviceAuthorizationApprovalPayload = DeviceAuthorizationApprovalPayloadV1 |
-  DeviceAuthorizationApprovalPayloadV2 | DeviceAuthorizationApprovalPayloadV3
+  DeviceAuthorizationApprovalPayloadV2 | DeviceAuthorizationApprovalPayloadV3 | DeviceAuthorizationApprovalPayloadV4
 
 export type DeviceAuthorizationApproval = {
   identity: LocalProfile["identity"]
@@ -50,6 +51,7 @@ export type DeviceAuthorizationApproval = {
   certificate: DeviceCertificate
   authorityView?: IdentityAuthorityView
   rustyServicePins?: IdentityRustyServicePin[]
+  profileState?: IdentityProfileState
   proof: SignedEnvelope<DeviceAuthorizationApprovalPayload>
 }
 
@@ -193,14 +195,14 @@ export async function issueDeviceAuthorization(
 export async function createDeviceAuthorizationApproval(
   issuerValue: LocalProfile,
   requestValue: DeviceAuthorizationRequest,
-  options: Binding & { ensureCurrent?: () => void | Promise<void>; profileState?: IdentityProfileState;
+  options: Binding & { ensureCurrent?: () => void | Promise<void>; profileState?: IdentityProfileState; includeProfileState?: boolean;
     revocations?: readonly IdentityDeviceRevocation[] },
 ): Promise<DeviceAuthorizationApproval> {
   const issuer: LocalProfile = { ...issuerValue, identity: structuredClone(issuerValue.identity),
     device: structuredClone(issuerValue.device), certificate: structuredClone(issuerValue.certificate),
     privateKeys: { ...issuerValue.privateKeys } }
   const request = structuredClone(requestValue)
-  if (request.payload.version === 2 && (options.profileState === undefined || options.revocations === undefined)) {
+  if ((request.payload.version === 2 || options.includeProfileState) && (options.profileState === undefined || options.revocations === undefined)) {
     throw new Error("Rusty pin approval requires the current signed Identity profile")
   }
   const certificates = Array.from(options.certificates ?? [], value => structuredClone(value))
@@ -220,6 +222,7 @@ export async function createDeviceAuthorizationApproval(
   if (!Number.isSafeInteger(issuedAt) || issuedAt >= request.payload.expiresAt) throw new Error("Application device request expired")
   let authorityView: IdentityAuthorityView | undefined
   let rustyServicePins: IdentityRustyServicePin[] | undefined
+  let approvedProfileState: IdentityProfileState | undefined
   let proofPayload: DeviceAuthorizationApprovalPayload
   if (options.profileState !== undefined || options.revocations !== undefined) {
     if (!options.profileState || !options.revocations) throw new Error("Application device approval requires complete Identity authority state")
@@ -228,21 +231,22 @@ export async function createDeviceAuthorizationApproval(
     const approvedApplicationKey = await authorizeIdentityDataDevice(verifiedView, request.payload.deviceId)
     if (approvedApplicationKey !== request.payload.devicePublicKey) throw new Error("Application device is not active in this Identity")
     authorityView = JSON.parse(JSON.stringify(verifiedView)) as IdentityAuthorityView
-    if (request.payload.version === 2) {
+    if (request.payload.version === 2 || options.includeProfileState) {
       const profile = await readIdentityProfileStateWithRevocations(options.profileState, issuer.identity,
         allCertificates, options.revocations)
       rustyServicePins = identityProfileRustyServicePins(profile)
-      const requestedPins = request.payload.rustyServicePins
+      const requestedPins = "rustyServicePins" in request.payload ? request.payload.rustyServicePins : []
       if (requestedPins.some(pin => !rustyServicePins!.some(saved => canonicalizeJson(saved) === canonicalizeJson(pin)))) {
         throw new Error("Requested Rusty service pins are not committed to Identity profile history")
       }
       proofPayload = {
-        kind: "mesh-device-authorization-approval", version: 3, request,
+        kind: "mesh-device-authorization-approval", version: options.includeProfileState ? 4 : 3, request,
         certificateHash: await certificateHash(certificate), issuedAt, expiresAt: request.payload.expiresAt,
         authorityViewDigest: authorityView.viewDigest, revocationHead: authorityView.revocationHead,
         rustyServicePinsDigest: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(rustyServicePins))),
         profileStateDigest: await identityProfileRevision(profile),
       }
+      if (options.includeProfileState) approvedProfileState = profile
     } else {
       proofPayload = {
         kind: "mesh-device-authorization-approval", version: 2, request,
@@ -262,9 +266,28 @@ export async function createDeviceAuthorizationApproval(
     throw new Error("Identity device signing key mismatch")
   }
   await options.ensureCurrent?.()
-  return { identity: issuer.identity, issuerDeviceId: issuer.device.deviceId,
+  const signedName = approvedProfileState ? identityProfileValue(approvedProfileState, "name").values[0] : undefined
+  const identity = typeof signedName === "string" ? { ...issuer.identity, displayName: signedName } : issuer.identity
+  const approval: DeviceAuthorizationApproval = { identity, issuerDeviceId: issuer.device.deviceId,
     certificates: allCertificates, certificate, ...(authorityView ? { authorityView } : {}),
-    ...(rustyServicePins ? { rustyServicePins } : {}), proof }
+    ...(rustyServicePins ? { rustyServicePins } : {}), ...(approvedProfileState ? { profileState: approvedProfileState } : {}), proof }
+  if (JSON.stringify(approval).length > 256_000) throw new Error("Identity profile exceeds the browser sign-in size limit")
+  return approval
+}
+
+/** Decode and verify bounded redirect evidence through the same public protocol seam. */
+export async function parseDeviceAuthorizationApproval(encoded: string, request: DeviceAuthorizationRequest,
+  options: { now?: () => number } = {}): Promise<DeviceAuthorizationApproval> {
+  if (typeof encoded !== "string" || encoded.length > 350_000 || !/^[A-Za-z0-9_-]+$/u.test(encoded)) {
+    throw new Error("Invalid Identity device approval")
+  }
+  let value: unknown
+  try {
+    const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - encoded.length % 4) % 4))
+    if (binary.length > 256_000) throw new Error("oversized")
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0))))
+  } catch { throw new Error("Invalid Identity device approval") }
+  return verifyDeviceAuthorizationApproval(value, request, options)
 }
 
 /** Validate the redirect payload against the caller's original request. */
@@ -296,7 +319,8 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   const approval = JSON.parse(serialized) as DeviceAuthorizationApproval
   if (!isRecord(approval) || !(hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "proof"]) ||
       hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "proof"]) ||
-      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "proof"])) ||
+      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "proof"]) ||
+      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "profileState", "proof"])) ||
       !isRecord(approval.identity) || !Array.isArray(approval.certificates) || approval.certificates.length < 1 ||
       approval.certificates.length > 32 || typeof approval.issuerDeviceId !== "string" ||
       !isRecord(approval.certificate) || !isRecord(approval.proof) || !isRecord(approval.proof.payload)) {
@@ -304,13 +328,13 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   }
   const payload = approval.proof.payload
   const now = retained ? null : (options.now ?? Date.now)()
-  const version2 = payload.version === 2 || payload.version === 3
-  const version3 = payload.version === 3
+  const version2 = payload.version === 2 || payload.version === 3 || payload.version === 4
+  const version3 = payload.version === 3 || payload.version === 4
   if (!hasExactKeys(payload, version3
       ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead", "rustyServicePinsDigest", "profileStateDigest"]
       : version2 ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead"]
       : ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt"]) ||
-      payload.kind !== "mesh-device-authorization-approval" || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3) ||
+      payload.kind !== "mesh-device-authorization-approval" || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 && payload.version !== 4) ||
       canonicalizeJson(payload.request) !== canonicalizeJson(request) ||
       payload.certificateHash !== await certificateHash(approval.certificate) ||
       payload.expiresAt !== request.payload.expiresAt || !Number.isSafeInteger(payload.issuedAt) ||
@@ -321,7 +345,7 @@ async function verifyDeviceAuthorizationApprovalEvidence(
       approval.certificate.payload.personId !== approval.identity.personId || approval.certificate.payload.canEnrollDevices) {
     throw new Error("Identity device approval does not match this request")
   }
-  if ((request.payload.version === 2) !== version3) {
+  if ((request.payload.version === 2 && !version3) || (request.payload.version === 1 && payload.version === 3)) {
     throw new Error("Identity pin request requires a committed catalog approval")
   }
   const exactAppCertificate = canonicalizeJson(approval.certificate)
@@ -368,6 +392,18 @@ async function verifyDeviceAuthorizationApprovalEvidence(
       const issuerAuthority = await verifyIdentityDeviceAuthority(approval.identity,
         { certificates: view.certificates, revocations: view.revocations })
       await authorizeIdentityDevice(issuerAuthority, approval.issuerDeviceId)
+      if (payload.version === 4) {
+        if (!approval.profileState) throw new Error("Identity approval is missing its signed profile")
+        const profile = await readIdentityProfileStateWithRevocations(approval.profileState, approval.identity,
+          view.certificates, view.revocations)
+        if (await identityProfileRevision(profile) !== payload.profileStateDigest) {
+          throw new Error("Identity approval profile does not match its signed digest")
+        }
+        const name = identityProfileValue(profile, "name").values[0]
+        if (typeof name === "string" && name !== approval.identity.displayName) {
+          throw new Error("Identity approval name does not match its signed profile")
+        }
+      }
     } else if (approval.rustyServicePins !== undefined) {
       throw new Error("Unexpected Rusty pin catalog on a legacy approval")
     }
@@ -376,6 +412,7 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   } else if (approval.rustyServicePins !== undefined) {
     throw new Error("Unexpected Rusty pin catalog on a legacy approval")
   }
+  if (payload.version !== 4 && approval.profileState !== undefined) throw new Error("Unexpected Identity profile on this approval")
   return approval
 }
 
