@@ -556,6 +556,69 @@ function canonicalizeSignatureJson(value: unknown): string {
   return canonicalizeJsonWithOrder(value, compareCanonicalKeys)
 }
 
+function captureJsonValue(value: unknown, ancestors = new WeakSet<object>()): unknown {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Non-finite number cannot be signed")
+    return value
+  }
+  if (typeof value !== "object") throw new Error("Envelope payload must contain only JSON values")
+  if (ancestors.has(value)) throw new Error("Cyclic envelope payload cannot be signed")
+
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) throw new Error("Envelope payload arrays must be plain arrays")
+      const keys = Reflect.ownKeys(value)
+      if (keys.some(key => typeof key === "symbol" || (key !== "length" && (
+        !/^(0|[1-9]\d*)$/.test(key) || !Number.isSafeInteger(Number(key)) || Number(key) >= value.length
+      )))) {
+        throw new Error("Envelope payload arrays cannot have extra properties")
+      }
+      const output: unknown[] = []
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) throw new Error("Sparse envelope payload arrays cannot be signed")
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index))!
+        if (!descriptor.enumerable || !("value" in descriptor)) throw new Error("Envelope payload arrays must contain data properties")
+        if (descriptor.value === undefined) throw new Error("Undefined array entries cannot be signed")
+        output.push(captureJsonValue(descriptor.value, ancestors))
+      }
+      return output
+    }
+
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) throw new Error("Envelope payload objects must be plain objects")
+    const output: Record<string, unknown> = {}
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)!
+      // Non-enumerable symbols can mark SDK-owned verified values; JSON omits them.
+      if (typeof key === "symbol") {
+        if (descriptor.enumerable) throw new Error("Envelope payload objects cannot have enumerable symbol keys")
+        continue
+      }
+      if (!descriptor.enumerable || !("value" in descriptor)) throw new Error("Envelope payload objects must contain enumerable data properties")
+      if (descriptor.value === undefined) continue
+      Object.defineProperty(output, key, {
+        configurable: true,
+        enumerable: true,
+        value: captureJsonValue(descriptor.value, ancestors),
+        writable: true,
+      })
+    }
+    return output
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
+function captureEnvelopePayload<T extends { kind: string }>(payload: T): T {
+  const captured = captureJsonValue(payload)
+  if (captured === null || typeof captured !== "object" || Array.isArray(captured) || typeof (captured as { kind?: unknown }).kind !== "string") {
+    throw new Error("Envelope payload kind must be a string")
+  }
+  return captured as T
+}
+
 export function toBase64Url(bytes: Uint8Array): string {
   let binary = ""
   for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -1024,9 +1087,10 @@ export async function signEnvelope<T extends { kind: string }>(
   signerKeyId: PersonId | DeviceId,
   domain = "MATCH/1",
 ): Promise<SignedEnvelope<T>> {
-  const input = signatureInput(payload.kind, canonicalizeSignatureJson(payload), domain)
+  const capturedPayload = captureEnvelopePayload(payload)
+  const input = signatureInput(capturedPayload.kind, canonicalizeSignatureJson(capturedPayload), domain)
   const signature = await crypto.subtle.sign({ name: "Ed25519" }, privateKey, input)
-  return { payload, signerKeyId, signature: toBase64Url(new Uint8Array(signature)) }
+  return { payload: capturedPayload, signerKeyId, signature: toBase64Url(new Uint8Array(signature)) }
 }
 
 export async function verifyEnvelope<T extends { kind: string }>(
