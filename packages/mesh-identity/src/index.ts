@@ -156,9 +156,10 @@ export type { IdentityRootReplacementRequester, IdentityRootReplacementRequestPa
   IdentityRootReplacementScopeHandoffPayload, RootReplacementBinding } from "./identityRootReplacement"
 
 export {
-  assertServiceLoginSession,
+  assertServiceLoginRequest,
   createServiceLoginApproval,
   parseServiceLoginRequest,
+  SERVICE_LOGIN_CALLBACK_PATH,
   serviceLoginPayload,
   snapshotServiceLoginRequest,
 } from "./serviceLogin"
@@ -168,6 +169,8 @@ export type {
   ServiceLoginPayload,
   ServiceLoginRequest,
 } from "./serviceLogin"
+export { beginServiceLogin, captureServiceLoginCallback, serviceLoginApprovalReturnUrl } from "./serviceLoginBrowser"
+export type { ServiceLoginChallenge } from "./serviceLoginBrowser"
 
 export { createIdentityProfileRecovery, openIdentityProfileRecovery, parseIdentityProfileRecoveryFile,
   sealIdentityProfileRecovery } from "./identityProfileRecovery"

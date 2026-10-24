@@ -3,11 +3,14 @@ import { signEnvelope, verifyDeviceCertificateChain, verifyEnvelope,
 
 export type ServiceLoginRequest = {
   kind: "mesh-service-login-request"
-  version: 1
+  version: 2
   origin: string
   challenge: string
   expires_at: number
+  return_to: string
 }
+
+export const SERVICE_LOGIN_CALLBACK_PATH = "/.well-known/mesh-service-login/callback"
 
 export type ServiceLoginPayload = {
   kind: "mesh-service-login"
@@ -47,7 +50,7 @@ export function parseServiceLoginRequest(encoded: string, now: number): ServiceL
   } catch {
     throw new Error("Invalid sign-in request")
   }
-  if (!isExactRequest(value) || !validServiceOrigin(value.origin) || !/^[a-f0-9]{64}$/u.test(value.challenge) ||
+  if (!isExactRequest(value) || !validServiceOrigin(value.origin) || !validServiceCallback(value.return_to, value.origin) || !/^[a-f0-9]{64}$/u.test(value.challenge) ||
       !Number.isSafeInteger(value.expires_at) || value.expires_at <= now || value.expires_at > now + 120) {
     throw new Error("Sign-in request is invalid or expired. Retry from the service.")
   }
@@ -57,7 +60,7 @@ export function parseServiceLoginRequest(encoded: string, now: number): ServiceL
 /** Copy validated scalar request fields so reactive proxies never reach structured cloning. */
 export function snapshotServiceLoginRequest(value: ServiceLoginRequest): ServiceLoginRequest {
   return { kind: value.kind, version: value.version, origin: value.origin,
-    challenge: value.challenge, expires_at: value.expires_at }
+    challenge: value.challenge, expires_at: value.expires_at, return_to: value.return_to }
 }
 
 export function serviceLoginPayload(request: ServiceLoginRequest, now: number): ServiceLoginPayload {
@@ -66,15 +69,13 @@ export function serviceLoginPayload(request: ServiceLoginRequest, now: number): 
     challenge: request.challenge, issuedAt: now * 1000, expiresAt: request.expires_at * 1000 }
 }
 
-/** Keep approval attached to the exact request and the original service window. */
-export function assertServiceLoginSession(
+/** Keep approval attached to the exact fresh request before signing. */
+export function assertServiceLoginRequest(
   current: ServiceLoginRequest | undefined,
   expected: ServiceLoginRequest,
-  currentOpener: Window | null,
-  expectedOpener: Window,
   now = Math.floor(Date.now() / 1000),
 ): void {
-  if (currentOpener !== expectedOpener || !isExactRequest(current) || !sameRequest(current, expected)) {
+  if (!isExactRequest(current) || !sameRequest(current, expected)) {
     throw new Error("Service login approval changed")
   }
   assertRequest(expected, now)
@@ -116,7 +117,7 @@ export async function createServiceLoginApproval(
 }
 
 function assertRequest(request: ServiceLoginRequest, now: number): void {
-  if (!isExactRequest(request) || !validServiceOrigin(request.origin) || !/^[a-f0-9]{64}$/u.test(request.challenge) ||
+  if (!isExactRequest(request) || !validServiceOrigin(request.origin) || !validServiceCallback(request.return_to, request.origin) || !/^[a-f0-9]{64}$/u.test(request.challenge) ||
       !Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(request.expires_at) ||
       request.expires_at <= now || request.expires_at > now + 120) {
     throw new Error("Sign-in request is invalid or expired. Retry from the service.")
@@ -128,11 +129,12 @@ function isExactRequest(value: unknown): value is ServiceLoginRequest {
   const record = value as Record<string, unknown>
   const keys = Object.keys(record)
   return Object.getPrototypeOf(value) === Object.prototype &&
-    keys.length === 5 &&
+    keys.length === 6 &&
     Object.hasOwn(record, "kind") && Object.hasOwn(record, "version") && Object.hasOwn(record, "origin") &&
-    Object.hasOwn(record, "challenge") && Object.hasOwn(record, "expires_at") &&
-    record.kind === "mesh-service-login-request" && record.version === 1 &&
-    typeof record.origin === "string" && typeof record.challenge === "string" && typeof record.expires_at === "number"
+    Object.hasOwn(record, "challenge") && Object.hasOwn(record, "expires_at") && Object.hasOwn(record, "return_to") &&
+    record.kind === "mesh-service-login-request" && record.version === 2 &&
+    typeof record.origin === "string" && typeof record.challenge === "string" && typeof record.expires_at === "number" &&
+    typeof record.return_to === "string"
 }
 
 function sameRequest(left: ServiceLoginRequest, right: ServiceLoginRequest): boolean {
@@ -146,6 +148,16 @@ function validServiceOrigin(origin: string): boolean {
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
     return url.origin === origin && !url.username && !url.password &&
       (url.protocol === "https:" || (url.protocol === "http:" && loopback))
+  } catch {
+    return false
+  }
+}
+
+function validServiceCallback(returnTo: string, origin: string): boolean {
+  try {
+    const callback = new URL(returnTo)
+    return callback.origin === origin && callback.pathname === SERVICE_LOGIN_CALLBACK_PATH &&
+      callback.search === "" && callback.hash === ""
   } catch {
     return false
   }
