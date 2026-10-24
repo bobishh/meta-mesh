@@ -419,7 +419,6 @@ async function verifyDeviceAuthorizationApprovalEvidence(
 
 async function isDeviceBlockedByRevocation(view: IdentityAuthorityView, deviceId: string): Promise<boolean> {
   try {
-    const { authorizeIdentityDataDevice } = await import("./index")
     await authorizeIdentityDataDevice(await verifyIdentityAuthorityView(view), deviceId)
     return false
   } catch { return true }

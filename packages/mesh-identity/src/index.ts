@@ -1,13 +1,24 @@
 import { getPublicKeyAsync } from "@noble/ed25519"
-import { entropyToMnemonic, generateMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39"
-import { wordlist } from "@scure/bip39/wordlists/english.js"
-import { EFF_LONG_WORDS } from "./eff-long"
 import { readIdentityProfileState, readIdentityProfileStateWithRevocations, type IdentityProfileState } from "./identityProfile"
+import { type IdentitySecurity } from "./recovery"
+import { normalizeRecoveryPhrase } from "./recoveryNormalization"
+
+export {
+  chatKeyIsValid,
+  generateChatKey,
+  generateIdentityRecovery,
+  generateRecoveryPhrase,
+  identitySecurityForRecovery,
+  identitySecurityWordCount,
+  recoveryPhraseFromEntropy,
+  recoveryPhraseIsValid,
+  recoveryPhraseToEntropy,
+} from "./recovery"
+export { normalizeRecoveryPhrase } from "./recoveryNormalization"
+export type { IdentitySecurity, RecoveryStrengthBits } from "./recovery"
 
 export type PersonId = string
 export type DeviceId = string
-export type RecoveryStrengthBits = 128 | 192 | 256
-export type IdentitySecurity = "legacy" | "better" | "insane"
 
 export type IdentityRecoveryEnvelope = {
   kind: "mesh-identity-recovery"
@@ -183,61 +194,6 @@ export type IdentityStoreOptions = {
   requirePersistence?: boolean
 }
 
-export function generateRecoveryPhrase(strengthBits: RecoveryStrengthBits = 128): string {
-  return generateMnemonic(wordlist, strengthBits)
-}
-
-export function identitySecurityWordCount(security: IdentitySecurity): 4 | 12 | 24 {
-  if (security === "legacy") return 4
-  return security === "insane" ? 24 : 12
-}
-
-export function generateIdentityRecovery(security: IdentitySecurity = "better"): string {
-  if (security === "legacy") return generateChatKey()
-  return generateRecoveryPhrase(security === "insane" ? 256 : 128)
-}
-
-export function generateChatKey(): string {
-  const words: string[] = []
-  const limit = Math.floor(65_536 / EFF_LONG_WORDS.length) * EFF_LONG_WORDS.length
-  while (words.length < 4) {
-    const sample = crypto.getRandomValues(new Uint16Array(1))[0]
-    if (sample < limit) words.push(EFF_LONG_WORDS[sample % EFF_LONG_WORDS.length])
-  }
-  return words.join(" ")
-}
-
-export function normalizeRecoveryPhrase(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ")
-}
-
-export function recoveryPhraseIsValid(value: string): boolean {
-  return validateMnemonic(normalizeRecoveryPhrase(value), wordlist)
-}
-
-export function chatKeyIsValid(value: string): boolean {
-  const words = normalizeRecoveryPhrase(value).split(" ")
-  return words.length === 4 && words.every(word => (EFF_LONG_WORDS as readonly string[]).includes(word))
-}
-
-export function identitySecurityForRecovery(value: string): IdentitySecurity | null {
-  const normalized = normalizeRecoveryPhrase(value)
-  if (chatKeyIsValid(normalized)) return "legacy"
-  if (!recoveryPhraseIsValid(normalized)) return null
-  const count = normalized.split(" ").length
-  if (count === 12) return "better"
-  if (count === 24) return "insane"
-  return null
-}
-
-export function recoveryPhraseFromEntropy(entropy: Uint8Array): string {
-  return entropyToMnemonic(entropy, wordlist)
-}
-
-export function recoveryPhraseToEntropy(value: string): Uint8Array {
-  return mnemonicToEntropy(normalizeRecoveryPhrase(value), wordlist)
-}
-
 async function deriveSeed(entropy: Uint8Array, label: string): Promise<Uint8Array> {
   const material = await crypto.subtle.importKey("raw", entropy, "HKDF", false, ["deriveBits"])
   return new Uint8Array(await crypto.subtle.deriveBits({
@@ -325,6 +281,7 @@ export async function sealIdentitySeed(
   security: IdentitySecurity,
 ): Promise<IdentityRecoveryEnvelope> {
   if (identitySeed.byteLength !== 32) throw new Error("Identity root must contain 32 bytes")
+  const { identitySecurityForRecovery } = await import("./recovery")
   if (identitySecurityForRecovery(recoveryKey) !== security) throw new Error("Invalid identity recovery")
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -428,6 +385,7 @@ async function openIdentitySeed(
 ): Promise<Uint8Array> {
   try {
     assertRecoveryEnvelope(envelope)
+    const { identitySecurityForRecovery } = await import("./recovery")
     if (identitySecurityForRecovery(recoveryKey) !== envelope.security) throw new Error("wrong recovery")
     const { ciphertext: _ciphertext, ...header } = envelope
     const key = await recoveryWrappingKey(recoveryKey, fromBase64Url(envelope.kdf.salt))
@@ -484,6 +442,7 @@ export async function createRecoverableIdentity(
   displayName = "Mesh user",
   deviceEntropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
 ): Promise<RecoverableIdentity> {
+  const { generateIdentityRecovery } = await import("./recovery")
   const recoveryKey = generateIdentityRecovery(security)
   const identitySeed = crypto.getRandomValues(new Uint8Array(32))
   const profile = await profileFromIdentitySeedForDevice(identitySeed, displayName, deviceEntropy)
@@ -530,6 +489,7 @@ export async function rewrapIdentityRecoveryEnvelope(
   security: IdentitySecurity,
 ): Promise<Pick<RecoverableIdentity, "recoveryKey" | "recoveryEnvelope">> {
   const identitySeed = await openIdentitySeed(envelope, currentRecoveryKey)
+  const { generateIdentityRecovery } = await import("./recovery")
   const recoveryKey = generateIdentityRecovery(security)
   return {
     recoveryKey,
