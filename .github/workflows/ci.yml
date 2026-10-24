@@ -13,6 +13,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  identity-phoenix-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.3'
+          elixir-version: '1.18.3'
+      - name: Test the shared Phoenix Identity package
+        working-directory: packages/mesh-identity-phoenix
+        run: |
+          mix deps.get
+          mix format --check-formatted
+          mix compile --warnings-as-errors
+          mix test
+
   resource-sdk:
     needs: verify
     runs-on: ubuntu-latest
