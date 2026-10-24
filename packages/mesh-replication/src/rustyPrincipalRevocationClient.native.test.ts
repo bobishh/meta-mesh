@@ -20,10 +20,11 @@ import { createRustyIdentityRequestProof } from "./rustyIdentityRequestProof"
 import { meshRustRuntime } from "./runtime"
 import { registerRustyResourcePrincipalGrant, type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
 import { revokeRustyResourcePrincipal } from "./rustyPrincipalRevocationClient"
+import { createIdentityEnrollmentDevice } from "../../mesh-identity/src/identityEnrollment"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
 
-it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, When the SDK revokes a principal, Then Rusty returns the same durable receipt after restart", async () => {
+it.skipIf(!rustyBinary)("Given strict Rusty and mixed-case certified device IDs, When the SDK revokes a principal, Then Rusty accepts the authority view and returns the same durable receipt after restart", async () => {
   const profile = (await createRecoverableIdentity("better", "Revocation contract owner")).profile
   const editor = (await createRecoverableIdentity("better", "Revocation contract editor")).profile
   const visitor = (await createRecoverableIdentity("better", "Revocation contract visitor")).profile
@@ -38,11 +39,29 @@ it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, Wh
   try {
     child = await startRusty(profile, stateDirectory, port)
     const discovery = await discoverRustyService(origin)
+    const ownerCertificates = [profile.certificate]
+    let localeOrderDiffers = false
+    for (let index = 0; index < 31 && !localeOrderDiffers; index += 1) {
+      const device = await createIdentityEnrollmentDevice(`Wire order ${index}`)
+      ownerCertificates.push(await signEnvelope(profile.privateKeys.identityPrivateKey!, {
+        kind: "device-certificate", version: 1, personId: profile.identity.personId,
+        deviceId: device.device.deviceId, devicePublicKey: device.device.publicKey,
+        issuerCertificateHash: null, canEnrollDevices: false,
+      }, profile.identity.personId))
+      const localeOrder = [...ownerCertificates].sort((left, right) => left.payload.deviceId.localeCompare(right.payload.deviceId))
+      const bytewiseOrder = [...ownerCertificates].sort((left, right) => left.payload.deviceId < right.payload.deviceId ? -1 :
+        left.payload.deviceId > right.payload.deviceId ? 1 : 0)
+      localeOrderDiffers = localeOrder.some((certificate, index) => certificate.payload.deviceId !== bytewiseOrder[index]!.payload.deviceId)
+    }
+    expect(localeOrderDiffers).toBe(true)
     const authorityView = await createIdentityAuthorityView(
       profile.identity,
-      { certificates: [profile.certificate], revocations: [] },
+      { certificates: ownerCertificates, revocations: [] },
       emptyIdentityProfileState(profile.identity.personId),
     )
+    expect(authorityView.certificates.map(certificate => certificate.payload.deviceId)).toEqual(
+      [...ownerCertificates].sort((left, right) => left.payload.deviceId < right.payload.deviceId ? -1 :
+        left.payload.deviceId > right.payload.deviceId ? 1 : 0).map(certificate => certificate.payload.deviceId))
     const signOwner = <T extends { kind: string }>(payload: T) => signEnvelope(
       profile.privateKeys.devicePrivateKey,
       payload,

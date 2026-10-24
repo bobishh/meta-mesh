@@ -25,6 +25,30 @@ describe("portable Identity authority view", () => {
     await expect(authorizeIdentityDevice(deviceAuthority, app.device.deviceId)).rejects.toThrow(/management authority/i)
   })
 
+  it("Given mixed-case device IDs, when authority view is published, then use stable Rust bytewise certificate order", async () => {
+    const owner = (await createRecoverableIdentity("better", "Owner")).profile
+    const certificates: DeviceCertificate[] = [owner.certificate]
+    for (let index = 0; index < 24; index += 1) {
+      const device = await createIdentityEnrollmentDevice(`Device ${index}`)
+      certificates.push(await signEnvelope(owner.privateKeys.identityPrivateKey!, {
+        kind: "device-certificate", version: 1, personId: owner.identity.personId,
+        deviceId: device.device.deviceId, devicePublicKey: device.device.publicKey,
+        issuerCertificateHash: null, canEnrollDevices: false,
+      }, owner.identity.personId))
+    }
+    const localeOrder = [...certificates].sort((left, right) => left.payload.deviceId.localeCompare(right.payload.deviceId))
+    const bytewiseOrder = [...certificates].sort((left, right) => left.payload.deviceId < right.payload.deviceId ? -1 :
+      left.payload.deviceId > right.payload.deviceId ? 1 : 0)
+    const expected = bytewiseOrder.map(certificate => certificate.payload.deviceId)
+    expect(localeOrder.map(certificate => certificate.payload.deviceId)).not.toEqual(expected)
+
+    const state = emptyIdentityProfileState(owner.identity.personId)
+    const view = await createIdentityAuthorityView(owner.identity, { certificates, revocations: [] }, state)
+    const permuted = await createIdentityAuthorityView(owner.identity, { certificates: [...certificates].reverse(), revocations: [] }, state)
+    expect(view.certificates.map(certificate => certificate.payload.deviceId)).toEqual(expected)
+    expect(permuted).toEqual(view)
+  })
+
   it("Given a verified view, when a new certificate is enrolled without revocation, then digest advances while revocation head stays fixed", async () => {
     const owner = (await createRecoverableIdentity("better", "Owner")).profile
     const profileState = emptyIdentityProfileState(owner.identity.personId)

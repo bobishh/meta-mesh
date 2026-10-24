@@ -858,7 +858,8 @@ async function makeIdentityAuthorityView(
   revocationsValue: readonly IdentityDeviceRevocation[],
 ): Promise<IdentityAuthorityView> {
   const certificates = structuredClone(Array.from(certificatesValue))
-    .sort((left, right) => left.payload.deviceId.localeCompare(right.payload.deviceId))
+    .sort((left, right) => left.payload.deviceId < right.payload.deviceId ? -1 :
+      left.payload.deviceId > right.payload.deviceId ? 1 : 0)
   const revocations = structuredClone(Array.from(revocationsValue))
     .sort((left, right) => left.payload.revision - right.payload.revision)
   const head = await identityAuthorityHead(identity, revocations)
