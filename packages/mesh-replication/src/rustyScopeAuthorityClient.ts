@@ -143,6 +143,22 @@ export async function readRustyScopeAuthorityStatus(
 export async function publishRustyScopeAuthoritySnapshot(
   options: PublishRustyScopeAuthorityOptions,
 ): Promise<{ receipt: RustyScopeAuthorityReceipt; scopeAuthority: ScopeAuthorityValidation }> {
+  const result = await synchronizeRustyScopeAuthoritySnapshot(options, false)
+  if (!result.receipt) throw new Error("Rusty scope authority update was unexpectedly skipped")
+  return { receipt: result.receipt, scopeAuthority: result.scopeAuthority }
+}
+
+/** Reconcile the signed scope ledger, writing only when Rusty has not accepted it yet. */
+export async function ensureRustyScopeAuthoritySnapshot(
+  options: PublishRustyScopeAuthorityOptions,
+): Promise<{ receipt: RustyScopeAuthorityReceipt | null; scopeAuthority: ScopeAuthorityValidation }> {
+  return synchronizeRustyScopeAuthoritySnapshot(options, true)
+}
+
+async function synchronizeRustyScopeAuthoritySnapshot(
+  options: PublishRustyScopeAuthorityOptions,
+  skipWhenUnchanged: boolean,
+): Promise<{ receipt: RustyScopeAuthorityReceipt | null; scopeAuthority: ScopeAuthorityValidation }> {
   const now = options.now ?? Date.now
   const fetcher = options.fetcher ?? fetch
   const origin = rustyOrigin(options.origin)
@@ -174,7 +190,7 @@ export async function publishRustyScopeAuthoritySnapshot(
     requestHash: statusRequestHash, now: now() })
   await options.observeEnforcement?.(status.payload.enforcement)
 
-  let proposed = structuredClone(options.scopeAuthority)
+  let proposed = normalizeScopeAuthoritySnapshot(options.scopeAuthority)
   if (status.payload.state === "ready") {
     if (status.payload.workspaceId !== workspaceId || status.payload.scopeAuthority === null) {
       throw new Error("Rusty workspace scope authority belongs to another workspace")
@@ -184,7 +200,7 @@ export async function publishRustyScopeAuthoritySnapshot(
     if (stored.controllerPersonId !== status.payload.controllerPersonId || stored.controlEpoch !== status.payload.controlEpoch) {
       throw new Error("Rusty signed scope authority status does not match its snapshot")
     }
-    proposed = options.mergeSnapshots(status.payload.scopeAuthority, proposed)
+    proposed = normalizeScopeAuthoritySnapshot(options.mergeSnapshots(status.payload.scopeAuthority, proposed))
   } else if (status.payload.workspaceId !== null || status.payload.scopeAuthority !== null ||
       status.payload.controllerPersonId !== null || status.payload.controlEpoch !== null) {
     throw new Error("Rusty missing scope authority status contains authority state")
@@ -196,6 +212,10 @@ export async function publishRustyScopeAuthoritySnapshot(
   }
   if (validated.controllerPersonId !== identity.personId || validated.controllerPublicKey !== identity.publicKey) {
     throw new Error("Rusty scope authority controller must be the active Identity")
+  }
+  if (skipWhenUnchanged && status.payload.state === "ready" && canonicalizeJson(proposed) === canonicalizeJson(status.payload.scopeAuthority)) {
+    await options.ensureCurrent?.()
+    return { receipt: null, scopeAuthority: validated }
   }
   await options.ensureCurrent?.()
 
@@ -252,14 +272,20 @@ export async function publishRustyScopeAuthoritySnapshot(
       Math.abs(now() - receiptPayload.committedAt) > 120_000) {
     throw new Error("Rusty scope authority receipt does not match this update")
   }
-  const echoed = options.validateSnapshot(responseBody.scopeAuthority)
-  assertSnapshotBinding(echoed, workspaceId)
-  if (canonicalizeJson(echoed.snapshot) !== canonicalizeJson(proposed) || echoed.controlEpoch !== validated.controlEpoch ||
-      echoed.controllerPersonId !== validated.controllerPersonId || echoed.controllerPublicKey !== validated.controllerPublicKey) {
-    throw new Error("Rusty scope authority receipt returned a different snapshot")
-  }
   await options.observeEnforcement?.(receiptPayload.enforcement)
-  return { receipt, scopeAuthority: echoed }
+  return { receipt, scopeAuthority: validated }
+}
+
+/** Match Rust's serde defaults before signing and hashing the HTTP body. */
+function normalizeScopeAuthoritySnapshot(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid Rusty workspace scope authority snapshot")
+  }
+  const snapshot = structuredClone(value) as Record<string, unknown>
+  for (const key of ["grants", "grantIssuers", "revocations", "controlTransfers", "successionTransfers"]) {
+    if (snapshot[key] === undefined) snapshot[key] = []
+  }
+  return snapshot
 }
 
 async function assertStatus(status: RustyScopeAuthorityStatus, expected: { serviceId: string; servicePublicKey: string; origin: string;
