@@ -1,6 +1,6 @@
 import { authorizeIdentityDataDevice, canonicalizeJson, publicKeyId, sha256Base64Url, verifyEnvelope,
   verifyIdentityAuthorityView, type IdentityAuthorityView, type PublicIdentity, type SignedEnvelope } from "@meta-uber/mesh-identity"
-import { rustyOrigin } from "./rustyReplica"
+import { readRustyJson, RustyResponseError, rustyOrigin } from "./rustyReplica"
 import type { RustyFetch } from "./rustyDiscovery"
 
 const encoder = new TextEncoder()
@@ -52,6 +52,14 @@ export type RustyScopePurposeClientOptions = {
   now?: () => number
 }
 
+export class RustyScopePurposeError extends Error {
+  constructor(readonly status: number, readonly reason: "scope-unavailable" | "http",
+    message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause })
+    this.name = "RustyScopePurposeError"
+  }
+}
+
 /** Permanently classify only the caller-owned legacy personal identity scope. */
 export async function classifyRustyPersonIdentityScope(options: RustyScopePurposeClientOptions): Promise<RustyScopePurposeReceipt> {
   const origin = rustyOrigin(options.origin)
@@ -92,8 +100,17 @@ export async function classifyRustyPersonIdentityScope(options: RustyScopePurpos
     body: JSON.stringify({ ...requestBody, authorization }), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
   })
   if (!response.ok) {
-    await response.body?.cancel()
-    throw new Error(`Rusty scope classification failed with HTTP ${response.status}`)
+    let reason: RustyScopePurposeError["reason"] = "http"
+    try {
+      await readRustyJson(response, 16_384)
+    } catch (error) {
+      if (error instanceof RustyResponseError && response.status === 400 && error.message === "Scope unavailable") {
+        reason = "scope-unavailable"
+      }
+      throw new RustyScopePurposeError(response.status, reason,
+        `Rusty scope classification failed with HTTP ${response.status}`, error)
+    }
+    throw new RustyScopePurposeError(response.status, reason, `Rusty scope classification failed with HTTP ${response.status}`)
   }
   await options.ensureCurrent?.()
   const body = await readReceiptBody(response)

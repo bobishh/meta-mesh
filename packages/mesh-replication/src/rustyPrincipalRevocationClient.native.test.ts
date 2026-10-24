@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it } from "vitest"
 import {
@@ -20,6 +20,7 @@ import { createRustyIdentityRequestProof } from "./rustyIdentityRequestProof"
 import { meshRustRuntime } from "./runtime"
 import { registerRustyResourcePrincipalGrant, type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
 import { revokeRustyResourcePrincipal } from "./rustyPrincipalRevocationClient"
+import { classifyRustyPersonIdentityScope } from "./rustyScopePurposeClient"
 import { createIdentityEnrollmentDevice } from "../../mesh-identity/src/identityEnrollment"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
@@ -291,6 +292,30 @@ it.skipIf(!rustyBinary)("Given strict Rusty and mixed-case certified device IDs,
     expect(replay).toEqual(first)
     const deniedAfterRestart = await fetch(readUrl, { method: "GET", headers: readProof.headers, cache: "no-store" })
     expect(deniedAfterRestart.status).toBe(403)
+
+    await unlink(join(stateDirectory, "scopes", opaqueScopeId, "policy.json"))
+    let classificationFailure: { status: number; body: string } | undefined
+    const missingScope = classifyRustyPersonIdentityScope({
+      origin,
+      servicePublicKey: discovery.servicePublicKey,
+      scopeId: opaqueScopeId,
+      policyRevision: 1,
+      identity: profile.identity,
+      authorityView,
+      deviceId: profile.device.deviceId,
+      devicePublicKey: profile.device.publicKey,
+      signAuthorization: signOwner,
+      fetcher: async (input, init) => {
+        const response = await fetch(input, init)
+        if (new URL(String(input)).pathname.endsWith("/purpose")) {
+          classificationFailure = { status: response.status, body: await response.clone().text() }
+        }
+        return response
+      },
+    })
+    const error = await missingScope.catch(value => value as Error)
+    expect(classificationFailure).toEqual({ status: 400, body: JSON.stringify({ message: "Scope unavailable" }) })
+    expect(error).toMatchObject({ name: "RustyScopePurposeError", reason: "scope-unavailable", status: 400 })
   } finally {
     if (child) await stopRusty(child)
     await rm(stateDirectory, { recursive: true, force: true })

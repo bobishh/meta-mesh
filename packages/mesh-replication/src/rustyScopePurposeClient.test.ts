@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest"
 import { createIdentityAuthorityView, createRecoverableIdentity, createIdentityEnrollmentDevice,
   emptyIdentityProfileState, publicKeyId, signEnvelope } from "@meta-uber/mesh-identity"
-import { classifyRustyPersonIdentityScope } from "./rustyScopePurposeClient"
+import { classifyRustyPersonIdentityScope, RustyScopePurposeError } from "./rustyScopePurposeClient"
 
 it("Given an active app-only device and matching unclassified scope revision, When classifying, Then send a signed one-time owner request and verify the service receipt", async () => {
   const owner = (await createRecoverableIdentity("better", "Owner")).profile
@@ -75,4 +75,40 @@ it("Given a signed classification receipt for another scope revision, When class
       }, service.identity.personId, "RUSTY/2") })
     },
   })).rejects.toThrow(/does not match/i)
+})
+
+it.each([
+  { status: 400, body: { message: "Scope unavailable" }, reason: "scope-unavailable" },
+  { status: 400, body: { message: "Invalid scope classification" }, reason: "http" },
+  { status: 403, body: { message: "Scope unavailable" }, reason: "http" },
+] as const)("Given HTTP $status with bounded error $body.message, When classifying, Then only exact missing-scope response has a recovery reason", async ({ status, body, reason }) => {
+  const owner = (await createRecoverableIdentity("better", "Owner")).profile
+  const service = (await createRecoverableIdentity("better", "Rusty service")).profile
+  const view = await createIdentityAuthorityView(owner.identity,
+    { certificates: [owner.certificate], revocations: [] }, emptyIdentityProfileState(owner.identity.personId))
+  const error = await classifyRustyPersonIdentityScope({
+    origin: "https://rusty.example", servicePublicKey: service.identity.publicKey,
+    scopeId: "identity-private", policyRevision: 3, identity: owner.identity, authorityView: view,
+    deviceId: owner.device.deviceId, devicePublicKey: owner.device.publicKey,
+    signAuthorization: async payload => signEnvelope(owner.privateKeys.devicePrivateKey, payload, owner.device.deviceId, "MATCH/1"),
+    fetcher: async () => Response.json(body, { status }),
+  }).catch(value => value)
+  expect(error).toBeInstanceOf(RustyScopePurposeError)
+  expect(error).toMatchObject({ reason, status, message: `Rusty scope classification failed with HTTP ${status}` })
+})
+
+it("Given a non-JSON scope error, When classifying, Then do not label it as a missing scope", async () => {
+  const owner = (await createRecoverableIdentity("better", "Owner")).profile
+  const service = (await createRecoverableIdentity("better", "Rusty service")).profile
+  const view = await createIdentityAuthorityView(owner.identity,
+    { certificates: [owner.certificate], revocations: [] }, emptyIdentityProfileState(owner.identity.personId))
+  const error = await classifyRustyPersonIdentityScope({
+    origin: "https://rusty.example", servicePublicKey: service.identity.publicKey,
+    scopeId: "identity-private", policyRevision: 3, identity: owner.identity, authorityView: view,
+    deviceId: owner.device.deviceId, devicePublicKey: owner.device.publicKey,
+    signAuthorization: async payload => signEnvelope(owner.privateKeys.devicePrivateKey, payload, owner.device.deviceId, "MATCH/1"),
+    fetcher: async () => new Response("not-json", { status: 400 }),
+  }).catch(value => value)
+  expect(error).toBeInstanceOf(RustyScopePurposeError)
+  expect(error).toMatchObject({ reason: "http", status: 400, message: "Rusty scope classification failed with HTTP 400" })
 })
