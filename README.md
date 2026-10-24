@@ -23,6 +23,14 @@ establishes durable ciphertext storage; it does not authorize product changes.
 The existing `replica-engine` and `history-archive*` exports remain the engine and
 archive contracts. They do not depend on a consuming application's source tree.
 
+`@meta-uber/mesh-replication/rusty-principal-grant` registers one current workspace
+member's Rusty access. The host supplies membership intent, the accepted workspace
+authority and local signing capability; the SDK owns authority freshness checks,
+token hashing, wire normalization, signature verification and registration HTTP.
+The host must reject revoked membership in its `ensureCurrent` guard. Registration
+retries use the same membership grant; an accepted controller or policy change
+requires fresh authoritative state instead of rewriting the signed grant.
+
 Hosts own credentials, durable CAS, lifetime guards and product admission. Save
 the exact pending ciphertext and request ID before sending; after an uncertain
 reply, restart and retry those bytes rather than encrypting a replacement. Hosts

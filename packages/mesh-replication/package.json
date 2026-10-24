@@ -17,6 +17,7 @@
     "./rusty-identity-request-proof": "./src/rustyIdentityRequestProof.ts",
     "./rusty-scope-enrollment": "./src/rustyScopeEnrollment.ts",
     "./rusty-scope-authority": "./src/rustyScopeAuthorityClient.ts",
+    "./rusty-principal-grant": "./src/rustyResourcePrincipalGrantClient.ts",
     "./rusty-principal-revocation": "./src/rustyPrincipalRevocationClient.ts",
     "./rusty-scope-purpose": "./src/rustyScopePurposeClient.ts",
     "./replica-engine": "./src/replicaEngine.ts",

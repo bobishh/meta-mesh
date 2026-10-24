@@ -10,7 +10,6 @@ import {
   createRecoverableIdentity,
   emptyIdentityProfileState,
   publicKeyId,
-  sha256Base64Url,
   signEnvelope,
 } from "@meta-uber/mesh-identity"
 import { discoverRustyService } from "./rustyDiscovery"
@@ -18,6 +17,8 @@ import { publishRustyIdentityAuthorityView } from "./rustyIdentityAuthority"
 import { createRustyScopeEnrollmentClient, type RustyScopeEnrollmentJournal } from "./rustyScopeEnrollment"
 import { publishRustyScopeAuthoritySnapshot, type ScopeAuthorityValidation } from "./rustyScopeAuthorityClient"
 import { createRustyIdentityRequestProof } from "./rustyIdentityRequestProof"
+import { meshRustRuntime } from "./runtime"
+import { registerRustyResourcePrincipalGrant, type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
 import { revokeRustyResourcePrincipal } from "./rustyPrincipalRevocationClient"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
@@ -25,10 +26,12 @@ const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
 it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, When the SDK revokes a principal, Then Rusty returns the same durable receipt after restart", async () => {
   const profile = (await createRecoverableIdentity("better", "Revocation contract owner")).profile
   const editor = (await createRecoverableIdentity("better", "Revocation contract editor")).profile
+  const visitor = (await createRecoverableIdentity("better", "Revocation contract visitor")).profile
   const stateDirectory = await mkdtemp(resolve(tmpdir(), "mesh-principal-revocation-"))
   const port = await unusedLoopbackPort()
   const origin = `http://127.0.0.1:${port}`
   const opaqueScopeId = `scope-${crypto.randomUUID()}`
+  const workspaceId = `workspace-${crypto.randomUUID()}`
   const readToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
   const writeToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
   let child: ChildProcess | undefined
@@ -77,25 +80,25 @@ it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, Wh
       genesis: await signEnvelope(profile.privateKeys.devicePrivateKey, {
         kind: "scope-genesis",
         version: 1,
-        scopeId: opaqueScopeId,
+        scopeId: workspaceId,
         creator: { personId: profile.identity.personId, publicKey: profile.identity.publicKey,
           certificates: [profile.certificate] },
         controlEpoch: 1,
       }, profile.device.deviceId, "MATCH/1"),
       grants: [], grantIssuers: [], revocations: [], controlTransfers: [], successionTransfers: [],
     }
-    const validateSnapshot = (snapshot: unknown): ScopeAuthorityValidation => ({
-      workspaceId: opaqueScopeId,
-      controllerPersonId: profile.identity.personId,
-      controllerPublicKey: profile.identity.publicKey,
-      controlEpoch: 1,
-      snapshot,
-    })
+    const validateSnapshot = (snapshot: unknown): ScopeAuthorityValidation => {
+      const validated = meshRustRuntime().state.validateScopeAuthority(snapshot, Date.now()) as {
+        scopeId: string; controller: { personId: string; publicKey: string }; controlEpoch: number
+      }
+      return { workspaceId: validated.scopeId, controllerPersonId: validated.controller.personId,
+        controllerPublicKey: validated.controller.publicKey, controlEpoch: validated.controlEpoch, snapshot }
+    }
     await publishRustyScopeAuthoritySnapshot({
       origin,
       servicePublicKey: discovery.servicePublicKey,
       scopeId: opaqueScopeId,
-      workspaceId: opaqueScopeId,
+      workspaceId,
       identity: profile.identity,
       authorityView,
       deviceId: profile.device.deviceId,
@@ -127,46 +130,118 @@ it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, Wh
       signAuthorization: signEditor,
     })
 
+    const visitorAuthorityView = await createIdentityAuthorityView(
+      visitor.identity,
+      { certificates: [visitor.certificate], revocations: [] },
+      emptyIdentityProfileState(visitor.identity.personId),
+    )
+    const signVisitor = <T extends { kind: string }>(payload: T) => signEnvelope(
+      visitor.privateKeys.devicePrivateKey,
+      payload,
+      visitor.device.deviceId,
+      "MATCH/1",
+    )
+    await publishRustyIdentityAuthorityView({
+      origin,
+      servicePublicKey: discovery.servicePublicKey,
+      identity: visitor.identity,
+      deviceId: visitor.device.deviceId,
+      devicePublicKey: visitor.device.publicKey,
+      view: visitorAuthorityView,
+      signAuthorization: signVisitor,
+    })
+
     const grantId = "editor-grant-revoked"
     const workspaceGrant = await signOwner({ kind: "workspace-grant", version: 1, grantId,
-      workspaceId: opaqueScopeId, personId: editor.identity.personId, role: "editor", accessEpoch: 3 })
-    const principalGrant = await signOwner({
-      kind: "rusty-resource-principal-grant",
-      version: 1,
-      serviceId: await publicKeyId(discovery.servicePublicKey),
+      workspaceId, personId: editor.identity.personId, role: "editor", accessEpoch: 3 } as const)
+    const grantPuts: string[] = []
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input))
+      if (init?.method === "PUT" && url.pathname.includes("/principals/")) grantPuts.push(url.pathname)
+      const response = await fetch(input, init)
+      return response
+    }
+    const register = (subjectIdentity: typeof editor.identity = editor.identity,
+      membershipGrant: RustyWorkspaceMembershipGrant = workspaceGrant,
+      expectedSnapshot = scopeAuthority, writeTokenValue: string | null = writeToken) => registerRustyResourcePrincipalGrant({
       origin,
-      workspaceId: opaqueScopeId,
-      resourceKind: "scope",
-      resourceId: opaqueScopeId,
-      scopeId: opaqueScopeId,
-      ownerPersonId: profile.identity.personId,
-      subjectPersonId: editor.identity.personId,
-      subjectPublicKey: editor.identity.publicKey,
-      grantId,
-      policyEpoch: 3,
-      readTokenHash: await sha256Base64Url(new TextEncoder().encode(readToken)),
-      writeTokenHash: await sha256Base64Url(new TextEncoder().encode(writeToken)),
-      actions: ["read", "write"],
-      workspaceGrant,
-      scopeAuthority,
+      servicePublicKey: discovery.servicePublicKey,
+      storageScopeId: opaqueScopeId,
+      workspaceId,
+      expectedScopeAuthoritySnapshot: expectedSnapshot,
+      identity: profile.identity,
+      authorityView,
+      deviceId: profile.device.deviceId,
+      devicePublicKey: profile.device.publicKey,
+      subjectIdentity,
+      workspaceGrant: membershipGrant,
+      readToken,
+      ...(writeTokenValue === null ? {} : { writeToken: writeTokenValue }),
+      fetcher,
+      ensureCurrent: () => {},
+      validateSnapshot,
+      signAuthorization: signOwner,
     })
-    const registerResponse = await fetch(`${origin}/v2/scopes/${encodeURIComponent(opaqueScopeId)}/principals/${grantId}`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ version: 1, grant: principalGrant }),
+    const mismatchedGrant = await signOwner({ kind: "workspace-grant", version: 1, grantId: "other-subject-grant",
+      workspaceId, personId: visitor.identity.personId, role: "editor", accessEpoch: 3 } as const)
+    await expect(register(editor.identity, mismatchedGrant)).rejects.toThrow(/membership grant/i)
+    const forkedScopeAuthority = {
+      ...scopeAuthority,
+      genesis: await signEnvelope(editor.privateKeys.devicePrivateKey, {
+        kind: "scope-genesis", version: 1, scopeId: workspaceId,
+        creator: { personId: editor.identity.personId, publicKey: editor.identity.publicKey, certificates: [editor.certificate] },
+        controlEpoch: 1,
+      }, editor.device.deviceId, "MATCH/1"),
+    }
+    await expect(register(editor.identity, workspaceGrant, forkedScopeAuthority)).rejects.toThrow(/stale/i)
+    const forgedGrant = await signEnvelope(editor.privateKeys.devicePrivateKey, workspaceGrant.payload,
+      editor.device.deviceId, "MATCH/1")
+    await expect(register(editor.identity, forgedGrant)).rejects.toThrow(/accepted scope history/i)
+    expect(grantPuts).toEqual([])
+
+    const registeredEditor = await register()
+    expect(registeredEditor.principalGrant.payload).toMatchObject({
+      kind: "rusty-resource-principal-grant", workspaceId, scopeId: opaqueScopeId,
+      ownerPersonId: profile.identity.personId, subjectPersonId: editor.identity.personId,
+      grantId, policyEpoch: 3, actions: ["read", "write"],
     })
-    expect(registerResponse.status).toBe(204)
+    expect(registeredEditor.scopeAuthority.snapshot).toEqual(scopeAuthority)
+    expect(grantPuts).toEqual([`/v2/scopes/${opaqueScopeId}/principals/${grantId}`])
     const readProof = await createEditorReadProof(origin, discovery.servicePublicKey, opaqueScopeId, readToken,
       editor, editorAuthorityView, grantId, 3)
     const readUrl = `${origin}/v2/scopes/${encodeURIComponent(opaqueScopeId)}/objects`
     const readBeforeRevoke = await fetch(readUrl, { method: "GET", headers: readProof.headers, cache: "no-store" })
     expect(readBeforeRevoke.status).toBe(200)
 
+    const visitorGrant = await signOwner({ kind: "workspace-grant", version: 1, grantId: "visitor-grant",
+      workspaceId, personId: visitor.identity.personId, role: "visitor", accessEpoch: 1 } as const)
+    const registeredVisitor = await register(visitor.identity, visitorGrant, scopeAuthority, null)
+    expect(registeredVisitor.principalGrant.payload).toMatchObject({
+      workspaceId, subjectPersonId: visitor.identity.personId, grantId: "visitor-grant", actions: ["read"],
+    })
+    expect(registeredVisitor.principalGrant.payload).not.toHaveProperty("writeTokenHash")
+    const visitorReadProof = await createEditorReadProof(origin, discovery.servicePublicKey, opaqueScopeId, readToken,
+      visitor, visitorAuthorityView, "visitor-grant", 1)
+    const visitorRead = await fetch(readUrl, { method: "GET", headers: visitorReadProof.headers, cache: "no-store" })
+    expect(visitorRead.status).toBe(200)
+    const writeUrl = `${origin}/v2/scopes/${encodeURIComponent(opaqueScopeId)}/objects/${crypto.randomUUID()}`
+    const writeBody = new TextEncoder().encode("{}")
+    const visitorWriteProof = await createRustyIdentityRequestProof({
+      origin, servicePublicKey: discovery.servicePublicKey, identity: visitor.identity, view: visitorAuthorityView,
+      deviceId: visitor.device.deviceId, devicePublicKey: visitor.device.publicKey, scopeId: opaqueScopeId,
+      token: writeToken, method: "PUT", url: writeUrl, bodyBytes: writeBody, action: "write",
+      grantId: "visitor-grant", policyEpoch: 1,
+      signAuthorization: payload => signVisitor(payload),
+    })
+    const visitorWrite = await fetch(writeUrl, { method: "PUT", headers: visitorWriteProof.headers,
+      body: writeBody, cache: "no-store" })
+    expect(visitorWrite.status).toBe(403)
+
     const revoke = () => revokeRustyResourcePrincipal({
       origin,
       servicePublicKey: discovery.servicePublicKey,
       storageScopeId: opaqueScopeId,
-      workspaceId: opaqueScopeId,
+      workspaceId,
       grantId,
       subjectPersonId: editor.identity.personId,
       policyEpoch: 3,
@@ -183,7 +258,7 @@ it.skipIf(!rustyBinary)("Given strict Rusty and an accepted scope controller, Wh
       serviceId: await publicKeyId(discovery.servicePublicKey),
       origin,
       storageScopeId: opaqueScopeId,
-      workspaceId: opaqueScopeId,
+      workspaceId,
       grantId: "editor-grant-revoked",
       subjectPersonId: editor.identity.personId,
       policyEpoch: 3,
