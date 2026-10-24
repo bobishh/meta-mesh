@@ -141,8 +141,9 @@ specific failure scenarios rather than all external behavior.
 
 The checked configurations are exhaustive only within these finite bounds.
 Historical results below used the then-published v1.8.0 prerelease asset (TLC
-build 2026.09.25.163503) on 2026-09-25. They do not claim a passing run against
-the replacement asset pinned above; a changed upstream asset fails closed.
+build 2026.09.25.163503) on 2026-09-25. The current runners pin release asset
+670958559 and its published SHA-256 in `tla-tools-pin.env`; any byte mismatch
+fails closed.
 
 | Model | Bound | Result |
 | --- | --- | --- |

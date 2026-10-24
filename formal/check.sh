@@ -2,8 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-TOOLS_VERSION=1.8.0
-TOOLS_SHA256=5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2
+. "$ROOT/tla-tools-pin.env"
 CACHE_DIR=${XDG_CACHE_HOME:-"$HOME/.cache"}/meta-mesh-tla
 TOOLS_JAR="$CACHE_DIR/tla2tools-$TOOLS_VERSION.jar"
 
@@ -41,8 +40,8 @@ mkdir -p "$CACHE_DIR"
 if [ ! -f "$TOOLS_JAR" ] || [ "$(sha256 "$TOOLS_JAR")" != "$TOOLS_SHA256" ]; then
   tmp="$TOOLS_JAR.tmp.$$"
   trap 'rm -f "$tmp"' EXIT HUP INT TERM
-  curl -fL --retry 3 -o "$tmp" \
-    "https://github.com/tlaplus/tlaplus/releases/download/v$TOOLS_VERSION/tla2tools.jar"
+  curl -fL --retry 3 -H 'Accept: application/octet-stream' -H 'X-GitHub-Api-Version: 2022-11-28' \
+    -o "$tmp" "$TOOLS_ASSET_URL"
   actual=$(sha256 "$tmp")
   if [ "$actual" != "$TOOLS_SHA256" ]; then
     printf 'TLC checksum mismatch: expected %s, got %s\n' "$TOOLS_SHA256" "$actual" >&2
