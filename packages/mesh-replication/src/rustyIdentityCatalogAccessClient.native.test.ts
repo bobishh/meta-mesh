@@ -219,7 +219,7 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
     await expect(requestRustyIdentityCatalogAccess({ manager: offlineManager,
       currentAuthorityView: authorityWithOfflineManager, profileState, applicationOrigin, fetcher: offlineFetcher,
     })).rejects.toThrow(/remained pending after bounded retries/i)
-    expect(offlineBodies).toHaveLength(6)
+    expect(offlineBodies).toHaveLength(8)
     expect(new Set(offlineBodies).size).toBe(1)
 
     let genericFailureRequests = 0

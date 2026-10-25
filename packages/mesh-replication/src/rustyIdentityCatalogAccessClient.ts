@@ -16,7 +16,8 @@ const maxResponseBytes = 384 * 1024
 const maxCiphertextBytes = 48 * 1024
 const maxPublishedCiphertextBytes = 16 * 1024
 const maxPublishedCiphertextTotal = 64 * 1024
-const catalogAccessPendingRetryDelaysMs = [200, 400, 800, 1_600, 1_600] as const
+const catalogAccessPendingRetryBudgetMs = 25_000
+const catalogAccessPendingRetryDelaysMs = [1_000, 2_000, 4_000, 4_000, 4_000, 4_000, 4_000] as const
 const publishDomain = "MESH-IDENTITY-CATALOG-ACCESS-PUBLISH/1"
 const requestDomain = "MESH-IDENTITY-CATALOG-ACCESS-REQUEST/1"
 
@@ -275,12 +276,19 @@ async function fetchCatalogListWithPendingRetry(options: {
   ensureCurrent?: () => void | Promise<void>
 }): Promise<Response> {
   const body = JSON.stringify(options.request)
+  const retryDeadline = Math.min(options.expiresAt, options.request.payload.issuedAt + catalogAccessPendingRetryBudgetMs)
   for (let retry = 0; ; retry += 1) {
     await options.ensureCurrent?.()
-    if (options.now() >= options.expiresAt) throw new Error("Rusty Identity catalog access request expired while waiting for publication")
+    const attemptAt = options.now()
+    if (attemptAt >= options.expiresAt) throw new Error("Rusty Identity catalog access request expired while waiting for publication")
+    const remainingBudgetMs = retryDeadline - attemptAt
+    if (remainingBudgetMs <= 0) {
+      throw new Error("Rusty Identity catalog access remained pending after bounded retries")
+    }
     const response = await options.fetcher(options.url, {
       method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
-      body, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+      body, cache: "no-store", redirect: "error",
+      signal: AbortSignal.timeout(Math.min(10_000, remainingBudgetMs)),
     })
     if (response.ok) return response
     if (response.status !== 503) {
