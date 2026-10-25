@@ -13,15 +13,16 @@ ASSUME /\ PhoneInitiallyLinked \in BOOLEAN
        /\ CatalogAvailable \in BOOLEAN
        /\ HasCatalog \in BOOLEAN
        /\ TimeoutEnabled \in BOOLEAN
-       /\ Mutation \in {"None", "SkipSync", "TimeoutAsEmpty", "ReturnBeforeLoad"}
+       /\ Mutation \in {"None", "SkipSync", "TimeoutAsEmpty", "ReturnBeforeLoad", "NoReconnect"}
 
 VARIABLES phoneLinked, sync, phase, status, approvedPin, catalogRead,
-          boardLoaded, ticks, attempt
+          boardLoaded, ticks, attempt, sourceReady
 
 vars == <<phoneLinked, sync, phase, status, approvedPin, catalogRead,
-          boardLoaded, ticks, attempt>>
+          boardLoaded, ticks, attempt, sourceReady>>
 
 Init ==
+  /\ sourceReady = FALSE
   /\ phoneLinked = PhoneInitiallyLinked
   /\ sync = "idle"
   /\ phase = "idle"
@@ -43,16 +44,27 @@ BeginAttempt ==
   /\ catalogRead' = FALSE
   /\ boardLoaded' = FALSE
   /\ ticks' = 0
-  /\ UNCHANGED phoneLinked
+  /\ UNCHANGED <<phoneLinked, sourceReady>>
+
+ReconnectSource ==
+  /\ phase = "waiting"
+  /\ sync = "pending"
+  /\ PeerAvailable
+  /\ ~sourceReady
+  /\ Mutation # "NoReconnect"
+  /\ sourceReady' = TRUE
+  /\ UNCHANGED <<phoneLinked, sync, phase, status, approvedPin, catalogRead,
+                  boardLoaded, ticks, attempt>>
 
 ReceiveIdentityProfile ==
   /\ phase = "waiting"
   /\ sync = "pending"
   /\ PeerAvailable
+  /\ sourceReady
   /\ phoneLinked' = TRUE
   /\ sync' = "complete"
   /\ UNCHANGED <<phase, status, approvedPin, catalogRead, boardLoaded,
-                  ticks, attempt>>
+                  ticks, attempt, sourceReady>>
 
 SnapshotForApproval ==
   /\ phase = "waiting"
@@ -60,7 +72,7 @@ SnapshotForApproval ==
   /\ phase' = "lookup"
   /\ approvedPin' = phoneLinked
   /\ UNCHANGED <<phoneLinked, sync, status, catalogRead, boardLoaded,
-                  ticks, attempt>>
+                  ticks, attempt, sourceReady>>
 
 LookupCatalog ==
   /\ phase = "lookup"
@@ -69,7 +81,7 @@ LookupCatalog ==
                 ELSE IF ~CatalogAvailable THEN "unavailable"
                 ELSE IF HasCatalog THEN "ready" ELSE "empty"
   /\ phase' = "response"
-  /\ UNCHANGED <<phoneLinked, sync, approvedPin, boardLoaded, ticks, attempt>>
+  /\ UNCHANGED <<phoneLinked, sync, approvedPin, boardLoaded, ticks, attempt, sourceReady>>
 
 Tick ==
   /\ TimeoutEnabled
@@ -78,7 +90,7 @@ Tick ==
   /\ ticks < 2
   /\ ticks' = ticks + 1
   /\ UNCHANGED <<phoneLinked, sync, phase, status, approvedPin, catalogRead,
-                  boardLoaded, attempt>>
+                  boardLoaded, attempt, sourceReady>>
 
 SyncTimeout ==
   /\ phase = "waiting"
@@ -87,7 +99,7 @@ SyncTimeout ==
   /\ sync' = "failed"
   /\ status' = IF Mutation = "TimeoutAsEmpty" THEN "empty" ELSE "unavailable"
   /\ phase' = "response"
-  /\ UNCHANGED <<phoneLinked, approvedPin, catalogRead, boardLoaded, ticks, attempt>>
+  /\ UNCHANGED <<phoneLinked, approvedPin, catalogRead, boardLoaded, ticks, attempt, sourceReady>>
 
 ReturnToApplication ==
   /\ phase = "response"
@@ -95,20 +107,21 @@ ReturnToApplication ==
                ELSE IF status = "ready" /\ Mutation # "ReturnBeforeLoad"
                  THEN "loading" ELSE "done"
   /\ UNCHANGED <<phoneLinked, sync, status, approvedPin, catalogRead,
-                  boardLoaded, ticks, attempt>>
+                  boardLoaded, ticks, attempt, sourceReady>>
 
 LoadAuthorizedBoard ==
   /\ phase = "loading"
   /\ status = "ready"
   /\ boardLoaded' = TRUE
   /\ phase' = "done"
-  /\ UNCHANGED <<phoneLinked, sync, status, approvedPin, catalogRead, ticks, attempt>>
+  /\ UNCHANGED <<phoneLinked, sync, status, approvedPin, catalogRead, ticks, attempt, sourceReady>>
 
-Next == BeginAttempt \/ ReceiveIdentityProfile \/ SnapshotForApproval
+Next == BeginAttempt \/ ReconnectSource \/ ReceiveIdentityProfile \/ SnapshotForApproval
         \/ LookupCatalog \/ Tick \/ SyncTimeout \/ ReturnToApplication
         \/ LoadAuthorizedBoard
 
 TypeOK ==
+  /\ sourceReady \in BOOLEAN
   /\ phoneLinked \in BOOLEAN
   /\ sync \in {"idle", "pending", "notRequired", "complete", "failed"}
   /\ phase \in {"idle", "waiting", "lookup", "response", "loading", "done", "retry"}
@@ -126,12 +139,14 @@ UnavailableIsRetryable == (phase \in {"done", "retry"} /\ status = "unavailable"
 Safety == TypeOK /\ EmptyRequiresCompletedLookup /\ ReadyRequiresVerifiedLocator
           /\ SuccessWaitsForBoard /\ UnavailableIsRetryable
 
-Fairness == WF_vars(BeginAttempt) /\ WF_vars(ReceiveIdentityProfile)
+Fairness == WF_vars(BeginAttempt) /\ WF_vars(ReconnectSource)
+            /\ WF_vars(ReceiveIdentityProfile)
             /\ WF_vars(SnapshotForApproval) /\ WF_vars(LookupCatalog)
             /\ WF_vars(Tick) /\ WF_vars(SyncTimeout)
             /\ WF_vars(ReturnToApplication) /\ WF_vars(LoadAuthorizedBoard)
 
-AttemptSettles == <>(phase \in {"done", "retry"})
+AttemptSettles == []((phase \in {"waiting", "lookup", "response", "loading"})
+                    ~> (phase \in {"done", "retry"}))
 BoardEventuallyLoads == <>boardLoaded
 Spec == Init /\ [][Next]_vars /\ Fairness
 =============================================================================

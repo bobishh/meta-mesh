@@ -56,7 +56,12 @@ run_case() {
     fi
     printf 'PASS %s\n' "$config"
   else
-    if [ "$expected" = pass ] || ! grep -Fq 'Invariant Safety is violated' "$log"; then
+    case "$expected" in
+      failure) signature='Invariant Safety is violated' ;;
+      liveness) signature='Temporal property BoardEventuallyLoads was violated' ;;
+      *) signature='unexpected-success-required' ;;
+    esac
+    if [ "$expected" = pass ] || ! grep -Fq "$signature" "$log"; then
       printf 'Unexpected TLC failure for %s; log: %s\n' "$config" "$log" >&2
       tail -n 45 "$log" >&2; exit 1
     fi
@@ -75,4 +80,5 @@ run_case IdentitySignIn_service_unavailable pass
 run_case IdentitySignIn_skip_sync failure
 run_case IdentitySignIn_false_empty failure
 run_case IdentitySignIn_early_success failure
+run_case IdentitySignIn_no_reconnect liveness
 printf 'Logs and counterexamples: %s\n' "$LOG_DIR"
