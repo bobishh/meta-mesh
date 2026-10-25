@@ -1,3 +1,5 @@
+/// <reference path="./libsodium-wrappers-sumo.d.ts" />
+
 import { authorizeIdentityDataDevice, authorizeIdentityDevice, canonicalizeJson, certificateHash,
   fromBase64Url, publicKeyId, sha256Base64Url, toBase64Url, verifyDeviceCertificateChain, verifyEnvelope,
   verifyIdentityAuthorityView, verifyIdentityDeviceAuthority, type DeviceCertificate, type IdentityAuthorityView, type LocalProfile,
