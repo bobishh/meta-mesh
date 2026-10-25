@@ -4,8 +4,6 @@ use meta_mesh_core::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex, Weak};
-use tokio::sync::watch;
 
 use crate::{NativeScopeAdmission, NativeScopeHost, NativeScopePeer};
 
@@ -39,31 +37,7 @@ pub trait NativeScopeServiceHost {
 pub struct NativeScopeService<H: NativeScopeServiceHost> {
     admission: NativeScopeAdmission,
     peers: HashMap<(String, String), NativeScopePeer<H::ScopeHost>>,
-    pending_outbound: Arc<StdMutex<HashMap<(String, String), watch::Sender<bool>>>>,
     host: H,
-}
-
-/// Marks one signed outbound exchange that has not reached local admission yet.
-/// Successful admission wakes waiters; dropping the guard cancels the exchange.
-pub struct PendingOutboundHandshake {
-    key: (String, String),
-    registry: Weak<StdMutex<HashMap<(String, String), watch::Sender<bool>>>>,
-    completed: watch::Sender<bool>,
-}
-
-impl Drop for PendingOutboundHandshake {
-    fn drop(&mut self) {
-        self.completed.send_replace(true);
-        if let Some(registry) = self.registry.upgrade() {
-            let mut pending = registry.lock().unwrap_or_else(|error| error.into_inner());
-            if pending
-                .get(&self.key)
-                .is_some_and(|sender| sender.same_channel(&self.completed))
-            {
-                pending.remove(&self.key);
-            }
-        }
-    }
 }
 
 impl<H: NativeScopeServiceHost> NativeScopeService<H> {
@@ -71,7 +45,6 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
         Self {
             admission: NativeScopeAdmission::default(),
             peers: HashMap::new(),
-            pending_outbound: Arc::new(StdMutex::new(HashMap::new())),
             host,
         }
     }
@@ -85,54 +58,6 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
 
     pub fn has_peer(&self, workspace_id: &str, remote_endpoint: &str) -> bool {
         self.admission.peer(workspace_id, remote_endpoint).is_some()
-    }
-
-    /// Begin tracking an outbound handshake while its transport exchange runs.
-    /// Successful `complete_connect` publishes completion; dropping the guard cancels.
-    pub fn begin_outbound_handshake(
-        &self,
-        workspace_id: &str,
-        remote_endpoint: &str,
-    ) -> Result<PendingOutboundHandshake, String> {
-        let key = (workspace_id.to_string(), remote_endpoint.to_string());
-        let (completed, _) = watch::channel(false);
-        let mut pending = self
-            .pending_outbound
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if pending.contains_key(&key) {
-            return Err("Outbound mesh handshake is already pending".into());
-        }
-        pending.insert(key.clone(), completed.clone());
-        Ok(PendingOutboundHandshake {
-            key,
-            registry: Arc::downgrade(&self.pending_outbound),
-            completed,
-        })
-    }
-
-    /// Subscribe to an exact workspace and endpoint handshake, if one is in flight.
-    pub(crate) fn pending_outbound_handshake(
-        &self,
-        workspace_id: &str,
-        remote_endpoint: &str,
-    ) -> Option<watch::Receiver<bool>> {
-        self.pending_outbound
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .get(&(workspace_id.to_string(), remote_endpoint.to_string()))
-            .map(watch::Sender::subscribe)
-    }
-
-    /// Subscribe using the workspace credential encoded in a pairing frame.
-    pub(crate) fn pending_outbound_handshake_for_frame(
-        &mut self,
-        frame: &[u8],
-        remote_endpoint: &str,
-    ) -> Option<watch::Receiver<bool>> {
-        let header = PairingCodec::inspect(frame).ok()?;
-        let credential = self.host.credential(&header.secret).ok().flatten()?;
-        self.pending_outbound_handshake(&credential.workspace_id, remote_endpoint)
     }
 
     pub fn forget_peer(&mut self, workspace_id: &str, remote_endpoint: &str) {
@@ -214,20 +139,7 @@ impl<H: NativeScopeServiceHost> NativeScopeService<H> {
             (workspace_id.to_string(), remote_endpoint.to_string()),
             native,
         );
-        self.complete_outbound_handshake(workspace_id, remote_endpoint);
         Ok(peer)
-    }
-
-    fn complete_outbound_handshake(&self, workspace_id: &str, remote_endpoint: &str) {
-        let key = (workspace_id.to_string(), remote_endpoint.to_string());
-        let sender = self
-            .pending_outbound
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .remove(&key);
-        if let Some(sender) = sender {
-            sender.send_replace(true);
-        }
     }
 
     pub fn receive(
@@ -420,41 +332,6 @@ mod tests {
         assert_eq!(
             service.receive("remote", &frame, 0).unwrap_err(),
             "Unauthenticated mesh peer"
-        );
-    }
-
-    #[tokio::test]
-    async fn pending_outbound_handshake_is_exact_and_cancellation_wakes_waiter() {
-        let mut service = NativeScopeService::new(Host);
-        let pending = service.begin_outbound_handshake("board", "remote").unwrap();
-        assert!(service.begin_outbound_handshake("board", "remote").is_err());
-        assert!(
-            service
-                .pending_outbound_handshake("another-board", "remote")
-                .is_none()
-        );
-        let mut completion = service
-            .pending_outbound_handshake("board", "remote")
-            .unwrap();
-        assert!(
-            service
-                .pending_outbound_handshake("board", "other-remote")
-                .is_none()
-        );
-
-        drop(pending);
-        completion.changed().await.unwrap();
-        assert!(*completion.borrow());
-        assert!(
-            service
-                .pending_outbound_handshake("board", "remote")
-                .is_none()
-        );
-        let frame = PairingCodec::encode("sync-heartbeat", "secret", &[]).unwrap();
-        assert!(
-            service
-                .pending_outbound_handshake_for_frame(&frame, "unknown")
-                .is_none()
         );
     }
 
