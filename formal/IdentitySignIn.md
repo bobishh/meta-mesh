@@ -22,8 +22,9 @@ trust decision, recovery key or directory is introduced by this model.
 The finite model checks two sign-in attempts and two abstract timeout ticks:
 
 - A cold phone receives the existing signed locator before catalog lookup.
-- After the enrollment connection ends, the source restarts its saved-contact
-  transport before that exchange can happen. An online source alone is insufficient.
+- The source installs persistent authenticated peer acceptance on its existing
+  transport after enrollment. A cold phone must not wait for the old connection
+  to reach its relay idle timeout. An online source alone is insufficient.
 - Missing peer delivery times out as unavailable, rather than a false empty
   catalog. A fresh attempt remains possible.
 - A phone which already knows the locator can load its catalog while the other
@@ -37,7 +38,7 @@ timeout into empty, and return success before board loading. Each must violate
 `Safety`. A fourth disables source reconnect and must violate eventual board
 loading under fair online delivery without timeout. The first reproduces the
 missing-readiness-barrier sequence; the fourth catches an online portal which
-never reopens the transport after its enrollment connection ends.
+never makes its transport available for a fresh authenticated connection.
 
 ## Limits and implementation evidence
 
@@ -50,8 +51,9 @@ promise that a network response arrives before a real deadline.
 Cryptographic checks, certificate/revocation semantics, browser persistence,
 board authority, service discovery, peer reconnect mechanics and actual CRDT
 bytes are assumed interfaces. A TLA+ pass does not prove their implementation.
-Reconnect is an abstract action; real role selection, backoff, cancellation and
-transport handshakes still require implementation tests. The source-side
+Reconnect is an abstract action; persistent acceptance, simultaneous-dial
+arbitration, backoff, cancellation and transport handshakes still require
+implementation tests. The source-side
 redirect/delivery race is outside this model.
 
 Implementation coverage belongs at the Tincanban real-provider/native-Rusty

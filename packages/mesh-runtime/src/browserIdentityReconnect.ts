@@ -25,6 +25,7 @@ import { initializeBrowserIdentityRuntime } from "./browserIdentityEnrollment"
 const reconnectDomain = "META-MESH-IDENTITY-RECONNECT/1"
 const maximumReconnectFrameBytes = 32 * 1024
 const reconnectTimeoutMs = 15_000
+const maximumActivePeerConnections = 2
 
 export type IdentityPeerContact = {
   kind: "mesh-identity-peer-contact"
@@ -51,6 +52,31 @@ export type BrowserIdentityPeerHost = {
 
 export type IdentityPeerHostConnection = Omit<ConnectedIdentityPeer, "close"> & { close(): Promise<void> }
 
+export type StartBrowserIdentityPeerHostOptions = {
+  profile: LocalProfile
+  certificates: readonly DeviceCertificate[]
+  contacts: readonly IdentityPeerContact[]
+  nextSequence(): number | Promise<number>
+  onConnected(peer: IdentityPeerHostConnection): void | Promise<void>
+  signal?: AbortSignal
+}
+
+export type ConnectBrowserIdentityPeerOptions = {
+  profile: LocalProfile
+  certificates: readonly DeviceCertificate[]
+  contact: IdentityPeerContact
+  nextSequence(): number | Promise<number>
+  signal?: AbortSignal
+}
+
+export type BrowserIdentityPeerRuntime = {
+  startHost(options: StartBrowserIdentityPeerHostOptions): Promise<BrowserIdentityPeerHost>
+  connect(options: ConnectBrowserIdentityPeerOptions): Promise<ConnectedIdentityPeer>
+  close(): Promise<void>
+}
+
+export type CreateBrowserIdentityPeerRuntimeOptions = { transportSeed: Uint8Array; signal?: AbortSignal }
+
 type ReconnectRequest = SignedEnvelope<{
   kind: "mesh-identity-peer-reconnect-request"
   version: 1
@@ -67,118 +93,338 @@ type ReconnectResponse = SignedEnvelope<{
 
 type BrowserAddress = { kind: "mesh-browser-endpoint-address"; version: 1; endpointId: string; relayUrl: string }
 
+type BrowserPeerAcceptor = { accept(): Promise<IrohConnection | undefined>; close(): Promise<void> }
+type PendingPeerDial = { controller: AbortController; settled: Promise<void>; finish(): void; superseded: boolean }
+
+type BrowserIdentityPeerRuntimeTransport = Awaited<ReturnType<typeof initializeBrowserIdentityRuntime>>
+
+/** Start one transport node that can both accept and dial approved Identity peers. */
+export async function createBrowserIdentityPeerRuntime(options: CreateBrowserIdentityPeerRuntimeOptions): Promise<BrowserIdentityPeerRuntime> {
+  assertTransportSeed(options.transportSeed)
+  if (options.signal?.aborted) throw abortError()
+  const transport = await initializeBrowserIdentityRuntime()
+  const node = await transport.BrowserNode.start(new Uint8Array(options.transportSeed))
+  try {
+    const relayUrl = await waitForRelayUrl(node, { timeoutMs: 10_000, signal: options.signal })
+    const runtime = adoptBrowserIdentityPeerRuntime({ node, transport, relayUrl })
+    const closeRuntime = runtime.close.bind(runtime)
+    let abortRuntime: (() => void) | undefined
+    runtime.close = async () => {
+      if (abortRuntime) options.signal?.removeEventListener("abort", abortRuntime)
+      abortRuntime = undefined
+      await closeRuntime()
+    }
+    abortRuntime = () => { void runtime.close() }
+    options.signal?.addEventListener("abort", abortRuntime, { once: true })
+    if (options.signal?.aborted) {
+      await runtime.close()
+      throw abortError()
+    }
+    return runtime
+  } catch (error) {
+    await node.close("Identity peer runtime failed to start").catch(() => undefined)
+    throw error
+  }
+}
+
 /** Accept authenticated reconnects from already enrolled devices. Caller owns contact persistence and sync. */
-export async function startBrowserIdentityPeerHost(options: {
-  profile: LocalProfile
-  certificates: readonly DeviceCertificate[]
-  contacts: readonly IdentityPeerContact[]
+export async function startBrowserIdentityPeerHost(options: StartBrowserIdentityPeerHostOptions & {
   transportSeed: Uint8Array
-  nextSequence(): number | Promise<number>
-  onConnected(peer: IdentityPeerHostConnection): void | Promise<void>
-  signal?: AbortSignal
 }): Promise<BrowserIdentityPeerHost> {
   await assertLocalProfile(options.profile, options.certificates)
   assertTransportSeed(options.transportSeed)
   if (options.signal?.aborted) throw abortError()
-  const contacts = new Map<string, IdentityPeerContact>()
-  for (const contact of options.contacts) {
-    assertContactShape(contact, options.profile.identity.personId)
-    const key = contactKey(contact.personId, contact.deviceId)
-    if (contacts.has(key)) throw new Error("Duplicate Identity peer contact")
-    contacts.set(key, structuredClone(contact))
-  }
-
   const transport = await initializeBrowserIdentityRuntime()
   const node = await transport.BrowserNode.start(new Uint8Array(options.transportSeed))
-  const activeConnections = new Set<IrohConnection>()
-  let acceptor: Awaited<ReturnType<IrohNode["accept"]>> | undefined
-  let closed = false
-  const instanceId = crypto.randomUUID()
-  let closePromise: Promise<void> | undefined
+  try {
+    const relayUrl = await waitForRelayUrl(node, { timeoutMs: 10_000, signal: options.signal })
+    const acceptor = await withDeadline(node.accept(), "Identity peer listener timed out", options.signal,
+      () => node.close("Identity peer host cancelled"))
+    const runtime = adoptBrowserIdentityPeerRuntime({ node, transport, relayUrl, acceptor })
+    const host = await runtime.startHost(options)
+    const abortRuntime = () => { void runtime.close() }
+    options.signal?.addEventListener("abort", abortRuntime, { once: true })
+    return { ...host, close: async () => {
+      options.signal?.removeEventListener("abort", abortRuntime)
+      await host.close()
+      await runtime.close()
+    } }
+  } catch (error) {
+    await node.close("Identity peer host failed to start").catch(() => undefined)
+    throw error
+  }
+}
 
-  const close = async (): Promise<void> => {
+/** Adopt an enrollment BrowserNode without creating a second endpoint for the same transport seed. */
+export function adoptBrowserIdentityPeerRuntime(options: {
+  node: IrohNode
+  transport: BrowserIdentityPeerRuntimeTransport
+  relayUrl: string
+  acceptor?: BrowserPeerAcceptor
+  initialConnection?: IrohConnection
+  onInitialConnectionClose?(release: () => void): void
+}): BrowserIdentityPeerRuntime {
+  const ownedConnections = new Set<IrohConnection>()
+  const hostConnections = new Set<IrohConnection>()
+  const hostPeers = new Map<IrohConnection, IdentityPeerHostConnection>()
+  if (options.initialConnection) {
+    ownedConnections.add(options.initialConnection)
+    options.onInitialConnectionClose?.(() => ownedConnections.delete(options.initialConnection!))
+  }
+  let acceptor = options.acceptor
+  let closed = false
+  let hostClose: (() => Promise<void>) | undefined
+  let closePromise: Promise<void> | undefined
+  let hostStarted = false
+  let pendingOutgoing = 0
+  const pendingDials = new Map<string, PendingPeerDial>()
+  const activePeers = new Map<string, ConnectedIdentityPeer | IdentityPeerHostConnection>()
+
+  const close = (): Promise<void> => {
     if (closePromise) return closePromise
     closed = true
     closePromise = (async () => {
-      options.signal?.removeEventListener("abort", abortListener)
-      await Promise.all(Array.from(activeConnections, connection => connection.close().catch(() => undefined)))
-      await node.close("Identity peer host closed").catch(() => undefined)
+      for (const pending of pendingDials.values()) pending.controller.abort()
+      await Promise.all(Array.from(pendingDials.values(), pending => pending.settled))
+      pendingDials.clear()
+      await hostClose?.().catch(() => undefined)
+      await Promise.all(Array.from(ownedConnections, connection => connection.close().catch(() => undefined)))
+      ownedConnections.clear()
+      await options.node.close("Identity peer runtime closed").catch(() => undefined)
     })()
     return closePromise
   }
-  const abortListener = () => { void close() }
-  options.signal?.addEventListener("abort", abortListener, { once: true })
 
-  let relayUrl: string
-  try {
-    relayUrl = await waitForRelayUrl(node, { timeoutMs: 10_000, signal: options.signal })
-    acceptor = await withDeadline(node.accept(), "Identity peer listener timed out", options.signal, close)
-  } catch (error) {
-    await close()
-    throw error
-  }
+  const startHost = async (hostOptions: StartBrowserIdentityPeerHostOptions): Promise<BrowserIdentityPeerHost> => {
+    if (closed) throw new Error("Identity peer runtime is closed")
+    if (hostStarted) throw new Error("Identity peer runtime already has a listener")
+    await assertLocalProfile(hostOptions.profile, hostOptions.certificates)
+    if (hostOptions.signal?.aborted) throw abortError()
+    const contacts = new Map<string, IdentityPeerContact>()
+    for (const contact of hostOptions.contacts) {
+      assertContactShape(contact, hostOptions.profile.identity.personId)
+      const key = contactKey(contact.personId, contact.deviceId)
+      if (contacts.has(key)) throw new Error("Duplicate Identity peer contact")
+      contacts.set(key, structuredClone(contact))
+    }
+    hostStarted = true
 
-  const done = (async () => {
-    while (!closed) {
-      let rawConnection: IrohConnection | undefined
-      let handedOff = false
-      try {
-        rawConnection = await waitForAccept(acceptor!.accept(), options.signal)
-        if (!rawConnection) continue
-        activeConnections.add(rawConnection)
-        const peer = await acceptPeerConnection(options, contacts, rawConnection, node.endpointId, relayUrl,
-          instanceId, transport, activeConnections)
-        await options.onConnected(peer)
-        handedOff = true
-      } catch (error) {
-        if (closed || options.signal?.aborted) return
-        // Unknown, stale, and malformed peers never reach the caller's sync or persistence callbacks.
-      } finally {
-        if (rawConnection && (!handedOff || closed)) {
-          activeConnections.delete(rawConnection)
-          await rawConnection.close().catch(() => undefined)
+    let listenerAcceptor = acceptor
+    try {
+      listenerAcceptor ??= await options.node.accept() as BrowserPeerAcceptor
+      acceptor = listenerAcceptor
+    } catch (cause) {
+      hostStarted = false
+      throw cause
+    }
+
+    let stopped = false
+    let stopPromise: Promise<void> | undefined
+    const instanceId = crypto.randomUUID()
+    const listenerAbort = new AbortController()
+    const abortFromCaller = () => { void stopHost() }
+
+    const stopHost = (): Promise<void> => {
+      if (stopPromise) return stopPromise
+      stopped = true
+      listenerAbort.abort(hostOptions.signal?.reason)
+      stopPromise = (async () => {
+        hostOptions.signal?.removeEventListener("abort", abortFromCaller)
+        if (acceptor === listenerAcceptor) acceptor = undefined
+        await listenerAcceptor?.close().catch(() => undefined)
+        await Promise.all(Array.from(hostConnections, async connection => {
+          const peer = hostPeers.get(connection)
+          if (peer) await peer.close().catch(() => undefined)
+          else await connection.close().catch(() => undefined)
+          hostConnections.delete(connection)
+          hostPeers.delete(connection)
+          ownedConnections.delete(connection)
+        }))
+      })()
+      if (hostClose === stopHost) hostClose = undefined
+      hostStarted = false
+      return stopPromise
+    }
+    hostClose = stopHost
+    hostOptions.signal?.addEventListener("abort", abortFromCaller, { once: true })
+
+    const done = (async () => {
+      while (!stopped && !closed) {
+        let rawConnection: IrohConnection | undefined
+        let handedOff = false
+        try {
+          rawConnection = await waitForAccept(listenerAcceptor!.accept(), listenerAbort.signal)
+          if (!rawConnection) continue
+          if (stopped || closed || ownedConnections.size + pendingOutgoing > maximumActivePeerConnections) {
+            continue
+          }
+          ownedConnections.add(rawConnection)
+          hostConnections.add(rawConnection)
+          const peer = await acceptPeerConnection({ ...hostOptions, signal: listenerAbort.signal }, contacts,
+            rawConnection, options.node.endpointId, options.relayUrl, instanceId, options.transport,
+            ownedConnections, hostConnections)
+          handedOff = true
+          if (stopped || closed || listenerAbort.signal.aborted) {
+            await peer.close()
+            continue
+          }
+          const key = contactKey(peer.remoteContact.personId, peer.remoteContact.deviceId)
+          const pending = pendingDials.get(key)
+          if (pending) {
+            if (hostOptions.profile.device.deviceId < peer.remoteContact.deviceId) {
+              await peer.close()
+              continue
+            }
+            pending.superseded = true
+            pending.controller.abort()
+            await pending.settled
+          }
+          const existing = activePeers.get(key)
+          if (existing) await existing.close().catch(() => undefined)
+          if (ownedConnections.size > maximumActivePeerConnections) {
+            await peer.close()
+            continue
+          }
+          activePeers.set(key, peer)
+          const closePeer = peer.close.bind(peer)
+          peer.close = async () => {
+            if (activePeers.get(key) === peer) activePeers.delete(key)
+            hostPeers.delete(rawConnection!)
+            await closePeer()
+          }
+          hostPeers.set(rawConnection, peer)
+          peer.connection.close = peer.close
+          void Promise.resolve().then(() => hostOptions.onConnected(peer)).catch(async () => {
+            await peer.close().catch(() => undefined)
+          })
+        } catch {
+          if (stopped || closed || listenerAbort.signal.aborted) return
+          // Unknown, stale, and malformed peers never reach caller callbacks.
+        } finally {
+          if (rawConnection && !handedOff) {
+            ownedConnections.delete(rawConnection)
+            hostConnections.delete(rawConnection)
+            await rawConnection.close().catch(() => undefined)
+          }
         }
       }
-    }
-  })()
+    })()
 
-  return { endpointId: node.endpointId, relayUrl, instanceId, done, close }
+    const host: BrowserIdentityPeerHost = {
+      endpointId: options.node.endpointId,
+      relayUrl: options.relayUrl,
+      instanceId,
+      done,
+      close: stopHost,
+    }
+    if (hostOptions.signal?.aborted) await stopHost()
+    return host
+  }
+
+  const connect = async (connectOptions: ConnectBrowserIdentityPeerOptions): Promise<ConnectedIdentityPeer> => {
+    if (closed) throw new Error("Identity peer runtime is closed")
+    await assertLocalProfile(connectOptions.profile, connectOptions.certificates)
+    assertContactShape(connectOptions.contact, connectOptions.profile.identity.personId)
+    const key = contactKey(connectOptions.contact.personId, connectOptions.contact.deviceId)
+    if (activePeers.has(key)) throw new Error("Identity peer connection was superseded by an authenticated incoming peer")
+    if (pendingDials.has(key)) throw new Error("Identity peer dial is already pending")
+    if (ownedConnections.size + pendingOutgoing >= maximumActivePeerConnections) {
+      throw new Error("Identity peer connection limit reached")
+    }
+    const dialController = new AbortController()
+    let finishDial!: () => void
+    const settled = new Promise<void>(resolve => { finishDial = resolve })
+    const pending: PendingPeerDial = { controller: dialController, settled, finish: () => finishDial(), superseded: false }
+    const abortDial = () => dialController.abort(connectOptions.signal?.reason)
+    if (connectOptions.signal?.aborted) throw abortError()
+    connectOptions.signal?.addEventListener("abort", abortDial, { once: true })
+    pendingDials.set(key, pending)
+    pendingOutgoing += 1
+    let opened = false
+    try {
+      const peer = await connectBrowserIdentityPeerOnNode({ ...connectOptions, signal: dialController.signal }, options.node, options.relayUrl, options.transport,
+        connection => { opened = true; pendingOutgoing -= 1; ownedConnections.add(connection) },
+        connection => ownedConnections.delete(connection))
+      if (activePeers.has(key)) {
+        await peer.close()
+        throw new Error("Identity peer dial was superseded by an authenticated incoming peer")
+      }
+      activePeers.set(key, peer)
+      const closePeer = peer.close.bind(peer)
+      peer.close = async () => {
+        if (activePeers.get(key) === peer) activePeers.delete(key)
+        await closePeer()
+      }
+      peer.connection.close = peer.close
+      return peer
+    } catch (error) {
+      if (pending.superseded || (dialController.signal.aborted && activePeers.has(key))) {
+        throw new Error("Identity peer dial was superseded by an authenticated incoming peer")
+      }
+      throw error
+    } finally {
+      connectOptions.signal?.removeEventListener("abort", abortDial)
+      if (pendingDials.get(key) === pending) pendingDials.delete(key)
+      if (!opened) pendingOutgoing -= 1
+      pending.finish()
+    }
+  }
+
+  return { startHost, connect, close }
 }
 
 /** Dial one saved address hint, then require a fresh signed challenge response before returning a connection. */
-export async function connectBrowserIdentityPeer(options: {
-  profile: LocalProfile
-  certificates: readonly DeviceCertificate[]
-  contact: IdentityPeerContact
+export async function connectBrowserIdentityPeer(options: ConnectBrowserIdentityPeerOptions & {
   transportSeed: Uint8Array
-  nextSequence(): number | Promise<number>
-  signal?: AbortSignal
 }): Promise<ConnectedIdentityPeer> {
   await assertLocalProfile(options.profile, options.certificates)
   assertTransportSeed(options.transportSeed)
-  assertContactShape(options.contact, options.profile.identity.personId)
-  if (options.contact.deviceId === options.profile.device.deviceId) throw new Error("Cannot reconnect to this Identity device")
   if (options.signal?.aborted) throw abortError()
 
   const transport = await initializeBrowserIdentityRuntime()
+  const node = await transport.BrowserNode.start(new Uint8Array(options.transportSeed))
+  let runtime: BrowserIdentityPeerRuntime | undefined
+  try {
+    const relayUrl = await waitForRelayUrl(node, { timeoutMs: 10_000, signal: options.signal })
+    runtime = adoptBrowserIdentityPeerRuntime({ node, transport, relayUrl })
+    const connected = await runtime.connect(options)
+    return { ...connected, close: async () => { await connected.close(); await runtime!.close() } }
+  } catch (error) {
+    await (runtime?.close() ?? node.close("Identity peer connection failed")).catch(() => undefined)
+    throw error
+  }
+}
+
+async function connectBrowserIdentityPeerOnNode(options: ConnectBrowserIdentityPeerOptions, node: IrohNode,
+  relayUrl: string, transport: BrowserIdentityPeerRuntimeTransport,
+  onOpened?: (connection: IrohConnection) => void, onClosed?: (connection: IrohConnection) => void): Promise<ConnectedIdentityPeer> {
+  await assertLocalProfile(options.profile, options.certificates)
+  assertContactShape(options.contact, options.profile.identity.personId)
+  if (options.contact.deviceId === options.profile.device.deviceId) throw new Error("Cannot reconnect to this Identity device")
+  if (options.signal?.aborted) throw abortError()
   const remoteKey = await verifyDeviceCertificateChain(options.profile.identity, options.contact.deviceId,
     Array.from(options.certificates))
   const hint = await verifyContactAddressHint(options.contact, remoteKey)
-  const node = await transport.BrowserNode.start(new Uint8Array(options.transportSeed))
   let rawConnection: IrohConnection | undefined
   let closed = false
+  let closeMeshConnection: (() => Promise<void>) | undefined
   const close = async () => {
     if (closed) return
     closed = true
-    await rawConnection?.close().catch(() => undefined)
-    await node.close("Identity peer connection closed").catch(() => undefined)
+    if (rawConnection) {
+      if (closeMeshConnection) await closeMeshConnection().catch(() => undefined)
+      else await rawConnection.close().catch(() => undefined)
+      onClosed?.(rawConnection)
+    }
   }
   const abortListener = () => { void close() }
   options.signal?.addEventListener("abort", abortListener, { once: true })
   try {
-    const relayUrl = await waitForRelayUrl(node, { timeoutMs: 10_000, signal: options.signal })
-    rawConnection = await withDeadline(node.dialRelay(hint.endpointId, hint.relayUrl),
-      "Identity peer dial timed out", options.signal, close)
+    const pendingDial = node.dialRelay(hint.endpointId, hint.relayUrl)
+    void pendingDial.then(connection => { if (closed) void connection.close().catch(() => undefined) }, () => undefined)
+    rawConnection = await withDeadline(pendingDial, "Identity peer dial timed out", options.signal, close)
+    if (closed) throw abortError()
+    onOpened?.(rawConnection)
     if (rawConnection.remoteEndpointId !== hint.endpointId) throw new Error("Identity transport connected to the wrong peer endpoint")
     const stream = await withDeadline(rawConnection.openStream(), "Identity peer stream open timed out", options.signal, close)
     const localRoute = await createFreshRoute(options.profile, options.profile.identity.personId, node.endpointId,
@@ -200,13 +446,10 @@ export async function connectBrowserIdentityPeer(options: {
     const remoteRoute = await verifyFreshPeerRoute(response.payload.route, options.profile.identity,
       options.contact.deviceId, options.certificates, rawConnection.remoteEndpointId)
     const connection = meshNetworkConnection(rawConnection, new transport.WasmIngressBudgetProfile())
+    closeMeshConnection = connection.close.bind(connection)
+    connection.close = close
     options.signal?.removeEventListener("abort", abortListener)
-    return {
-      connection,
-      remoteContact: makeContact(remoteRoute),
-      localContact: makeContact(localRoute),
-      close,
-    }
+    return { connection, remoteContact: makeContact(remoteRoute), localContact: makeContact(localRoute), close }
   } catch (error) {
     options.signal?.removeEventListener("abort", abortListener)
     await close()
@@ -214,11 +457,11 @@ export async function connectBrowserIdentityPeer(options: {
   }
 }
 
-async function acceptPeerConnection(options: Parameters<typeof startBrowserIdentityPeerHost>[0],
+async function acceptPeerConnection(options: StartBrowserIdentityPeerHostOptions,
   contacts: ReadonlyMap<string, IdentityPeerContact>, rawConnection: IrohConnection,
   endpointId: string, relayUrl: string, instanceId: string,
   transport: Awaited<ReturnType<typeof initializeBrowserIdentityRuntime>>,
-  activeConnections: Set<IrohConnection>): Promise<IdentityPeerHostConnection> {
+  ownedConnections: Set<IrohConnection>, hostConnections: Set<IrohConnection>): Promise<IdentityPeerHostConnection> {
   const stream = await withDeadline(rawConnection.acceptStream(), "Identity peer stream accept timed out", options.signal)
   const requestBytes = await withDeadline(stream.read(maximumReconnectFrameBytes), "Identity peer request timed out", options.signal)
   const request = decodeEnvelope<ReconnectRequest>(requestBytes, "mesh-identity-peer-reconnect-request")
@@ -241,14 +484,21 @@ async function acceptPeerConnection(options: Parameters<typeof startBrowserIdent
   await withDeadline(stream.send(encodeFrame(response)), "Identity peer response send timed out", options.signal)
   await withDeadline(stream.closeSend(), "Identity peer response close timed out", options.signal)
   const connection = meshNetworkConnection(rawConnection, new transport.WasmIngressBudgetProfile())
+  const closeMeshConnection = connection.close.bind(connection)
+  let peerClosed = false
+  const closePeer = async () => {
+    if (peerClosed) return
+    peerClosed = true
+    ownedConnections.delete(rawConnection)
+    hostConnections.delete(rawConnection)
+    await closeMeshConnection()
+  }
+  connection.close = closePeer
   return {
     connection,
     remoteContact: makeContact(freshRemoteRoute),
     localContact: makeContact(localRoute),
-    close: async () => {
-      activeConnections.delete(rawConnection)
-      await connection.close()
-    },
+    close: closePeer,
   }
 }
 

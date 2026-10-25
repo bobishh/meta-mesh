@@ -3,7 +3,7 @@ import { createDelegatedCertificate, createIdentityEnrollmentDevice, createDevic
   openIdentityRecoveryEnvelope, canonicalizeJson, sha256Base64Url, identityProfileRevision, mergeIdentityProfileState,
   readIdentityProfileState, readIdentityProfileStateWithRevocations, verifyIdentityDeviceAuthority,
   authorizeIdentityDevice, certificateHash } from "@meta-uber/mesh-identity"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createSignedDeviceRoute, verifySignedDeviceRoute } from "./protocol"
 import { AutomergeAntiEntropy } from "./automerge"
 import { createPersonalIdentityAdapter, createPersonalIdentityDocument, PersonalIdentityMeshSync, type PersonalIdentityDocument,
@@ -368,7 +368,122 @@ describe("independent personal Identity mesh", () => {
     expect((await leftStored.current()).profileState.operations).toHaveLength(2)
     expect((await rightStored.current()).profileState.operations).toHaveLength(2)
   })
+
+  it("Given profile sync is blocked reading a response, when its caller aborts, then it resets only that stream", async () => {
+    const controller = new AbortController()
+    const abortReason = new Error("Owner peer ended")
+    let markReadStarted!: () => void
+    const readStarted = new Promise<void>(resolve => { markReadStarted = resolve })
+    const reset = vi.fn(async () => undefined)
+    const stream: PersonalIdentitySyncStream = {
+      send: async () => {},
+      closeSend: async () => {},
+      readRaw: () => { markReadStarted(); return new Promise<Uint8Array>(() => {}) },
+      reset,
+    }
+    const connection: PersonalIdentitySyncConnection & { close: ReturnType<typeof vi.fn> } = {
+      openStream: async () => stream,
+      acceptStream: async () => { throw new Error("Unexpected inbound stream") },
+      close: vi.fn(async () => {}),
+    }
+    const { sync, route, targetDeviceId } = await createBlockedSyncFixture(connection)
+
+    const syncing = sync.sync(connection, route, targetDeviceId, controller.signal)
+    await readStarted
+    controller.abort(abortReason)
+
+    await expect(syncing).rejects.toBe(abortReason)
+    expect(reset).toHaveBeenCalledOnce()
+    expect(connection.close).not.toHaveBeenCalled()
+  })
+
+  it("Given profile sync is blocked sending or half-closing, when its caller aborts, then it resets that stream", async () => {
+    for (const blockedStage of ["send", "closeSend"] as const) {
+      const controller = new AbortController()
+      const abortReason = new Error("Owner peer ended")
+      let markStageStarted!: () => void
+      const stageStarted = new Promise<void>(resolve => { markStageStarted = resolve })
+      const never = () => new Promise<void>(() => {})
+      const reset = vi.fn(async () => undefined)
+      const stream: PersonalIdentitySyncStream = {
+        send: () => {
+          if (blockedStage === "send") { markStageStarted(); return never() }
+          return Promise.resolve()
+        },
+        closeSend: () => {
+          if (blockedStage === "closeSend") { markStageStarted(); return never() }
+          return Promise.resolve()
+        },
+        readRaw: async () => new Uint8Array(),
+        reset,
+      }
+      const connection: PersonalIdentitySyncConnection & { close: ReturnType<typeof vi.fn> } = {
+        openStream: async () => stream,
+        acceptStream: async () => { throw new Error("Unexpected inbound stream") },
+        close: vi.fn(async () => {}),
+      }
+      const { sync, route, targetDeviceId } = await createBlockedSyncFixture(connection)
+
+      const syncing = sync.sync(connection, route, targetDeviceId, controller.signal)
+      await stageStarted
+      controller.abort(abortReason)
+
+      await expect(syncing).rejects.toBe(abortReason)
+      expect(reset).toHaveBeenCalledOnce()
+      expect(connection.close).not.toHaveBeenCalled()
+    }
+  })
+
+  it("Given stream opening is blocked, when sync aborts before it resolves, then the late stream is reset", async () => {
+    const controller = new AbortController()
+    const abortReason = new Error("Owner peer ended")
+    let markOpenStarted!: () => void
+    const openStarted = new Promise<void>(resolve => { markOpenStarted = resolve })
+    let resolveOpen!: (stream: PersonalIdentitySyncStream) => void
+    const openResult = new Promise<PersonalIdentitySyncStream>(resolve => { resolveOpen = resolve })
+    const reset = vi.fn(async () => undefined)
+    const send = vi.fn(async () => {})
+    const lateStream: PersonalIdentitySyncStream = {
+      send,
+      closeSend: async () => {},
+      readRaw: async () => new Uint8Array(),
+      reset,
+    }
+    const connection: PersonalIdentitySyncConnection & { close: ReturnType<typeof vi.fn> } = {
+      openStream: () => { markOpenStarted(); return openResult },
+      acceptStream: async () => { throw new Error("Unexpected inbound stream") },
+      close: vi.fn(async () => {}),
+    }
+    const { sync, route, targetDeviceId } = await createBlockedSyncFixture(connection)
+
+    const syncing = sync.sync(connection, route, targetDeviceId, controller.signal)
+    await openStarted
+    controller.abort(abortReason)
+    await expect(syncing).rejects.toBe(abortReason)
+    resolveOpen(lateStream)
+    await vi.waitFor(() => expect(reset).toHaveBeenCalledOnce())
+
+    expect(send).not.toHaveBeenCalled()
+    expect(connection.close).not.toHaveBeenCalled()
+  })
 })
+
+async function createBlockedSyncFixture(connection: PersonalIdentitySyncConnection) {
+  const recovery = await createRecoverableIdentity("better", "Owner")
+  const profile = recovery.profile
+  const peer = await openIdentityRecoveryEnvelope(recovery.recoveryEnvelope, recovery.recoveryKey, "Owner")
+  const initial = createPersonalIdentityDocument(profile.identity, [profile.certificate, peer.certificate])
+  const initialDoc = Automerge.from<PersonalIdentityDocument>(initial)
+  const operation = await createIdentityProfileOperation(profile, initial.profileState, "name", "Owner")
+  const stored = Automerge.change(initialDoc, document => { document.profileState.operations.push(operation) })
+  const adapter = createPersonalIdentityAdapter({ identity: profile.identity, current: async () => stored, commit: async () => {} })
+  const sync = new PersonalIdentityMeshSync({ profile, adapter })
+  const signedRoute = await createSignedDeviceRoute(peer, { scopeId: adapter.scopeId, instanceId: "blocked-peer-instance",
+    endpoint: "https://peer.invalid", sequence: 1, issuedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString() })
+  const route = await verifySignedDeviceRoute(signedRoute, peer.device.publicKey)
+  return { sync, route, targetDeviceId: peer.device.deviceId }
+}
 
 function linkPersonalIdentityConnections(sync: PersonalIdentityMeshSync, remoteDeviceId: string,
   acceptedChanges: number[], errors: unknown[]) {

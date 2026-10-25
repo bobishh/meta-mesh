@@ -23,6 +23,7 @@ import { createSignedDeviceRoute, verifySignedDeviceRoute, type DeviceRoute, typ
 import { enrollmentRouteTimestamps } from "./enrollmentRouteTimes"
 import type { WasmPairingCodec } from "@meta-uber/mesh-transport/transport-wasm"
 import { meshNetworkConnection, waitForRelayUrl, type IrohConnection, type MeshConnection } from "@meta-uber/mesh-transport"
+import type { BrowserIdentityPeerRuntime } from "./browserIdentityReconnect"
 import { createIdentityEnrollmentDevice } from "@meta-uber/mesh-identity"
 import type * as Automerge from "@automerge/automerge"
 import { createPersonalIdentityAdapter, PersonalIdentityMeshSync,
@@ -69,10 +70,15 @@ export type BrowserIdentityEnrollmentHost = {
   invitation: DeviceEnrollmentInvitation
   inviteUrl: string
   waitForEnrollment(signal?: AbortSignal): Promise<PendingIdentityEnrollment>
+  promoteToPeerRuntime(): Promise<BrowserIdentityPeerRuntime>
   close(): Promise<void>
 }
 
-export type ConnectedIdentityEnrollment = BrowserIdentityEnrollmentApproval & { profile: LocalProfile; close(): Promise<void> }
+export type ConnectedIdentityEnrollment = BrowserIdentityEnrollmentApproval & {
+  profile: LocalProfile
+  promoteToPeerRuntime(): Promise<BrowserIdentityPeerRuntime>
+  close(): Promise<void>
+}
 
 export type IdentityProfileSyncOptions = {
   profile: LocalProfile
@@ -81,6 +87,35 @@ export type IdentityProfileSyncOptions = {
   current(): Promise<Automerge.Doc<PersonalIdentityDocument>>
   commit(document: Automerge.Doc<PersonalIdentityDocument>, expectedProfileRevision: string): void | Promise<void>
   authorizePeer?: (remoteDeviceId: string, direction: "send" | "receive") => boolean | Promise<boolean>
+}
+
+/** Memoize promotion so enrollment shutdown cannot race a pending module load into adopting a closed node. */
+export function memoizeIdentityEnrollmentPeerRuntimePromotion(options: {
+  isClosed(): boolean
+  validate(): void
+  loadAdopter(): Promise<() => BrowserIdentityPeerRuntime>
+}): () => Promise<BrowserIdentityPeerRuntime> {
+  let runtime: BrowserIdentityPeerRuntime | undefined
+  let pending: Promise<BrowserIdentityPeerRuntime> | undefined
+  return () => {
+    if (runtime) return Promise.resolve(runtime)
+    if (pending) return pending
+    try {
+      if (options.isClosed()) throw new Error("Identity enrollment is closed")
+      options.validate()
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    const promotion = (async () => {
+      const adopt = await options.loadAdopter()
+      if (options.isClosed()) throw new Error("Identity enrollment closed before peer runtime promotion")
+      runtime = adopt()
+      return runtime
+    })()
+    pending = promotion
+    void promotion.catch(() => { if (pending === promotion) pending = undefined })
+    return promotion
+  }
 }
 
 /** Exchange the current personal Identity document with one already enrolled peer. */
@@ -131,10 +166,12 @@ function identitySyncConnection(connection: MeshConnection): PersonalIdentitySyn
 
 function identitySyncStream(stream: Awaited<ReturnType<MeshConnection["openStream"]>>): PersonalIdentitySyncStream {
   if (!stream.readRaw) throw new Error("Identity sync requires raw stream reads")
+  const reset = stream.reset
   return {
     send: bytes => stream.send(bytes),
     readRaw: () => stream.readRaw!(),
     closeSend: () => stream.closeSend(),
+    ...(reset ? { reset: () => reset.call(stream) } : {}),
   }
 }
 
@@ -227,21 +264,56 @@ export async function createBrowserIdentityEnrollmentHost(options: {
   const inviteUrl = invitationUrl(origin.origin, invitation)
   let closed = false
   let consumed = false
+  let approved = false
   let acceptor: { accept(): Promise<IrohConnection | undefined>; close?(): Promise<void> } | undefined
   let activeConnection: IrohConnection | undefined
+  let promotedRuntime: BrowserIdentityPeerRuntime | undefined
+  let activeConnectionClosed = false
+  let releaseRuntimeConnection: (() => void) | undefined
 
   const close = async () => {
     if (closed) return
     closed = true
+    if (promotedRuntime) {
+      await promotedRuntime.close()
+      return
+    }
     await activeConnection?.close().catch(() => undefined)
     await acceptor?.close?.().catch(() => undefined)
     await node.close("Identity enrollment closed").catch(() => undefined)
   }
+  const promoteToPeerRuntime = memoizeIdentityEnrollmentPeerRuntimePromotion({
+    isClosed: () => closed,
+    validate: () => {
+      if (!approved || !activeConnection || !acceptor) {
+        throw new Error("Identity enrollment must be approved before peer runtime promotion")
+      }
+    },
+    loadAdopter: async () => {
+      const reconnect = await import("./browserIdentityReconnect")
+      return () => {
+        const runtime = reconnect.adoptBrowserIdentityPeerRuntime({
+          node,
+          transport,
+          relayUrl,
+          acceptor: acceptor as { accept(): Promise<IrohConnection | undefined>; close(): Promise<void> },
+          initialConnection: activeConnection!,
+          onInitialConnectionClose: release => {
+            if (activeConnectionClosed) release()
+            else releaseRuntimeConnection = release
+          },
+        })
+        promotedRuntime = runtime
+        return runtime
+      }
+    },
+  })
 
   return {
     endpointId: node.endpointId,
     invitation,
     inviteUrl,
+    promoteToPeerRuntime,
     async waitForEnrollment(signal) {
       if (closed) throw new Error("Identity enrollment host is closed")
       if (consumed) throw new Error("This Identity enrollment invitation has already been used")
@@ -274,6 +346,11 @@ export async function createBrowserIdentityEnrollmentHost(options: {
             requestRoute: route,
             endpointId: node.endpointId,
             relayUrl,
+            onApproved: () => { approved = true },
+            onConnectionClosed: () => {
+              activeConnectionClosed = true
+              releaseRuntimeConnection?.()
+            },
             onClose: close,
           })
         } catch (error) {
@@ -320,6 +397,9 @@ export async function connectBrowserIdentityEnrollment(options: {
   const node = await enrollmentPhase("device transport start", () =>
     transport.BrowserNode.start(new Uint8Array(options.transportSeed)))
   let rawConnection: IrohConnection | undefined
+  let promotedRuntime: BrowserIdentityPeerRuntime | undefined
+  let rawConnectionClosed = false
+  let releaseRuntimeConnection: (() => void) | undefined
   const closeOnAbort = async () => {
     await rawConnection?.close().catch(() => undefined)
     await node.close("Identity enrollment cancelled").catch(() => undefined)
@@ -379,12 +459,42 @@ export async function connectBrowserIdentityEnrollment(options: {
     }
     options.signal?.removeEventListener("abort", abortListener)
     const connection = meshNetworkConnection(rawConnection, new WasmIngressBudgetProfile())
+    const closeConnection = connection.close.bind(connection)
+    connection.close = async () => {
+      if (rawConnectionClosed) return
+      rawConnectionClosed = true
+      try { await closeConnection() }
+      finally { releaseRuntimeConnection?.() }
+    }
     const profile: LocalProfile = {
       identity: structuredClone(approval.identity),
       device: { ...structuredClone(device.device), displayName: deviceLabel },
       certificate: structuredClone(leaf),
       privateKeys: { devicePrivateKey: device.privateKey },
     }
+    const promoteToPeerRuntime = memoizeIdentityEnrollmentPeerRuntimePromotion({
+      isClosed: () => rawConnectionClosed,
+      validate: () => {
+        if (!rawConnection) throw new Error("Identity enrollment connection is unavailable")
+      },
+      loadAdopter: async () => {
+        const reconnect = await import("./browserIdentityReconnect")
+        return () => {
+          const runtime = reconnect.adoptBrowserIdentityPeerRuntime({
+            node,
+            transport,
+            relayUrl,
+            initialConnection: rawConnection!,
+            onInitialConnectionClose: release => {
+              if (rawConnectionClosed) release()
+              else releaseRuntimeConnection = release
+            },
+          })
+          promotedRuntime = runtime
+          return runtime
+        }
+      },
+    })
     return {
       profile,
       identity: structuredClone(approval.identity),
@@ -392,9 +502,13 @@ export async function connectBrowserIdentityEnrollment(options: {
       connection,
       remoteEndpointId: parseBrowserEndpointAddress(remoteRoute.endpoint).endpointId,
       remoteRoute,
+      promoteToPeerRuntime,
       close: async () => {
-        await rawConnection?.close().catch(() => undefined)
-        await node.close("Identity device connection closed").catch(() => undefined)
+        if (promotedRuntime) await promotedRuntime.close()
+        else {
+          await connection.close().catch(() => undefined)
+          await node.close("Identity device connection closed").catch(() => undefined)
+        }
       },
       ...(approval.recovery ? { recovery: approval.recovery } : {}),
     }
@@ -416,6 +530,8 @@ function createPendingEnrollment(options: {
   requestRoute: DeviceRoute
   endpointId: string
   relayUrl: string
+  onApproved(): void
+  onConnectionClosed(): void
   onClose(): Promise<void>
 }): PendingIdentityEnrollment {
   let completed = false
@@ -478,7 +594,16 @@ function createPendingEnrollment(options: {
         () => acknowledgementStream.send(completeFrame))
       await acknowledgementStream.closeSend()
       completed = true
+      options.onApproved()
       const connection = meshNetworkConnection(options.connection, new WasmIngressBudgetProfile())
+      let connectionClosed = false
+      const closeConnection = connection.close.bind(connection)
+      connection.close = async () => {
+        if (connectionClosed) return
+        connectionClosed = true
+        try { await closeConnection() }
+        finally { options.onConnectionClosed() }
+      }
       return {
         identity: structuredClone(options.profile.identity), certificates,
         connection,

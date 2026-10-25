@@ -30,6 +30,8 @@ export type PersonalIdentitySyncStream = {
   /** Identity sync uses raw JSON frames, not newline-delimited pairing frames. */
   readRaw(): Promise<Uint8Array>
   closeSend(): Promise<void>
+  /** Cancel this stream without closing its paired-device connection. */
+  reset?(): Promise<void>
 }
 
 /** Established MetaMesh connection to a paired device. Pairing and dialing stay host-owned. */
@@ -143,10 +145,15 @@ export class PersonalIdentityMeshSync {
     return syncAutomergeDocumentToDevice({ engine: this.engine, adapter, targetDeviceId, routes: [route], signal,
       send: async (_route, request, abortSignal) => {
         if (abortSignal.aborted) throw abortSignal.reason ?? new Error("Identity sync cancelled")
-        const stream = await connection.openStream()
-        await stream.send(encodeIdentitySyncFrame(request))
-        await stream.closeSend()
-        return decodeIdentitySyncResponse(await stream.readRaw())
+        const stream = await awaitIdentitySyncOperation(() => connection.openStream(), abortSignal, undefined,
+          lateStream => resetIdentitySyncStream(lateStream))
+        await awaitIdentitySyncOperation(() => stream.send(encodeIdentitySyncFrame(request)), abortSignal,
+          () => resetIdentitySyncStream(stream))
+        await awaitIdentitySyncOperation(() => stream.closeSend(), abortSignal,
+          () => resetIdentitySyncStream(stream))
+        const response = await awaitIdentitySyncOperation(() => stream.readRaw(), abortSignal,
+          () => resetIdentitySyncStream(stream))
+        return decodeIdentitySyncResponse(response)
       },
       verifyAck: async (signedAck: SignedDurableBatchAck): Promise<DurableBatchAck> => {
         const document = await adapter.current() as unknown as PersonalIdentityDocument
@@ -171,6 +178,50 @@ export class PersonalIdentityMeshSync {
     await stream.closeSend()
     return { acceptedChanges }
   }
+}
+
+function awaitIdentitySyncOperation<T>(operation: () => Promise<T>, signal: AbortSignal,
+  onAbort?: () => void, onLateValue?: (value: T) => void): Promise<T> {
+  if (signal.aborted) {
+    onAbort?.()
+    return Promise.reject(signal.reason ?? new Error("Identity sync cancelled"))
+  }
+  let pending: Promise<T>
+  try { pending = Promise.resolve(operation()) }
+  catch (error) { pending = Promise.reject(error) }
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener("abort", abort)
+    const abort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      onAbort?.()
+      reject(signal.reason ?? new Error("Identity sync cancelled"))
+    }
+    signal.addEventListener("abort", abort, { once: true })
+    pending.then(value => {
+      if (settled) {
+        if (onLateValue) void Promise.resolve().then(() => onLateValue(value)).catch(() => undefined)
+        return
+      }
+      settled = true
+      cleanup()
+      resolve(value)
+    }, error => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    })
+    if (signal.aborted) abort()
+  })
+}
+
+function resetIdentitySyncStream(stream: PersonalIdentitySyncStream): void {
+  if (!stream.reset) return
+  try { void Promise.resolve(stream.reset()).catch(() => undefined) }
+  catch { /* Cancellation remains authoritative if transport cleanup fails. */ }
 }
 
 const maximumIdentitySyncFrameBytes = 16 * 1024 * 1024

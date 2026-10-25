@@ -9,7 +9,8 @@ export { BrowserWorkspaceJoinHost, BrowserWorkspaceJoinGuest, BrowserWorkspaceJo
   type WorkspaceJoinMachine, type WorkspaceJoinResponse, type WorkspaceJoinStream } from "./browserWorkspaceJoin"
 export type { BrowserIdentityEnrollmentApproval, BrowserIdentityEnrollmentHost, ConnectedIdentityEnrollment,
   IdentityEnrollmentRecovery, IdentityProfileSyncOptions, PendingIdentityEnrollment } from "./browserIdentityEnrollment"
-export type { BrowserIdentityPeerHost, ConnectedIdentityPeer, IdentityPeerContact, IdentityPeerHostConnection } from "./browserIdentityReconnect"
+export type { BrowserIdentityPeerHost, BrowserIdentityPeerRuntime, ConnectedIdentityPeer, CreateBrowserIdentityPeerRuntimeOptions,
+  IdentityPeerContact, IdentityPeerHostConnection, StartBrowserIdentityPeerHostOptions, ConnectBrowserIdentityPeerOptions } from "./browserIdentityReconnect"
 
 // Keep identity enrollment and reconnect code out of the workspace runtime's
 // startup graph. These features use the full Automerge identity replica and
@@ -43,6 +44,10 @@ export function connectBrowserIdentityPeer(...args: Parameters<BrowserIdentityRe
 
 export function startBrowserIdentityPeerHost(...args: Parameters<BrowserIdentityReconnectApi["startBrowserIdentityPeerHost"]>) {
   return import("./browserIdentityReconnect").then(module => module.startBrowserIdentityPeerHost(...args))
+}
+
+export function createBrowserIdentityPeerRuntime(...args: Parameters<BrowserIdentityReconnectApi["createBrowserIdentityPeerRuntime"]>) {
+  return import("./browserIdentityReconnect").then(module => module.createBrowserIdentityPeerRuntime(...args))
 }
 export { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 export { BrowserMeshHandshake, BrowserMeshOutgoingHandshake, type BrowserMeshHandshakeConnection, type BrowserMeshHandshakeHost, type BrowserMeshHandshakePeer, type BrowserMeshHandshakeStream, type BrowserMeshOutgoingConnection, type BrowserMeshOutgoingHandshakeHost } from "./browserHandshake"
