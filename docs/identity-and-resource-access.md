@@ -62,6 +62,81 @@ process with a separate Cancel sign-in action. A subsequent Sign in starts fresh
 An existing-board invitation and Add another device remain separate actions and
 must not appear as the ordinary sign-in form.
 
+### App-owned resource bootstrap
+
+Ordinary sign-in to an application that already has resources for the selected
+person SHALL restore that application's current owner-authorized resource
+catalog. The Identity device certificate proves the person and app device; it
+does not create or imply resource permission. The resource owner remains the
+authority for the catalog locator, access grant, resource ownership and permitted
+operations.
+
+The owner MAY register an app-scoped bootstrap in the encrypted Personal Identity
+Document. Identity acts only as a credential wallet and delivery relay: it stores
+and returns the opaque owner-issued record, but cannot create, widen or renew its
+resource authority. The record is bound to one exact application origin and
+person. Its owner-signed content contains only the catalog locator and the access
+needed to retrieve that authoritative catalog. It does not copy the catalog or
+resource contents into Identity.
+
+The signed application approval distinguishes `ready`, `empty` and
+`unavailable` catalog results. `ready` contains one or more verified entries;
+`empty` means a successful lookup found no entry, or the signed Identity profile
+has no Rusty service pins; `unavailable` means lookup failed. The approval digest
+binds this status and its entries. An application may start a new catalog flow
+only for `empty`; `unavailable` keeps local work intact and exposes a retryable
+state.
+
+When the application requests a bootstrap during ordinary sign-in, the returned
+envelope SHALL bind the exact application origin, person ID, app device ID,
+original sign-in challenge, bootstrap revision and expiry. The SDK owns envelope
+sealing, opening, binding validation and proof verification. Bootstrap secrets
+SHALL NOT appear in redirect URLs, browser history, telemetry or external
+referrers. Root keys, recovery evidence and data for other applications SHALL NOT
+be included. The resource provider still verifies its current signed owner grant
+before exposing the catalog or any resource.
+
+An application switching from its normal anonymous initial board to the selected
+person's authorized catalog SHALL preserve the anonymous board and its content,
+owner and local data, but leave it inactive while that catalog is active. It must
+not relabel the anonymous board as the selected person's resource. If the owner
+bootstrap is missing, expired, unavailable or denied, sign-in may complete for
+local use; the application SHALL keep the anonymous board active, show an explicit
+pending or unavailable state, and allow a fresh retry. It must not silently treat
+the person as a visitor to another person's board or imply that resource discovery
+succeeded.
+
+#### Scenario: Sign-in restores the selected person's current catalog
+
+- **GIVEN** an application has a current owner-issued catalog locator and scoped
+  access record for the selected Identity, and this device has only its normal
+  anonymous initial board
+- **WHEN** the user approves ordinary same-tab sign-in and the application
+  verifies the exact-origin, person, device, challenge, revision and expiry
+  bindings
+- **THEN** the application loads only resources allowed by the current owner
+  authority and selects the person's authorized resource
+- **AND** it preserves the anonymous board and its data unchanged but inactive
+- **AND** an existing approved device receives the latest owner-signed revision
+  through Identity synchronization before using it
+
+#### Scenario: Bootstrap is absent or denied
+
+- **GIVEN** a valid Identity approval but no current owner-issued bootstrap, or a
+  bootstrap that is expired, revoked or for another app, person or device
+- **WHEN** the application returns from Identity
+- **THEN** it keeps local anonymous work active and intact, reports resource
+  access as pending or unavailable, and offers a fresh retry
+- **AND** it does not infer ownership from the person ID or use another
+  application's credentials
+
+**Implementation status:** The SDK and Rusty transport now define a bounded,
+owner-authorized catalog-access exchange. Tincanban caller and Identity provider
+integration remain pending. The transport carries an opaque catalog locator and
+scoped access record; it does not grant board membership or expose catalog data
+to Identity. Do not substitute an unbound URL secret, manual pairing/recovery as
+a sign-in prerequisite, root-key conversion or a new service.
+
 ### Tincanban presentation
 
 - Before sign-in, the header presents **Sign in**.

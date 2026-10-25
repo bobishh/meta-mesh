@@ -134,10 +134,17 @@ export type LocalProfile = {
 
 export { createDelegatedCertificate, createDeviceAuthorizationRequest, encodeDeviceAuthorizationRequest,
   parseDeviceAuthorizationRequest, createDeviceAuthorizationApproval, issueDeviceAuthorization,
-  verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
+  openApprovedIdentityCatalogAccess, verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
   verifyDeviceAuthorizationRequest, parseDeviceAuthorizationApproval } from "./deviceAuthorization"
 export type { DeviceAuthorizationRequest, DeviceAuthorizationApproval, DeviceAuthorizationApprovalPayload } from "./deviceAuthorization"
 export type { DeviceAuthorizationApprovalVerificationOptions } from "./deviceAuthorization"
+export { openIdentityCatalogAccessForApplication, openIdentityCatalogAccessForManager,
+  sealIdentityCatalogAccessForApplication, sealIdentityCatalogAccessForManager,
+  verifyAndOpenRustyIdentityCatalogAccessPublication, maxIdentityCatalogAccessBytes } from "./identityCatalogAccess"
+export type { IdentityCatalogAccessApplicationBinding, IdentityCatalogAccessApprovalEntry,
+  IdentityCatalogAccessApproval, IdentityCatalogAccessManagerBinding, IdentityCatalogAccessStatus,
+  OpenedIdentityCatalogAccess, OpenedIdentityCatalogAccessResult, RustyIdentityCatalogAccessPublication,
+  RustyIdentityCatalogAccessPublicationPayload, VerifiedIdentityCatalogAccessGrant } from "./identityCatalogAccess"
 export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, issueIdentityDeviceEnrollment,
   verifyIdentityDeviceEnrollmentRequest, identityRequestAllowsRecoveryTransfer } from "./identityEnrollment"
 export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "./identityEnrollment"

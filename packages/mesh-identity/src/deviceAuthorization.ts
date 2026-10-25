@@ -6,6 +6,10 @@ import { canonicalizeJson, publicKeyId, signEnvelope, toBase64Url, verifyEnvelop
   type IdentityDeviceRevocation, type LocalProfile, type SignedEnvelope } from "./index"
 import { identityProfileRevision, identityProfileValue, identityProfileRustyServicePins, normalizeIdentityRustyServicePins,
   readIdentityProfileStateWithRevocations, type IdentityProfileState, type IdentityRustyServicePin } from "./identityProfile"
+import { createIdentityCatalogAccessApprovalEntries, openIdentityCatalogAccessApprovalEntries,
+  verifyIdentityCatalogAccessApprovalEntries, type IdentityCatalogAccessApprovalEntry,
+  type IdentityCatalogAccessApproval, type OpenedIdentityCatalogAccessResult,
+  type VerifiedIdentityCatalogAccessGrant } from "./identityCatalogAccess"
 
 type DeviceAuthorizationRequestFields = {
   kind: "mesh-device-authorization-request"
@@ -18,7 +22,9 @@ type DeviceAuthorizationRequestFields = {
 }
 export type DeviceAuthorizationRequest = SignedEnvelope<
   (DeviceAuthorizationRequestFields & { version: 1 }) |
-  (DeviceAuthorizationRequestFields & { version: 2; rustyServicePins: IdentityRustyServicePin[] })
+  (DeviceAuthorizationRequestFields & { version: 2; rustyServicePins: IdentityRustyServicePin[] }) |
+  (DeviceAuthorizationRequestFields & { version: 3; includeIdentityCatalogAccess: true;
+    rustyServicePins?: IdentityRustyServicePin[] })
 >
 
 type DeviceAuthorizationApprovalPayloadV1 = {
@@ -41,8 +47,13 @@ type DeviceAuthorizationApprovalPayloadV3 = Omit<DeviceAuthorizationApprovalPayl
   profileStateDigest: string
 }
 type DeviceAuthorizationApprovalPayloadV4 = Omit<DeviceAuthorizationApprovalPayloadV3, "version"> & { version: 4 }
+type DeviceAuthorizationApprovalPayloadV5 = Omit<DeviceAuthorizationApprovalPayloadV4, "version"> & {
+  version: 5
+  identityCatalogAccessDigest: string
+}
 export type DeviceAuthorizationApprovalPayload = DeviceAuthorizationApprovalPayloadV1 |
-  DeviceAuthorizationApprovalPayloadV2 | DeviceAuthorizationApprovalPayloadV3 | DeviceAuthorizationApprovalPayloadV4
+  DeviceAuthorizationApprovalPayloadV2 | DeviceAuthorizationApprovalPayloadV3 | DeviceAuthorizationApprovalPayloadV4 |
+  DeviceAuthorizationApprovalPayloadV5
 
 export type DeviceAuthorizationApproval = {
   identity: LocalProfile["identity"]
@@ -52,6 +63,7 @@ export type DeviceAuthorizationApproval = {
   authorityView?: IdentityAuthorityView
   rustyServicePins?: IdentityRustyServicePin[]
   profileState?: IdentityProfileState
+  identityCatalogAccess?: IdentityCatalogAccessApproval
   proof: SignedEnvelope<DeviceAuthorizationApprovalPayload>
 }
 
@@ -77,17 +89,20 @@ export async function createDelegatedCertificate(
 export async function createDeviceAuthorizationRequest(
   profile: LocalProfile,
   options: { applicationOrigin: string; challenge: string; expiresAt: number; personId?: string | null;
-    rustyServicePins?: readonly IdentityRustyServicePin[] },
+    rustyServicePins?: readonly IdentityRustyServicePin[]; includeIdentityCatalogAccess?: boolean },
 ): Promise<DeviceAuthorizationRequest> {
   const base = {
     kind: "mesh-device-authorization-request" as const,
     applicationOrigin: options.applicationOrigin, challenge: options.challenge, expiresAt: options.expiresAt,
     personId: options.personId ?? null, deviceId: profile.device.deviceId, devicePublicKey: profile.device.publicKey,
   }
+  if (options.includeIdentityCatalogAccess !== undefined && typeof options.includeIdentityCatalogAccess !== "boolean") {
+    throw new Error("Invalid Identity catalog access request option")
+  }
   const pins = options.rustyServicePins === undefined ? [] : await normalizeIdentityRustyServicePins(options.rustyServicePins)
-  const payload: DeviceAuthorizationRequest["payload"] = pins.length
-    ? { ...base, version: 2, rustyServicePins: pins }
-    : { ...base, version: 1 }
+  const payload: DeviceAuthorizationRequest["payload"] = options.includeIdentityCatalogAccess === true
+    ? { ...base, version: 3, includeIdentityCatalogAccess: true, ...(pins.length ? { rustyServicePins: pins } : {}) }
+    : pins.length ? { ...base, version: 2, rustyServicePins: pins } : { ...base, version: 1 }
   const request = await signEnvelope(profile.privateKeys.devicePrivateKey, payload, payload.deviceId,
     "MESH-DEVICE-AUTHORIZATION/1")
   await verifyDeviceAuthorizationRequest(request, options)
@@ -127,7 +142,7 @@ export async function verifyDeviceAuthorizationRequest(
   const value = request?.payload
   const now = (binding.now ?? Date.now)()
   if (!value || !isSignedRequest(request) || value.kind !== "mesh-device-authorization-request" ||
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     value.applicationOrigin !== binding.applicationOrigin || value.challenge !== binding.challenge ||
     !validOrigin(value.applicationOrigin) || !/^[a-f0-9]{64}$/u.test(value.challenge) ||
     !Number.isSafeInteger(value.expiresAt) || !Number.isSafeInteger(now) ||
@@ -137,9 +152,13 @@ export async function verifyDeviceAuthorizationRequest(
     !await verifyEnvelope(request, value.devicePublicKey, "MESH-DEVICE-AUTHORIZATION/1")) {
     throw new Error("Invalid or expired application device request")
   }
-  if (value.version === 2) {
-    const pins = await normalizeIdentityRustyServicePins(value.rustyServicePins)
-    if (!pins.length || canonicalizeJson(pins) !== canonicalizeJson(value.rustyServicePins)) {
+  if (value.version === 2 || value.version === 3) {
+    if (value.version === 3 && value.includeIdentityCatalogAccess !== true) {
+      throw new Error("Invalid Identity catalog access request")
+    }
+    const pins = value.rustyServicePins === undefined ? [] : await normalizeIdentityRustyServicePins(value.rustyServicePins)
+    if ((value.version === 2 && !pins.length) ||
+        (value.rustyServicePins !== undefined && canonicalizeJson(pins) !== canonicalizeJson(value.rustyServicePins))) {
       throw new Error("Invalid Rusty service pin request")
     }
   }
@@ -196,14 +215,32 @@ export async function createDeviceAuthorizationApproval(
   issuerValue: LocalProfile,
   requestValue: DeviceAuthorizationRequest,
   options: Binding & { ensureCurrent?: () => void | Promise<void>; profileState?: IdentityProfileState; includeProfileState?: boolean;
-    revocations?: readonly IdentityDeviceRevocation[] },
+    revocations?: readonly IdentityDeviceRevocation[]; identityCatalogAccess?: readonly VerifiedIdentityCatalogAccessGrant[];
+    identityCatalogAccessUnavailable?: boolean },
 ): Promise<DeviceAuthorizationApproval> {
   const issuer: LocalProfile = { ...issuerValue, identity: structuredClone(issuerValue.identity),
     device: structuredClone(issuerValue.device), certificate: structuredClone(issuerValue.certificate),
     privateKeys: { ...issuerValue.privateKeys } }
   const request = structuredClone(requestValue)
-  if ((request.payload.version === 2 || options.includeProfileState) && (options.profileState === undefined || options.revocations === undefined)) {
+  const catalogAccessRequested = request.payload.version === 3 && request.payload.includeIdentityCatalogAccess
+  if ((request.payload.version === 2 || request.payload.version === 3 || options.includeProfileState) &&
+      (options.profileState === undefined || options.revocations === undefined)) {
     throw new Error("Rusty pin approval requires the current signed Identity profile")
+  }
+  if (catalogAccessRequested && !options.includeProfileState) {
+    throw new Error("Identity catalog access approval requires the signed Identity profile")
+  }
+  if (!catalogAccessRequested && options.identityCatalogAccess?.length) {
+    throw new Error("Identity catalog access was not requested by this app device")
+  }
+  if (!catalogAccessRequested && options.identityCatalogAccessUnavailable) {
+    throw new Error("Identity catalog access was not requested by this app device")
+  }
+  if (options.identityCatalogAccessUnavailable !== undefined && typeof options.identityCatalogAccessUnavailable !== "boolean") {
+    throw new Error("Invalid Identity catalog access availability")
+  }
+  if (options.identityCatalogAccessUnavailable && options.identityCatalogAccess?.length) {
+    throw new Error("Unavailable Identity catalog access cannot include entries")
   }
   const certificates = Array.from(options.certificates ?? [], value => structuredClone(value))
   if (!certificates.some(value => value.payload.deviceId === issuer.device.deviceId)) certificates.push(issuer.certificate)
@@ -223,6 +260,7 @@ export async function createDeviceAuthorizationApproval(
   let authorityView: IdentityAuthorityView | undefined
   let rustyServicePins: IdentityRustyServicePin[] | undefined
   let approvedProfileState: IdentityProfileState | undefined
+  let identityCatalogAccess: IdentityCatalogAccessApproval | undefined
   let proofPayload: DeviceAuthorizationApprovalPayload
   if (options.profileState !== undefined || options.revocations !== undefined) {
     if (!options.profileState || !options.revocations) throw new Error("Application device approval requires complete Identity authority state")
@@ -231,21 +269,31 @@ export async function createDeviceAuthorizationApproval(
     const approvedApplicationKey = await authorizeIdentityDataDevice(verifiedView, request.payload.deviceId)
     if (approvedApplicationKey !== request.payload.devicePublicKey) throw new Error("Application device is not active in this Identity")
     authorityView = JSON.parse(JSON.stringify(verifiedView)) as IdentityAuthorityView
-    if (request.payload.version === 2 || options.includeProfileState) {
+    if (request.payload.version === 2 || request.payload.version === 3 || options.includeProfileState) {
       const profile = await readIdentityProfileStateWithRevocations(options.profileState, issuer.identity,
         allCertificates, options.revocations)
       rustyServicePins = identityProfileRustyServicePins(profile)
-      const requestedPins = "rustyServicePins" in request.payload ? request.payload.rustyServicePins : []
+      const requestedPins = "rustyServicePins" in request.payload ? request.payload.rustyServicePins ?? [] : []
       if (requestedPins.some(pin => !rustyServicePins!.some(saved => canonicalizeJson(saved) === canonicalizeJson(pin)))) {
         throw new Error("Requested Rusty service pins are not committed to Identity profile history")
       }
-      proofPayload = {
-        kind: "mesh-device-authorization-approval", version: options.includeProfileState ? 4 : 3, request,
+      if (catalogAccessRequested) {
+        const entries: IdentityCatalogAccessApprovalEntry[] = await createIdentityCatalogAccessApprovalEntries(
+          options.identityCatalogAccess ?? [], request.payload, issuer.identity.personId, rustyServicePins)
+        identityCatalogAccess = { status: options.identityCatalogAccessUnavailable ? "unavailable" :
+          entries.length ? "ready" : "empty", entries }
+      }
+      const sharedProof = {
+        kind: "mesh-device-authorization-approval" as const,
         certificateHash: await certificateHash(certificate), issuedAt, expiresAt: request.payload.expiresAt,
         authorityViewDigest: authorityView.viewDigest, revocationHead: authorityView.revocationHead,
         rustyServicePinsDigest: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(rustyServicePins))),
         profileStateDigest: await identityProfileRevision(profile),
       }
+      proofPayload = catalogAccessRequested
+        ? { ...sharedProof, version: 5, request,
+          identityCatalogAccessDigest: await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(identityCatalogAccess))) }
+        : { ...sharedProof, version: options.includeProfileState ? 4 : 3, request }
       if (options.includeProfileState) approvedProfileState = profile
     } else {
       proofPayload = {
@@ -271,21 +319,22 @@ export async function createDeviceAuthorizationApproval(
     ? { ...issuer.identity, displayName: typeof signedName === "string" ? signedName : "" } : issuer.identity
   const approval: DeviceAuthorizationApproval = { identity, issuerDeviceId: issuer.device.deviceId,
     certificates: allCertificates, certificate, ...(authorityView ? { authorityView } : {}),
-    ...(rustyServicePins ? { rustyServicePins } : {}), ...(approvedProfileState ? { profileState: approvedProfileState } : {}), proof }
-  if (JSON.stringify(approval).length > 256_000) throw new Error("Identity profile exceeds the browser sign-in size limit")
+    ...(rustyServicePins ? { rustyServicePins } : {}), ...(approvedProfileState ? { profileState: approvedProfileState } : {}),
+    ...(identityCatalogAccess ? { identityCatalogAccess } : {}), proof }
+  if (JSON.stringify(approval).length > 384 * 1024) throw new Error("Identity approval exceeds the browser sign-in size limit")
   return approval
 }
 
 /** Decode and verify bounded redirect evidence through the same public protocol seam. */
 export async function parseDeviceAuthorizationApproval(encoded: string, request: DeviceAuthorizationRequest,
   options: DeviceAuthorizationApprovalVerificationOptions = {}): Promise<DeviceAuthorizationApproval> {
-  if (typeof encoded !== "string" || encoded.length > 350_000 || !/^[A-Za-z0-9_-]+$/u.test(encoded)) {
+  if (typeof encoded !== "string" || encoded.length > 512 * 1024 || !/^[A-Za-z0-9_-]+$/u.test(encoded)) {
     throw new Error("Invalid Identity device approval")
   }
   let value: unknown
   try {
     const binary = atob(encoded.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - encoded.length % 4) % 4))
-    if (binary.length > 256_000) throw new Error("oversized")
+    if (binary.length > 384 * 1024) throw new Error("oversized")
     value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0))))
   } catch { throw new Error("Invalid Identity device approval") }
   return verifyDeviceAuthorizationApproval(value, request, options)
@@ -309,6 +358,18 @@ export async function verifyRetainedDeviceAuthorizationApproval(
   return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, options, true)
 }
 
+/** Verify the signed approval and open its catalog entries for the exact app device. */
+export async function openApprovedIdentityCatalogAccess(
+  approvalValue: unknown,
+  request: DeviceAuthorizationRequest,
+  recipient: LocalProfile,
+  options: DeviceAuthorizationApprovalVerificationOptions = {},
+): Promise<OpenedIdentityCatalogAccessResult> {
+  const approval = await verifyDeviceAuthorizationApproval(approvalValue, request, options)
+  if (!approval.identityCatalogAccess) throw new Error("Identity catalog access was not included in this approval")
+  return openIdentityCatalogAccessApprovalEntries(approval.identityCatalogAccess, request.payload, recipient)
+}
+
 export type DeviceAuthorizationApprovalVerificationOptions = {
   now?: () => number
   /** Exact profile loaded from the app's current durable identity store, only for same-device reauthorization. */
@@ -323,12 +384,13 @@ async function verifyDeviceAuthorizationApprovalEvidence(
 ): Promise<DeviceAuthorizationApproval> {
   const request = structuredClone(requestValue)
   const serialized = JSON.stringify(approvalValue)
-  if (!serialized || serialized.length > 256_000) throw new Error("Invalid Identity device approval")
+  if (!serialized || serialized.length > 384 * 1024) throw new Error("Invalid Identity device approval")
   const approval = JSON.parse(serialized) as DeviceAuthorizationApproval
   if (!isRecord(approval) || !(hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "proof"]) ||
       hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "proof"]) ||
       hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "proof"]) ||
-      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "profileState", "proof"])) ||
+      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "profileState", "proof"]) ||
+      hasExactKeys(approval, ["identity", "issuerDeviceId", "certificates", "certificate", "authorityView", "rustyServicePins", "profileState", "identityCatalogAccess", "proof"])) ||
       !isRecord(approval.identity) || !Array.isArray(approval.certificates) || approval.certificates.length < 1 ||
       approval.certificates.length > 32 || typeof approval.issuerDeviceId !== "string" ||
       !isRecord(approval.certificate) || !isRecord(approval.proof) || !isRecord(approval.proof.payload)) {
@@ -336,13 +398,17 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   }
   const payload = approval.proof.payload
   const now = retained ? null : (options.now ?? Date.now)()
-  const version2 = payload.version === 2 || payload.version === 3 || payload.version === 4
-  const version3 = payload.version === 3 || payload.version === 4
-  if (!hasExactKeys(payload, version3
+  const version2 = payload.version === 2 || payload.version === 3 || payload.version === 4 || payload.version === 5
+  const version3 = payload.version === 3 || payload.version === 4 || payload.version === 5
+  const version4 = payload.version === 4 || payload.version === 5
+  const version5 = payload.version === 5
+  if (!hasExactKeys(payload, version5
+      ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead", "rustyServicePinsDigest", "profileStateDigest", "identityCatalogAccessDigest"]
+      : version3
       ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead", "rustyServicePinsDigest", "profileStateDigest"]
       : version2 ? ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt", "authorityViewDigest", "revocationHead"]
       : ["kind", "version", "request", "certificateHash", "issuedAt", "expiresAt"]) ||
-      payload.kind !== "mesh-device-authorization-approval" || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 && payload.version !== 4) ||
+      payload.kind !== "mesh-device-authorization-approval" || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 && payload.version !== 4 && payload.version !== 5) ||
       canonicalizeJson(payload.request) !== canonicalizeJson(request) ||
       payload.certificateHash !== await certificateHash(approval.certificate) ||
       payload.expiresAt !== request.payload.expiresAt || !Number.isSafeInteger(payload.issuedAt) ||
@@ -355,7 +421,9 @@ async function verifyDeviceAuthorizationApprovalEvidence(
         (!version2 || !isExpectedExistingManagerProfile(options.expectedExistingProfile, approval.identity, approval.certificate)))) {
     throw new Error("Identity device approval does not match this request")
   }
-  if ((request.payload.version === 2 && !version3) || (request.payload.version === 1 && payload.version === 3)) {
+  const catalogAccessRequested = request.payload.version === 3 && request.payload.includeIdentityCatalogAccess
+  if ((request.payload.version === 2 && !version3) || (request.payload.version === 1 && payload.version === 3) ||
+      (catalogAccessRequested && !version5) || (!catalogAccessRequested && version5)) {
     throw new Error("Identity pin request requires a committed catalog approval")
   }
   const exactAppCertificate = canonicalizeJson(approval.certificate)
@@ -390,7 +458,7 @@ async function verifyDeviceAuthorizationApprovalEvidence(
           typeof payload.profileStateDigest !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(payload.profileStateDigest)) {
         throw new Error("Application device approval is missing its signed Rusty pin catalog")
       }
-      const requestedPins = "rustyServicePins" in request.payload ? request.payload.rustyServicePins : []
+      const requestedPins = "rustyServicePins" in request.payload ? request.payload.rustyServicePins ?? [] : []
       const pins = await normalizeIdentityRustyServicePins(approval.rustyServicePins)
       const pinDigest = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(pins)))
       if (canonicalizeJson(pins) !== canonicalizeJson(approval.rustyServicePins) || pinDigest !== payload.rustyServicePinsDigest ||
@@ -402,7 +470,7 @@ async function verifyDeviceAuthorizationApprovalEvidence(
       const issuerAuthority = await verifyIdentityDeviceAuthority(approval.identity,
         { certificates: view.certificates, revocations: view.revocations })
       await authorizeIdentityDevice(issuerAuthority, approval.issuerDeviceId)
-      if (payload.version === 4) {
+      if (version4) {
         if (!approval.profileState) throw new Error("Identity approval is missing its signed profile")
         const profile = await readIdentityProfileStateWithRevocations(approval.profileState, approval.identity,
           view.certificates, view.revocations)
@@ -414,6 +482,17 @@ async function verifyDeviceAuthorizationApprovalEvidence(
           throw new Error("Identity approval name does not match its signed profile")
         }
       }
+      if (version5) {
+        if (!/^[A-Za-z0-9_-]{43}$/u.test(String(payload.identityCatalogAccessDigest))) {
+          throw new Error("Identity catalog access approval digest is invalid")
+        }
+        const entries = await verifyIdentityCatalogAccessApprovalEntries(
+          approval.identityCatalogAccess, request.payload, approval.identity.personId)
+        const digest = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(entries)))
+        if (digest !== payload.identityCatalogAccessDigest) {
+          throw new Error("Identity catalog access approval does not match its signed digest")
+        }
+      }
     } else if (approval.rustyServicePins !== undefined) {
       throw new Error("Unexpected Rusty pin catalog on a legacy approval")
     }
@@ -422,7 +501,9 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   } else if (approval.rustyServicePins !== undefined) {
     throw new Error("Unexpected Rusty pin catalog on a legacy approval")
   }
-  if (payload.version !== 4 && approval.profileState !== undefined) throw new Error("Unexpected Identity profile on this approval")
+  if (payload.version !== 4 && payload.version !== 5 && approval.profileState !== undefined) {
+    throw new Error("Unexpected Identity profile on this approval")
+  }
   return approval
 }
 
@@ -461,9 +542,12 @@ function isSignedRequest(value: unknown): value is DeviceAuthorizationRequest {
   const version = value.payload.version
   const keysMatch = version === 1 ? hasExactKeys(value.payload, baseKeys)
     : version === 2 ? hasExactKeys(value.payload, [...baseKeys, "rustyServicePins"]) && Array.isArray(value.payload.rustyServicePins)
+      : version === 3 ? (hasExactKeys(value.payload, [...baseKeys, "includeIdentityCatalogAccess"]) ||
+        (hasExactKeys(value.payload, [...baseKeys, "includeIdentityCatalogAccess", "rustyServicePins"]) &&
+          Array.isArray(value.payload.rustyServicePins))) && value.payload.includeIdentityCatalogAccess === true
     : false
   return keysMatch &&
-    value.payload.kind === "mesh-device-authorization-request" && (version === 1 || version === 2) &&
+    value.payload.kind === "mesh-device-authorization-request" && (version === 1 || version === 2 || version === 3) &&
     typeof value.payload.applicationOrigin === "string" && typeof value.payload.challenge === "string" &&
     typeof value.payload.expiresAt === "number" && (value.payload.personId === null || typeof value.payload.personId === "string") &&
     typeof value.payload.deviceId === "string" && typeof value.payload.devicePublicKey === "string"

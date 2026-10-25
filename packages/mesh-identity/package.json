@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
-    "@scure/bip39": "^2.0.1"
+    "@scure/bip39": "^2.0.1",
+    "libsodium-wrappers-sumo": "0.7.15"
   }
 }

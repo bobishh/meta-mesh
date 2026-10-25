@@ -12,6 +12,70 @@ const challenge = "a".repeat(64)
 const expiresAt = Date.now() + 90_000
 
 describe("application device enrollment", () => {
+  it("Given a new app device that requests catalog discovery, when Identity approves it, then sign the opt-in and bounded catalog list", async () => {
+    const owner = (await createRecoverableIdentity("better", "Catalog owner")).profile
+    const app = (await createRecoverableIdentity("better", "App")).profile
+    const now = Date.now()
+    const request = await createDeviceAuthorizationRequest(app, {
+      applicationOrigin,
+      challenge,
+      expiresAt: now + 90_000,
+      personId: owner.identity.personId,
+      includeIdentityCatalogAccess: true,
+    })
+    expect(request.payload).toMatchObject({ version: 3, includeIdentityCatalogAccess: true })
+    await expect(verifyDeviceAuthorizationRequest(request, { applicationOrigin, challenge, now: () => now }))
+      .resolves.toBeUndefined()
+
+    const approval = await createDeviceAuthorizationApproval(owner, request, {
+      applicationOrigin,
+      challenge,
+      now: () => now + 1_000,
+      certificates: [owner.certificate],
+      profileState: emptyIdentityProfileState(owner.identity.personId),
+      revocations: [],
+      includeProfileState: true,
+      identityCatalogAccess: [],
+    })
+    expect(approval.proof.payload.version).toBe(5)
+    expect(approval.identityCatalogAccess).toEqual({ status: "empty", entries: [] })
+    await expect(verifyDeviceAuthorizationApproval(approval, request, { now: () => now + 2_000 }))
+      .resolves.toMatchObject({ identityCatalogAccess: { status: "empty", entries: [] } })
+    await expect(verifyDeviceAuthorizationApproval({ ...approval, identityCatalogAccess: [
+      { ...approval.identityCatalogAccess!.entries[0], catalogId: "substituted" },
+    ] }, request, { now: () => now + 2_000 })).rejects.toThrow(/catalog access/i)
+  })
+
+  it("Given a requested catalog whose Identity service is unavailable, when Identity signs the approval, then bind unavailable separately from an empty catalog", async () => {
+    const owner = (await createRecoverableIdentity("better", "Catalog owner")).profile
+    const app = (await createRecoverableIdentity("better", "App")).profile
+    const now = Date.now()
+    const request = await createDeviceAuthorizationRequest(app, {
+      applicationOrigin,
+      challenge,
+      expiresAt: now + 90_000,
+      personId: owner.identity.personId,
+      includeIdentityCatalogAccess: true,
+    })
+    const unavailable = await createDeviceAuthorizationApproval(owner, request, {
+      applicationOrigin,
+      challenge,
+      now: () => now + 1_000,
+      certificates: [owner.certificate],
+      profileState: emptyIdentityProfileState(owner.identity.personId),
+      revocations: [],
+      includeProfileState: true,
+      identityCatalogAccessUnavailable: true,
+    })
+
+    expect(unavailable.identityCatalogAccess).toEqual({ status: "unavailable", entries: [] })
+    await expect(verifyDeviceAuthorizationApproval(unavailable, request, { now: () => now + 2_000 }))
+      .resolves.toMatchObject({ identityCatalogAccess: { status: "unavailable", entries: [] } })
+    await expect(verifyDeviceAuthorizationApproval({ ...unavailable,
+      identityCatalogAccess: { status: "empty", entries: [] } }, request, { now: () => now + 2_000 }))
+      .rejects.toThrow(/catalog access/i)
+  })
+
   it("Given an Identity profile with a photo, when approving browser sign-in, then bind the complete profile and reject a substituted snapshot", async () => {
     const owner = (await createRecoverableIdentity("better", "Profile owner")).profile
     const app = (await createRecoverableIdentity("better", "App")).profile

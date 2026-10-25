@@ -11,6 +11,7 @@
     "./gossip": "./src/gossip.ts",
     "./runtime": "./src/runtime.ts",
     "./rusty-replica": "./src/rustyReplica.ts",
+    "./rusty-identity-catalog-access": "./src/rustyIdentityCatalogAccessClient.ts",
     "./rusty-management": "./src/rustyManagement.ts",
     "./rusty-management-mutation": "./src/rustyManagementMutation.ts",
     "./rusty-identity-authority": "./src/rustyIdentityAuthority.ts",
