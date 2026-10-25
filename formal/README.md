@@ -1,5 +1,11 @@
 # MetaMesh protocol models
 
+Cold-device Identity sign-in has a focused [readiness model](IdentitySignIn.md).
+It checks synchronized catalog lookup, unavailable/empty distinction, board-load
+completion and required negative controls. Run `sh formal/check_identity_signin.sh`
+for this small check without the native conformance/mutation matrix. Its finite
+abstraction does not establish browser implementation conformance.
+
 Opt-in v2 co-owned authority has a separate focused runner and explicit conflict
 resolution/fork model. See [CoOwnership](CoOwnership.md) for commands, finite
 bounds, conditional progress, implementation conformance and artifact pin.

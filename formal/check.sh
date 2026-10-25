@@ -138,6 +138,8 @@ run_expected_failure ReceiveScheduling ReceiveScheduling_heartbeat_behind_persis
 run_expected_failure ReceiveScheduling ReceiveScheduling_ack_before_persistence \
   "durable ACK precedes persistence"
 
+sh "$ROOT/check_identity_signin.sh"
+
 # Rebuild graphs on every run; expectations are never checked-in snapshots.
 run_pass AuthorityConformance
 export MESH_TLC_AUTHORITY_GRAPH="$GRAPH_DIR/AuthorityConformance.json"

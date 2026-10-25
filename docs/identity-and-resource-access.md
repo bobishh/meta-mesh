@@ -81,8 +81,14 @@ resource contents into Identity.
 
 The signed application approval distinguishes `ready`, `empty` and
 `unavailable` catalog results. `ready` contains one or more verified entries;
-`empty` means a successful lookup found no entry, or the signed Identity profile
-has no Rusty service pins; `unavailable` means lookup failed. The approval digest
+`empty` means a successful lookup found no entry, or a current Identity profile
+is known to have no Rusty service pins. The absence of a pin from an enrolled
+device's stale local profile does not establish an empty catalog. When saved
+Identity peer contacts exist, the provider must finish that profile exchange
+before taking a no-pin approval snapshot. Failed or timed-out synchronization
+produces `unavailable`, not `empty`. A device which already has the verified
+service locator need not wait for another Identity device to be online merely
+to query Rusty. `unavailable` also means catalog lookup failed. The approval digest
 binds this status and its entries. An application may start a new catalog flow
 only for `empty`; `unavailable` keeps local work intact and exposes a retryable
 state.
@@ -132,7 +138,10 @@ succeeded.
 
 **Implementation status:** The SDK and Rusty transport now define a bounded,
 owner-authorized catalog-access exchange. Tincanban caller and Identity provider
-integration remain pending. The transport carries an opaque catalog locator and
+integration are present; cold-provider profile-readiness and live cross-device
+acceptance require their own evidence. The [readiness model](../formal/IdentitySignIn.md)
+checks bounded ordering and required negative controls, not implementation
+conformance. The transport carries an opaque catalog locator and
 scoped access record; it does not grant board membership or expose catalog data
 to Identity. Do not substitute an unbound URL secret, manual pairing/recovery as
 a sign-in prerequisite, root-key conversion or a new service.
