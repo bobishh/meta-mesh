@@ -53,6 +53,7 @@ defmodule MetaMesh.Identity.Phoenix.ServiceLoginTest do
     response = Jason.decode!(signed_in.resp_body)
     assert response["person_id"] == @person_id
     assert response["device_id"] == "verified-device"
+    assert_in_delta response["expires_at"] - System.system_time(:second), 43_200, 2
     assert response["return_to"] == "/courses/next"
     assert {:ok, %{"person_id" => @person_id}} = Session.current(signed_in)
     assert get_session(signed_in, :app_user_token) == "local-token"
@@ -116,6 +117,56 @@ defmodule MetaMesh.Identity.Phoenix.ServiceLoginTest do
       })
 
     assert Session.current(conn) == :error
+  end
+
+  test "Given a configured session lifetime When proof is exchanged Then it lasts exactly that duration" do
+    config = Application.fetch_env!(@otp_app, :identity_login)
+
+    Application.put_env(
+      @otp_app,
+      :identity_login,
+      Keyword.put(config, :session_max_age, 60 * 86_400)
+    )
+
+    challenge =
+      request("POST", "/identity/login/challenge", %{}, @origin)
+      |> then(&Jason.decode!(&1.resp_body))
+
+    before = System.system_time(:second)
+
+    signed_in =
+      request(
+        "POST",
+        "/identity/login/exchange",
+        %{
+          "challenge" => challenge["challenge"],
+          "evidence" => %{"proof" => "fixture"}
+        },
+        @origin
+      )
+
+    assert signed_in.status == 200
+    expiry = Jason.decode!(signed_in.resp_body)["expires_at"]
+    assert expiry in (before + 60 * 86_400)..(System.system_time(:second) + 60 * 86_400)
+    assert {:ok, _} = Session.current(signed_in, expiry - 1)
+    assert Session.current(signed_in, expiry) == :error
+  end
+
+  test "Given an invalid lifetime When requesting login Then no challenge or session is issued" do
+    config = Application.fetch_env!(@otp_app, :identity_login)
+
+    for invalid <- [0, -1, nil, "3600", 1.5] do
+      Application.put_env(
+        @otp_app,
+        :identity_login,
+        Keyword.put(config, :session_max_age, invalid)
+      )
+
+      refute ServiceLogin.configured?(@otp_app)
+      denied = request("POST", "/identity/login/challenge", %{}, @origin)
+      assert denied.status == 404
+      assert get_session(denied, :mesh_identity) == nil
+    end
   end
 
   defp request(method, path, params, origin) do

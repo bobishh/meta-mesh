@@ -9,7 +9,7 @@ defmodule MetaMesh.Identity.Phoenix.Session do
   import Plug.Conn
 
   @session_key :mesh_identity
-  @session_lifetime_seconds 43_200
+  @default_max_age 43_200
 
   def current(conn, now \\ System.system_time(:second)) do
     current_session(get_session(conn, @session_key), now)
@@ -31,8 +31,11 @@ defmodule MetaMesh.Identity.Phoenix.Session do
     end
   end
 
-  def start(conn, %{person_id: person_id, device_id: device_id}, session_fields \\ %{})
-      when is_binary(person_id) and is_binary(device_id) and is_map(session_fields) do
+  def start(conn, identity, session_fields \\ %{}, max_age \\ @default_max_age)
+
+  def start(conn, %{person_id: person_id, device_id: device_id}, session_fields, max_age)
+      when is_binary(person_id) and is_binary(device_id) and is_map(session_fields) and
+             is_integer(max_age) and max_age > 0 do
     now = System.system_time(:second)
 
     conn
@@ -41,10 +44,12 @@ defmodule MetaMesh.Identity.Phoenix.Session do
     |> put_session(@session_key, %{
       "person_id" => person_id,
       "device_id" => device_id,
-      "expires_at" => now + @session_lifetime_seconds
+      "expires_at" => now + max_age
     })
     |> put_fields(session_fields)
   end
+
+  def max_age(config), do: Keyword.get(config, :session_max_age, @default_max_age)
 
   def clear(conn), do: conn |> configure_session(renew: true) |> clear_session()
 

@@ -57,6 +57,15 @@ Optional `:on_logout` receives the old Plug session and must return `:ok`; use i
 application-owned session token. `MetaMesh.Identity.Phoenix.Session.current/1` reads the
 verified Identity session; `Session.start/3` and `Session.clear/1` are available to adapters.
 
+`:session_max_age` configures the verified service session lifetime in positive integer
+seconds. The default remains 43,200 seconds (12 hours) for existing consumers. For example,
+`session_max_age: 60 * 86_400` issues a 60-day session. Invalid values disable login rather
+than issuing an unbounded session. Direct adapters can pass the lifetime as the fourth
+argument to `Session.start/4`. Expiration is fixed at sign-in; activity does not renew it.
+Existing grants retain their issued expiration. Applications must configure their browser
+cookie persistence and local account-token lifetime to match; this package does not own
+those policies.
+
 Build the native verifier from the same immutable MetaMesh revision:
 
 ```sh

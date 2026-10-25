@@ -65,7 +65,8 @@ defmodule MetaMesh.Identity.Phoenix.ServiceLogin do
            Keyword.get(config, :application_origin),
          on_verified when is_tuple(on_verified) <- Keyword.get(config, :on_verified_identity),
          true <- valid_origin?(identity_origin) and valid_origin?(application_origin),
-         true <- valid_verifier_config?(config) do
+         true <- valid_verifier_config?(config),
+         max_age when is_integer(max_age) and max_age > 0 <- Session.max_age(config) do
       true
     else
       _ -> false
@@ -178,7 +179,7 @@ defmodule MetaMesh.Identity.Phoenix.ServiceLogin do
       else
         conn =
           conn
-          |> Session.start(verified, session_fields)
+          |> Session.start(verified, session_fields, Session.max_age(config))
           |> delete_session(:mesh_identity_return_to)
 
         {:ok, identity_session} = Session.current(conn)
