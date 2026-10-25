@@ -268,11 +268,25 @@ their existing 256-KiB complete-wire limit. Pairing readers inspect the bounded 
 payload bytes; raw readers use a separate API and do not require pairing framing.
 `mesh-blob` requests at most
 `ceil(256 KiB / 3) * 4 + 4096` bytes per 256-KiB attachment chunk, then verifies
-the returned frame length. Native readers use bounded scratch buffers, reset
+the returned frame length. The core 32-MiB header/payload reservation applies
+to readers that explicitly reserve it, including the pairing path; native Iroh
+does not use it as an aggregate cap. Native readers use bounded scratch buffers, reset
 only the affected stream on oversize or timeout, and preserve the connection.
-Each authenticated endpoint reserves at most two concurrent frame reads and
-32 MiB across its active connections. The native registry tracks at most 1,024
-live endpoint entries and removes idle entries as new peers connect. One pending
+The native registry tracks separate per-peer inbound and outbound budgets across
+connections and ALPNs. Each direction allows two concurrent budgeted frame
+reads or exchanges. Inbound streams may wait behind those reads in a queue
+capped at 32 per peer. Queued
+streams do not read payload bytes, overflow resets only that stream, and queue
+waits share the 600-second transfer deadline and cancel when their connection
+closes. `NativeNode.request` rejects a third concurrent outbound request;
+`NativeBrowserConnection.exchange` waits within its caller-supplied deadline,
+including stream open. The native directional budgets allow up to four
+concurrent budgeted frame reads or exchanges and at most 64 MiB of active
+budgeted frame payloads at the 16-MiB per-frame ceiling. This is a transport
+budget, not a bound on total process
+memory or application-owned payloads after a read completes. The native
+registry tracks at most 1,024 live endpoint entries and removes idle entries as
+new peers connect. One pending
 logical control or owner-offer reassembly is capped separately at 24 MiB, 256
 pages, and 600 seconds; owner offers above one frame use the authenticated
 `owner-workspace-paging-v1` capability and bounded pages. A peer

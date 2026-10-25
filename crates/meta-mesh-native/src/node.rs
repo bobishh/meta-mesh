@@ -24,9 +24,12 @@ use iroh_gossip::{
     net::{GOSSIP_ALPN, Gossip},
 };
 use meta_mesh_core::{
-    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES,
-    MAX_TRANSFER_DEADLINE_MS, PairingCodec, pairing_frame_budget,
+    MAX_CONCURRENT_FRAMES_PER_CONNECTION, MAX_CONCURRENT_HEADERS_PER_CONNECTION,
+    MAX_PAIRING_HEADER_BYTES, MAX_RPC_FRAME_BYTES, MAX_TRANSFER_DEADLINE_MS, PairingCodec,
+    pairing_frame_budget,
 };
+#[cfg(test)]
+use tokio::sync::Barrier;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -37,24 +40,41 @@ pub const MAX_RPC_BYTES: usize = MAX_RPC_FRAME_BYTES;
 const RPC_QUEUE_CAPACITY: usize = 64;
 const MAX_PEER_READ_SLOT_ENTRIES: usize = 1024;
 
-#[derive(Debug, Default)]
-struct PeerReadSlotRegistry {
-    peers: StdMutex<HashMap<EndpointId, Weak<Semaphore>>>,
+#[derive(Debug)]
+struct PeerStreamBudgets {
+    inbound: Arc<Semaphore>,
+    inbound_waiters: Arc<Semaphore>,
+    outbound: Arc<Semaphore>,
 }
 
-impl PeerReadSlotRegistry {
-    fn slots_for(&self, peer: EndpointId) -> Option<Arc<Semaphore>> {
+impl PeerStreamBudgets {
+    fn new() -> Self {
+        Self {
+            inbound: Arc::new(Semaphore::new(MAX_CONCURRENT_FRAMES_PER_CONNECTION)),
+            inbound_waiters: Arc::new(Semaphore::new(MAX_CONCURRENT_HEADERS_PER_CONNECTION)),
+            outbound: Arc::new(Semaphore::new(MAX_CONCURRENT_FRAMES_PER_CONNECTION)),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct PeerStreamBudgetRegistry {
+    peers: StdMutex<HashMap<EndpointId, Weak<PeerStreamBudgets>>>,
+}
+
+impl PeerStreamBudgetRegistry {
+    fn budgets_for(&self, peer: EndpointId) -> Option<Arc<PeerStreamBudgets>> {
         let mut peers = self.peers.lock().ok()?;
-        peers.retain(|_, slots| slots.strong_count() > 0);
-        if let Some(slots) = peers.get(&peer).and_then(Weak::upgrade) {
-            return Some(slots);
+        peers.retain(|_, budgets| budgets.strong_count() > 0);
+        if let Some(budgets) = peers.get(&peer).and_then(Weak::upgrade) {
+            return Some(budgets);
         }
         if peers.len() >= MAX_PEER_READ_SLOT_ENTRIES {
             return None;
         }
-        let slots = Arc::new(Semaphore::new(MAX_CONCURRENT_FRAMES_PER_CONNECTION));
-        peers.insert(peer, Arc::downgrade(&slots));
-        Some(slots)
+        let budgets = Arc::new(PeerStreamBudgets::new());
+        peers.insert(peer, Arc::downgrade(&budgets));
+        Some(budgets)
     }
 }
 
@@ -141,7 +161,7 @@ pub struct NativeNode {
     allowed_peers: Arc<RwLock<HashSet<EndpointId>>>,
     allow_any: bool,
     rpc_inbox: Arc<NativeRpcInbox>,
-    peer_read_slots: Arc<PeerReadSlotRegistry>,
+    peer_budgets: Arc<PeerStreamBudgetRegistry>,
     #[cfg(test)]
     access_decisions: Arc<Mutex<Option<mpsc::UnboundedSender<AccessDecision>>>>,
 }
@@ -149,12 +169,12 @@ pub struct NativeNode {
 /// One browser-compatible Iroh connection for multi-stream protocols such as
 /// workspace invitation and handoff. A normal `request` opens a new connection
 /// for every frame, which the browser invitation host cannot accept.
-/// Incoming and outgoing streams wait for the shared peer read capacity rather
-/// than treating a temporary burst as a broken connection. Incoming slot waits
-/// and body reads share the existing transfer deadline.
+/// Inbound and outbound streams use separate peer budgets to avoid reciprocal
+/// requests consuming each other's capacity. Inbound waits are bounded by the
+/// peer queue limit and share the transfer deadline with body reads.
 pub struct NativeBrowserConnection {
     connection: Connection,
-    peer_read_slots: Arc<Semaphore>,
+    peer_budgets: Arc<PeerStreamBudgets>,
 }
 
 pub struct NativeBrowserRequest {
@@ -180,9 +200,15 @@ impl NativeBrowserRequest {
 impl NativeBrowserConnection {
     pub async fn accept(&self) -> Result<NativeBrowserRequest, BoxError> {
         let (mut send, mut receive) = self.connection.accept_bi().await?;
-        let started = std::time::Instant::now();
         let timeout = Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS));
-        let _permit = match acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let _permit = match acquire_inbound_frame_slot(
+            &self.peer_budgets,
+            &self.connection,
+            deadline,
+        )
+        .await
+        {
             Ok(permit) => permit,
             Err(error) => {
                 send.reset(0u32.into()).ok();
@@ -190,12 +216,7 @@ impl NativeBrowserConnection {
                 return Err(error);
             }
         };
-        match tokio::time::timeout(
-            timeout.saturating_sub(started.elapsed()),
-            receive.read_to_end(MAX_RPC_BYTES),
-        )
-        .await
-        {
+        match tokio::time::timeout_at(deadline, receive.read_to_end(MAX_RPC_BYTES)).await {
             Ok(Ok(payload)) => Ok(NativeBrowserRequest { payload, send }),
             Ok(Err(error)) => {
                 receive.stop(0u32.into()).ok();
@@ -213,9 +234,15 @@ impl NativeBrowserConnection {
 
     pub async fn accept_pairing(&self) -> Result<NativeBrowserRequest, BoxError> {
         let (mut send, mut receive) = self.connection.accept_bi().await?;
-        let started = std::time::Instant::now();
         let timeout = Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS));
-        let _permit = match acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let _permit = match acquire_inbound_frame_slot(
+            &self.peer_budgets,
+            &self.connection,
+            deadline,
+        )
+        .await
+        {
             Ok(permit) => permit,
             Err(error) => {
                 send.reset(0u32.into()).ok();
@@ -223,18 +250,21 @@ impl NativeBrowserConnection {
                 return Err(error);
             }
         };
-        let result = tokio::time::timeout(
-            timeout.saturating_sub(started.elapsed()),
-            read_pairing_frame(&mut receive, false),
-        )
-        .await;
+        let result =
+            tokio::time::timeout_at(deadline, read_pairing_frame(&mut receive, false)).await;
         match result {
             Ok(Ok(payload)) => Ok(NativeBrowserRequest { payload, send }),
             Ok(Err(error)) => {
+                trace_peer_stream_error("browser.accept_pairing.failed", &self.connection, &error);
                 receive.stop(0u32.into()).ok();
                 Err(error)
             }
             Err(_) => {
+                trace_peer_stream(
+                    "browser.accept_pairing.timed_out",
+                    &self.connection,
+                    "phase=read",
+                );
                 receive.stop(0u32.into()).ok();
                 Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
@@ -248,10 +278,16 @@ impl NativeBrowserConnection {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("RPC request exceeds size limit"));
         }
-        let started = std::time::Instant::now();
-        let _permit = acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await?;
-        let (mut send, mut receive) = self.connection.open_bi().await?;
-        match tokio::time::timeout(timeout.saturating_sub(started.elapsed()), async {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let _permit = acquire_peer_outbound_slot(
+            self.peer_budgets.outbound.clone(),
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await?;
+        let (mut send, mut receive) = tokio::time::timeout_at(deadline, self.connection.open_bi())
+            .await
+            .map_err(|_| io_error("Browser RPC stream open timed out"))??;
+        match tokio::time::timeout_at(deadline, async {
             send.write_all(payload).await?;
             send.finish()?;
             let response = receive.read_to_end(MAX_RPC_BYTES).await?;
@@ -261,11 +297,17 @@ impl NativeBrowserConnection {
         {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(error)) => {
+                trace_peer_stream_error("browser.exchange.failed", &self.connection, &error);
                 let _ = send.reset(0u32.into());
                 let _ = receive.stop(0u32.into());
                 Err(error)
             }
             Err(_) => {
+                trace_peer_stream(
+                    "browser.exchange.timed_out",
+                    &self.connection,
+                    "phase=exchange",
+                );
                 let _ = send.reset(0u32.into());
                 let _ = receive.stop(0u32.into());
                 Err(Box::new(std::io::Error::new(
@@ -284,10 +326,16 @@ impl NativeBrowserConnection {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("Pairing frame exceeds ingress limit: stage=send"));
         }
-        let started = std::time::Instant::now();
-        let _permit = acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await?;
-        let (mut send, mut receive) = self.connection.open_bi().await?;
-        let result = tokio::time::timeout(timeout.saturating_sub(started.elapsed()), async {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let _permit = acquire_peer_outbound_slot(
+            self.peer_budgets.outbound.clone(),
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+        )
+        .await?;
+        let (mut send, mut receive) = tokio::time::timeout_at(deadline, self.connection.open_bi())
+            .await
+            .map_err(|_| io_error("Pairing stream open timed out"))??;
+        let result = tokio::time::timeout_at(deadline, async {
             send.write_all(payload).await?;
             send.finish()?;
             read_pairing_frame(&mut receive, true).await
@@ -296,11 +344,21 @@ impl NativeBrowserConnection {
         match result {
             Ok(Ok(bytes)) => Ok(bytes),
             Ok(Err(error)) => {
+                trace_peer_stream_error(
+                    "browser.exchange_pairing.failed",
+                    &self.connection,
+                    &error,
+                );
                 let _ = send.reset(0u32.into());
                 let _ = receive.stop(0u32.into());
                 Err(error)
             }
             Err(_) => {
+                trace_peer_stream(
+                    "browser.exchange_pairing.timed_out",
+                    &self.connection,
+                    "phase=exchange",
+                );
                 let _ = send.reset(0u32.into());
                 let _ = receive.stop(0u32.into());
                 Err(Box::new(std::io::Error::new(
@@ -312,6 +370,11 @@ impl NativeBrowserConnection {
     }
 
     pub fn close(&self) {
+        trace_peer_stream(
+            "browser.connection.close",
+            &self.connection,
+            "reason=browser_session_complete",
+        );
         self.connection
             .close(0u32.into(), b"browser session complete");
     }
@@ -425,55 +488,101 @@ impl NativeRpcInbox {
 #[derive(Debug, Clone)]
 struct RpcProtocol {
     sender: mpsc::Sender<NativeRpcRequest>,
-    peer_read_slots: Arc<PeerReadSlotRegistry>,
+    peer_budgets: Arc<PeerStreamBudgetRegistry>,
 }
 
 impl ProtocolHandler for RpcProtocol {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         let remote_endpoint_id = connection.remote_id();
-        let frame_slots = self.peer_read_slots.slots_for(remote_endpoint_id);
+        let peer_budgets = self.peer_budgets.budgets_for(remote_endpoint_id);
+        let connection_id = connection.stable_id();
         while let Ok((mut send, mut receive)) = connection.accept_bi().await {
-            let permit = match frame_slots
-                .as_ref()
-                .and_then(|slots| slots.clone().try_acquire_owned().ok())
+            let deadline = tokio::time::Instant::now()
+                + Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS));
+            let Some(peer_budgets) = peer_budgets.as_ref() else {
+                send.reset(1u32.into()).ok();
+                receive.stop(1u32.into()).ok();
+                continue;
+            };
+            let permit = match acquire_inbound_frame_slot(peer_budgets, &connection, deadline).await
             {
-                Some(permit) => permit,
-                None => {
+                Ok(permit) => permit,
+                Err(error) => {
+                    trace_rpc_slot_reset(connection_id, remote_endpoint_id, Some(0));
+                    if peer_stream_trace_enabled() {
+                        eprintln!(
+                            "trace.peer_stream event=rpc.stream.admission_rejected error={error}"
+                        );
+                    }
                     send.reset(1u32.into()).ok();
                     receive.stop(1u32.into()).ok();
                     continue;
                 }
             };
+            if peer_stream_trace_enabled() {
+                let available_after = peer_budgets.inbound.available_permits();
+                eprintln!(
+                    "trace.peer_stream event=rpc.stream.started connection_id={connection_id} peer={} active_slots={}",
+                    short_endpoint_id(remote_endpoint_id),
+                    MAX_CONCURRENT_FRAMES_PER_CONNECTION.saturating_sub(available_after)
+                );
+            }
             let sender = self.sender.clone();
+            let stream_connection_id = connection_id;
+            let stream_peer_id = remote_endpoint_id;
+            let stream_budgets = peer_budgets.clone();
             tokio::spawn(async move {
+                let _budget_guard = stream_budgets;
                 let _permit = permit;
-                let result = tokio::time::timeout(
-                    Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
-                    async {
-                        let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
-                        let (response, response_receiver) = oneshot::channel();
-                        sender
-                            .send(NativeRpcRequest {
-                                remote_endpoint_id,
-                                payload,
-                                response: Some(response),
-                            })
-                            .await
-                            .map_err(|_| io_error("RPC listener stopped"))?;
-                        let response = response_receiver
-                            .await
-                            .map_err(|_| io_error("RPC request dropped without response"))?;
-                        send.write_all(&response).await?;
-                        send.finish()?;
-                        Ok::<(), BoxError>(())
-                    },
-                )
+                let result = tokio::time::timeout_at(deadline, async {
+                    let payload = receive.read_to_end(MAX_RPC_BYTES).await?;
+                    let (response, response_receiver) = oneshot::channel();
+                    sender
+                        .send(NativeRpcRequest {
+                            remote_endpoint_id,
+                            payload,
+                            response: Some(response),
+                        })
+                        .await
+                        .map_err(|_| io_error("RPC listener stopped"))?;
+                    let response = response_receiver
+                        .await
+                        .map_err(|_| io_error("RPC request dropped without response"))?;
+                    send.write_all(&response).await?;
+                    send.finish()?;
+                    Ok::<(), BoxError>(())
+                })
                 .await;
-                if !matches!(result, Ok(Ok(()))) {
+                if !matches!(&result, Ok(Ok(()))) {
+                    if peer_stream_trace_enabled() {
+                        eprintln!(
+                            "trace.peer_stream event=rpc.stream.failed connection_id={stream_connection_id} peer={} outcome={}",
+                            short_endpoint_id(stream_peer_id),
+                            if matches!(&result, Err(_)) {
+                                "deadline"
+                            } else {
+                                "io"
+                            }
+                        );
+                    }
                     send.reset(1u32.into()).ok();
                     receive.stop(1u32.into()).ok();
+                } else if peer_stream_trace_enabled() {
+                    eprintln!(
+                        "trace.peer_stream event=rpc.stream.completed connection_id={stream_connection_id} peer={}",
+                        short_endpoint_id(stream_peer_id)
+                    );
                 }
             });
+        }
+        if peer_stream_trace_enabled() {
+            eprintln!(
+                "trace.peer_stream event=rpc.connection.accept_ended connection_id={connection_id} peer={} reason={}",
+                short_endpoint_id(remote_endpoint_id),
+                connection
+                    .close_reason()
+                    .map_or_else(|| "none".to_string(), |reason| reason.to_string())
+            );
         }
         Ok(())
     }
@@ -583,10 +692,10 @@ impl NativeNode {
         let rpc_inbox = Arc::new(NativeRpcInbox {
             receiver: Mutex::new(rpc_receiver),
         });
-        let peer_read_slots = Arc::new(PeerReadSlotRegistry::default());
+        let peer_budgets = Arc::new(PeerStreamBudgetRegistry::default());
         let rpc = RpcProtocol {
             sender: rpc_sender,
-            peer_read_slots: peer_read_slots.clone(),
+            peer_budgets: peer_budgets.clone(),
         };
         let router = iroh::protocol::Router::builder(endpoint.clone())
             .accept(GOSSIP_ALPN, gossip.clone())
@@ -603,7 +712,7 @@ impl NativeNode {
             allowed_peers,
             allow_any: options.allow_any,
             rpc_inbox,
-            peer_read_slots,
+            peer_budgets,
             #[cfg(test)]
             access_decisions,
         })
@@ -655,13 +764,13 @@ impl NativeNode {
         )
         .await
         .map_err(|_| io_error("Browser RPC connection timed out"))??;
-        let peer_read_slots = self
-            .peer_read_slots
-            .slots_for(connection.remote_id())
+        let peer_budgets = self
+            .peer_budgets
+            .budgets_for(connection.remote_id())
             .ok_or_else(|| io_error("Peer read-slot registry is full"))?;
         Ok(NativeBrowserConnection {
             connection,
-            peer_read_slots,
+            peer_budgets,
         })
     }
 
@@ -674,13 +783,15 @@ impl NativeNode {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("RPC request exceeds size limit"));
         }
-        let peer_read_slots = self
-            .peer_read_slots
-            .slots_for(endpoint_addr.id.clone())
+        let peer_budgets = self
+            .peer_budgets
+            .budgets_for(endpoint_addr.id.clone())
             .ok_or_else(|| io_error("Peer read-slot registry is full"))?;
-        let _permit = peer_read_slots
+        let _permit = peer_budgets
+            .outbound
+            .clone()
             .try_acquire_owned()
-            .map_err(|_| io_error("Peer stream concurrency limit exceeded"))?;
+            .map_err(|_| io_error("Peer outbound stream concurrency limit exceeded"))?;
         tokio::time::timeout(timeout, async {
             let mut last_error = None;
             for alpn in [RPC_ALPN, BROWSER_RPC_ALPN] {
@@ -785,14 +896,74 @@ fn io_error(message: &'static str) -> BoxError {
     Box::new(std::io::Error::other(message))
 }
 
-async fn acquire_peer_read_slot(
+fn peer_stream_trace_enabled() -> bool {
+    std::env::var_os("META_MESH_TRACE_PEER_STREAMS").is_some()
+}
+
+fn short_endpoint_id(endpoint: EndpointId) -> String {
+    endpoint.to_string().chars().take(8).collect()
+}
+
+fn trace_peer_stream(event: &str, connection: &Connection, detail: &str) {
+    if peer_stream_trace_enabled() {
+        eprintln!(
+            "trace.peer_stream event={event} connection_id={} peer={} detail={detail}",
+            connection.stable_id(),
+            short_endpoint_id(connection.remote_id())
+        );
+    }
+}
+
+fn trace_peer_stream_error(event: &str, connection: &Connection, error: &dyn std::fmt::Display) {
+    if peer_stream_trace_enabled() {
+        eprintln!(
+            "trace.peer_stream event={event} connection_id={} peer={} error={}",
+            connection.stable_id(),
+            short_endpoint_id(connection.remote_id()),
+            error
+        );
+    }
+}
+
+fn trace_rpc_slot_reset(connection_id: usize, peer: EndpointId, available_before: Option<usize>) {
+    if peer_stream_trace_enabled() {
+        eprintln!(
+            "trace.peer_stream event=rpc.stream.slot_reset connection_id={connection_id} peer={} available_slots={}",
+            short_endpoint_id(peer),
+            available_before.map_or_else(|| "registry_full".to_string(), |slots| slots.to_string())
+        );
+    }
+}
+
+async fn acquire_peer_outbound_slot(
     slots: Arc<Semaphore>,
     timeout: Duration,
 ) -> Result<OwnedSemaphorePermit, BoxError> {
     tokio::time::timeout(timeout, slots.acquire_owned())
         .await
-        .map_err(|_| io_error("Peer stream concurrency wait timed out"))?
+        .map_err(|_| io_error("Peer outbound stream wait timed out"))?
         .map_err(|error| Box::new(error) as BoxError)
+}
+
+async fn acquire_inbound_frame_slot(
+    budgets: &PeerStreamBudgets,
+    connection: &Connection,
+    deadline: tokio::time::Instant,
+) -> Result<OwnedSemaphorePermit, BoxError> {
+    let _queue_permit = budgets
+        .inbound_waiters
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| io_error("Peer inbound stream queue is full"))?;
+    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+    tokio::select! {
+        permit = tokio::time::timeout(remaining, budgets.inbound.clone().acquire_owned()) => {
+            permit
+                .map_err(|_| io_error("Peer inbound stream capacity wait timed out"))?
+                .map_err(|error| Box::new(error) as BoxError)
+        }
+        _ = connection.closed() => Err(io_error("Peer connection closed while waiting for inbound stream capacity")),
+    }
 }
 
 #[cfg(test)]
@@ -823,18 +994,20 @@ mod tests {
             );
             let session = session.unwrap();
             let first_slot = session
-                .peer_read_slots
+                .peer_budgets
+                .inbound
                 .clone()
                 .acquire_owned()
                 .await
                 .unwrap();
             let second_slot = session
-                .peer_read_slots
+                .peer_budgets
+                .inbound
                 .clone()
                 .acquire_owned()
                 .await
                 .unwrap();
-            assert_eq!(session.peer_read_slots.available_permits(), 0);
+            assert_eq!(session.peer_budgets.inbound.available_permits(), 0);
             let payload = if pairing {
                 PairingCodec::encode("sync-heartbeat", "secret", &[]).unwrap()
             } else {
@@ -857,7 +1030,7 @@ mod tests {
                     .is_err(),
                 "an excess incoming stream must wait instead of failing the admitted connection"
             );
-            assert_eq!(session.peer_read_slots.available_permits(), 0);
+            assert_eq!(session.peer_budgets.inbound.available_permits(), 0);
             drop(first_slot);
             let request = tokio::time::timeout(Duration::from_secs(1), &mut accepting)
                 .await
@@ -891,7 +1064,7 @@ mod tests {
         let held = slots.clone().acquire_owned().await.unwrap();
         let waiting_slots = slots.clone();
         let waiter = tokio::spawn(async move {
-            acquire_peer_read_slot(waiting_slots, Duration::from_secs(1)).await
+            acquire_peer_outbound_slot(waiting_slots, Duration::from_secs(1)).await
         });
 
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -1010,7 +1183,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rpc_read_budget_is_shared_across_connections_per_peer() {
+    async fn rpc_inbound_queue_waits_for_capacity_and_keeps_other_peers_live() {
         let guest = NativeNode::start(Some([61; 32]), vec![]).await.unwrap();
         let other_guest = NativeNode::start(Some([62; 32]), vec![]).await.unwrap();
         let host = NativeNode::start(
@@ -1039,6 +1212,16 @@ mod tests {
             release_rx.await.unwrap();
             first.respond(b"response-one".to_vec()).unwrap();
             second.respond(b"response-two".to_vec()).unwrap();
+            let first_queued = inbox.receive().await.unwrap();
+            assert_eq!(first_queued.payload(), b"same-peer-queued-one");
+            first_queued
+                .respond(b"queued-response-one".to_vec())
+                .unwrap();
+            let second_queued = inbox.receive().await.unwrap();
+            assert_eq!(second_queued.payload(), b"same-peer-queued-two");
+            second_queued
+                .respond(b"queued-response-two".to_vec())
+                .unwrap();
         });
 
         {
@@ -1054,25 +1237,46 @@ mod tests {
                 result = &mut second => panic!("second request completed before release: {result:?}"),
             }
 
+            let mut first_queued = tokio::spawn({
+                let endpoint = guest.endpoint.clone();
+                let address = host.addr();
+                async move { rpc_roundtrip(&endpoint, address, RPC_ALPN, b"same-peer-queued-one").await }
+            });
+            let budgets = host.peer_budgets.budgets_for(guest.endpoint_id()).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while budgets.inbound_waiters.available_permits()
+                    == MAX_CONCURRENT_HEADERS_PER_CONNECTION
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("first request should claim the queue head");
+            let mut second_queued = tokio::spawn({
+                let endpoint = guest.endpoint.clone();
+                let address = host.addr();
+                async move { rpc_roundtrip(&endpoint, address, RPC_ALPN, b"same-peer-queued-two").await }
+            });
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while budgets.inbound_waiters.available_permits()
+                    != MAX_CONCURRENT_HEADERS_PER_CONNECTION - 2
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("second request should queue behind the first");
             assert!(
-                tokio::time::timeout(
-                    Duration::from_secs(2),
-                    rpc_roundtrip(
-                        &guest.endpoint,
-                        host.addr(),
-                        RPC_ALPN,
-                        b"same-peer-over-limit"
-                    )
-                )
-                .await
-                .expect("over-budget stream must reset promptly")
-                .is_err()
-            );
-            assert!(
-                tokio::time::timeout(Duration::from_millis(100), host.rpc_inbox().receive())
+                tokio::time::timeout(Duration::from_millis(100), &mut first_queued)
                     .await
                     .is_err(),
-                "over-budget same-peer stream reached application inbox"
+                "queued same-peer stream must wait for an inbound slot"
+            );
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), &mut second_queued)
+                    .await
+                    .is_err(),
+                "later same-peer stream must remain behind the queue head"
             );
             assert_eq!(
                 other_guest
@@ -1086,10 +1290,289 @@ mod tests {
             let (first, second) = tokio::join!(first, second);
             assert!(first.is_ok());
             assert!(second.is_ok());
+            assert_eq!(first_queued.await.unwrap().unwrap(), b"queued-response-one");
+            assert_eq!(
+                second_queued.await.unwrap().unwrap(),
+                b"queued-response-two"
+            );
         }
         responder.await.unwrap();
         guest.close().await.unwrap();
         other_guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reciprocal_outbound_requests_do_not_consume_inbound_capacity() {
+        let first = NativeNode::start(Some([71; 32]), vec![]).await.unwrap();
+        let second = NativeNode::start(Some([72; 32]), vec![first.endpoint_id()])
+            .await
+            .unwrap();
+        first.authorize_peer(second.endpoint_id());
+
+        let first_inbox = first.rpc_inbox();
+        let second_inbox = second.rpc_inbox();
+        let both_sides_ready = Arc::new(Barrier::new(2));
+        let first_ready = both_sides_ready.clone();
+        let first_responder = tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(2);
+            for _ in 0..2 {
+                requests.push(first_inbox.receive().await.unwrap());
+            }
+            first_ready.wait().await;
+            for request in requests {
+                let response = [request.payload(), b"-reply"].concat();
+                request.respond(response).unwrap();
+            }
+        });
+        let second_responder = tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(2);
+            for _ in 0..2 {
+                requests.push(second_inbox.receive().await.unwrap());
+            }
+            both_sides_ready.wait().await;
+            for request in requests {
+                let response = [request.payload(), b"-reply"].concat();
+                request.respond(response).unwrap();
+            }
+        });
+
+        let requests = async {
+            tokio::join!(
+                first.request(second.addr(), b"first-one", Duration::from_secs(5)),
+                first.request(second.addr(), b"first-two", Duration::from_secs(5)),
+                second.request(first.addr(), b"second-one", Duration::from_secs(5)),
+                second.request(first.addr(), b"second-two", Duration::from_secs(5)),
+            )
+        };
+        let (first_one, first_two, second_one, second_two) =
+            tokio::time::timeout(Duration::from_secs(8), requests)
+                .await
+                .expect("reciprocal requests must not deadlock");
+        assert_eq!(first_one.unwrap(), b"first-one-reply");
+        assert_eq!(first_two.unwrap(), b"first-two-reply");
+        assert_eq!(second_one.unwrap(), b"second-one-reply");
+        assert_eq!(second_two.unwrap(), b"second-two-reply");
+
+        first_responder.await.unwrap();
+        second_responder.await.unwrap();
+        first.close().await.unwrap();
+        second.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rpc_inbound_queue_rejects_overflow_without_reading_queued_payloads() {
+        let guest = NativeNode::start(Some([73; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([74; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let inbox = host.rpc_inbox();
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let expected_peer = guest.endpoint_id();
+        let responder = tokio::spawn(async move {
+            let first = inbox.receive().await.unwrap();
+            let second = inbox.receive().await.unwrap();
+            assert_eq!(first.remote_endpoint_id(), expected_peer);
+            assert_eq!(second.remote_endpoint_id(), expected_peer);
+            ready_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            for request in [first, second] {
+                let response = [request.payload(), b"-reply"].concat();
+                request.respond(response).unwrap();
+            }
+
+            let expected_payloads: HashSet<Vec<u8>> = (0..MAX_CONCURRENT_HEADERS_PER_CONNECTION)
+                .map(|index| format!("queued-{index}").into_bytes())
+                .collect();
+            let mut received_payloads = HashSet::new();
+            for _ in 0..MAX_CONCURRENT_HEADERS_PER_CONNECTION {
+                let request = inbox.receive().await.unwrap();
+                assert_eq!(request.remote_endpoint_id(), expected_peer);
+                assert!(expected_payloads.contains(request.payload()));
+                assert!(received_payloads.insert(request.payload().to_vec()));
+                let response = request.payload().to_vec();
+                request.respond(response).unwrap();
+            }
+            assert_eq!(received_payloads, expected_payloads);
+        });
+
+        {
+            let first = guest.request(host.addr(), b"active-one", Duration::from_secs(8));
+            let second = guest.request(host.addr(), b"active-two", Duration::from_secs(8));
+            tokio::pin!(first);
+            tokio::pin!(second);
+            let ready = ready_rx;
+            tokio::pin!(ready);
+            tokio::select! {
+                _ = &mut ready => {}
+                result = &mut first => panic!("first request completed before release: {result:?}"),
+                result = &mut second => panic!("second request completed before release: {result:?}"),
+            }
+
+            let outbound_overflow = tokio::time::timeout(
+                Duration::from_millis(100),
+                guest.request(host.addr(), b"third-outbound", Duration::from_secs(2)),
+            )
+            .await
+            .expect("NativeNode.request must reject outbound overflow promptly")
+            .unwrap_err();
+            assert!(
+                outbound_overflow
+                    .to_string()
+                    .contains("Peer outbound stream concurrency limit exceeded")
+            );
+
+            let mut queued = Vec::with_capacity(MAX_CONCURRENT_HEADERS_PER_CONNECTION);
+            for index in 0..MAX_CONCURRENT_HEADERS_PER_CONNECTION {
+                let endpoint = guest.endpoint.clone();
+                let address = host.addr();
+                queued.push(tokio::spawn(async move {
+                    rpc_roundtrip(
+                        &endpoint,
+                        address,
+                        RPC_ALPN,
+                        format!("queued-{index}").as_bytes(),
+                    )
+                    .await
+                }));
+            }
+            let budgets = host.peer_budgets.budgets_for(guest.endpoint_id()).unwrap();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while budgets.inbound_waiters.available_permits() != 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("all bounded inbound queue entries should be reserved");
+
+            let overflow_endpoint = guest.endpoint.clone();
+            let overflow_address = host.addr();
+            let overflow = tokio::time::timeout(
+                Duration::from_secs(2),
+                rpc_roundtrip(
+                    &overflow_endpoint,
+                    overflow_address,
+                    RPC_ALPN,
+                    b"overflow-must-not-be-read",
+                ),
+            )
+            .await
+            .expect("overflow should be rejected promptly");
+            assert!(overflow.is_err(), "queue overflow must reset the stream");
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), host.rpc_inbox().receive())
+                    .await
+                    .is_err(),
+                "queued payloads must not enter the application inbox before capacity"
+            );
+
+            release_tx.send(()).unwrap();
+            assert_eq!(first.await.unwrap(), b"active-one-reply");
+            assert_eq!(second.await.unwrap(), b"active-two-reply");
+            for (index, queued) in queued.into_iter().enumerate() {
+                assert_eq!(
+                    queued.await.unwrap().unwrap(),
+                    format!("queued-{index}").as_bytes()
+                );
+            }
+        }
+        responder.await.unwrap();
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rpc_queued_stream_releases_queue_reservation_when_connection_closes() {
+        let guest = NativeNode::start(Some([75; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([76; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let budgets = host.peer_budgets.budgets_for(guest.endpoint_id()).unwrap();
+        let first = budgets.inbound.clone().acquire_owned().await.unwrap();
+        let second = budgets.inbound.clone().acquire_owned().await.unwrap();
+
+        let connection = guest.endpoint.connect(host.addr(), RPC_ALPN).await.unwrap();
+        let (mut send, _receive) = connection.open_bi().await.unwrap();
+        send.write_all(b"queued-until-close").await.unwrap();
+        send.finish().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while budgets.inbound_waiters.available_permits()
+                == MAX_CONCURRENT_HEADERS_PER_CONNECTION
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("stream should enter bounded queue");
+
+        connection.close(0u32.into(), b"cancel queued request");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while budgets.inbound_waiters.available_permits()
+                != MAX_CONCURRENT_HEADERS_PER_CONNECTION
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("closing the connection should release its queue reservation");
+
+        drop(first);
+        drop(second);
+        guest.close().await.unwrap();
+        host.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rpc_stream_keeps_peer_budget_alive_after_connection_handler_closes() {
+        let guest = NativeNode::start(Some([77; 32]), vec![]).await.unwrap();
+        let host = NativeNode::start(Some([78; 32]), vec![guest.endpoint_id()])
+            .await
+            .unwrap();
+        let connection = guest.endpoint.connect(host.addr(), RPC_ALPN).await.unwrap();
+        let (mut send, _receive) = connection.open_bi().await.unwrap();
+        send.write_all(b"held-application-request").await.unwrap();
+        send.finish().unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(2), host.rpc_inbox().receive())
+            .await
+            .unwrap()
+            .unwrap();
+        let budgets = host.peer_budgets.budgets_for(guest.endpoint_id()).unwrap();
+        assert_eq!(budgets.inbound.available_permits(), 1);
+        let weak_budgets = Arc::downgrade(&budgets);
+        drop(budgets);
+
+        connection.close(0u32.into(), b"disconnect while request is handled");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while weak_budgets.strong_count() >= 2 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("connection handler should end after peer disconnect");
+        assert_eq!(
+            weak_budgets.strong_count(),
+            1,
+            "the in-flight application response must retain the peer budget"
+        );
+
+        let reconnected_budgets = host.peer_budgets.budgets_for(guest.endpoint_id()).unwrap();
+        assert!(
+            Weak::ptr_eq(&weak_budgets, &Arc::downgrade(&reconnected_budgets)),
+            "a reconnect must reuse the budget still held by the in-flight request"
+        );
+        assert_eq!(reconnected_budgets.inbound.available_permits(), 1);
+        drop(reconnected_budgets);
+        drop(request);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while weak_budgets.strong_count() != 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("completed stream should let the idle peer budget expire");
+
+        guest.close().await.unwrap();
         host.close().await.unwrap();
     }
 

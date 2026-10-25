@@ -24,6 +24,7 @@ pub const MAX_IN_FLIGHT_BYTES_PER_CONNECTION: usize = 32 * 1024 * 1024;
 pub const MAX_CONCURRENT_FRAMES_PER_CONNECTION: usize = 2;
 /// Maximum simultaneous bounded header waits on one authenticated peer.
 /// Header reservations share the byte budget with payloads; idle responses cannot occupy payload slots.
+/// Native ingress reuses this count for queued, unread streams across peer connections and ALPNs.
 pub const MAX_CONCURRENT_HEADERS_PER_CONNECTION: usize = 32;
 /// Upper bound on pages in one logical transfer.
 pub const MAX_TRANSFER_PAGES: usize = 256;
