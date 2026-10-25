@@ -1,10 +1,10 @@
 import { authorizeIdentityDataDevice, authorizeIdentityDevice, canonicalizeJson, fromBase64Url,
   identityProfileRustyServicePins, normalizeIdentityRustyServicePins, publicKeyId, readIdentityProfileStateWithRevocations,
-  sealIdentityCatalogAccessForManager, sha256Base64Url, signEnvelope, verifyDeviceCertificateChain,
+  sealIdentityCatalogAccessForManager, sha256Base64Url, signEnvelope,
   verifyEnvelope, verifyIdentityAuthorityView, verifyIdentityDeviceAuthority,
   verifyRetainedDeviceAuthorizationApproval,
   type DeviceAuthorizationApproval, type DeviceAuthorizationRequest, type IdentityAuthorityView,
-  type IdentityProfileState, type IdentityRustyServicePin, type LocalProfile, type SignedEnvelope,
+  type IdentityProfileState, type LocalProfile, type SignedEnvelope,
   type VerifiedIdentityCatalogAccessGrant, type RustyIdentityCatalogAccessPublicationPayload } from "@meta-uber/mesh-identity"
 import { verifyAndOpenRustyIdentityCatalogAccessPublication } from "@meta-uber/mesh-identity"
 import { discoverRustyService, type RustyFetch } from "./rustyDiscovery"
@@ -391,7 +391,7 @@ async function validatePublisherAuthorization(
   const request = proof.payload.request as DeviceAuthorizationRequest
   if (request.payload.version !== 3 || request.payload.includeIdentityCatalogAccess !== true ||
       request.payload.applicationOrigin !== options.applicationOrigin ||
-      request.payload.personId !== options.publisher.identity.personId ||
+      (request.payload.personId !== null && request.payload.personId !== options.publisher.identity.personId) ||
       request.payload.deviceId !== options.publisher.device.deviceId ||
       request.payload.devicePublicKey !== options.publisher.device.publicKey ||
       options.retainedAuthorization.certificate.payload.deviceId !== options.publisher.device.deviceId ||

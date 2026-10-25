@@ -53,7 +53,7 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
     const requestNow = Date.now()
     const request = await createDeviceAuthorizationRequest(appKey, {
       applicationOrigin, challenge: "a".repeat(64), expiresAt: requestNow + 90_000,
-      personId: identity.identity.personId, includeIdentityCatalogAccess: true,
+      personId: null, includeIdentityCatalogAccess: true,
     })
     const approval = await createDeviceAuthorizationApproval(identity, request, {
       applicationOrigin, challenge: request.payload.challenge, now: () => requestNow + 1_000,
@@ -61,6 +61,8 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
       identityCatalogAccess: [],
     })
     expect(approval.proof.payload.version).toBe(5)
+    expect(request.payload.personId).toBeNull()
+    expect(approval.identity.personId).toBe(identity.identity.personId)
     const publisher: LocalProfile = {
       ...appKey,
       identity: identity.identity,
