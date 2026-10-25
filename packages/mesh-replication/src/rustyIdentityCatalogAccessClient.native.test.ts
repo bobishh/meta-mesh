@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 import {
   createDeviceAuthorizationApproval,
   createDeviceAuthorizationRequest,
@@ -163,6 +163,23 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
       request: { payload: { personId: string | null } }; certificate: { payload: { canEnrollDevices: boolean } } } } }
     expect(managerEnvelope.payload.publisherAuthorization.request.payload.personId).toBeNull()
     expect(managerEnvelope.payload.publisherAuthorization.certificate.payload.canEnrollDevices).toBe(true)
+    const nativeFetch = globalThis.fetch
+    vi.stubGlobal("fetch", function (this: unknown, input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation: browser fetch lost its receiver")
+      return nativeFetch(input, init)
+    })
+    try {
+      const browserPublication = await publishRustyIdentityCatalogAccess({
+        origin, servicePublicKey: service.servicePublicKey, publisher: identity, currentAuthorityView: checkedView,
+        retainedAuthorization: managerPublisherApproval, applicationOrigin, catalogId: "browser-bound-catalog",
+        access: opaqueAccess, journal,
+      })
+      expect(browserPublication).toHaveLength(1)
+      const browserGrants = await requestRustyIdentityCatalogAccess({
+        manager: identity, currentAuthorityView: checkedView, profileState, applicationOrigin,
+      })
+      expect(browserGrants).toHaveLength(3)
+    } finally { vi.unstubAllGlobals() }
     expect(failures).toEqual([])
   } finally {
     if (child) await stopRusty(child)

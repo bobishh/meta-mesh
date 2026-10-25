@@ -127,7 +127,7 @@ export type RequestRustyIdentityCatalogAccessOptions = {
 export async function publishRustyIdentityCatalogAccess(
   options: PublishRustyIdentityCatalogAccessOptions,
 ): Promise<RustyIdentityCatalogAccessPublishReceipt[]> {
-  const fetcher = options.fetcher ?? fetch
+  const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis)
   const now = options.now ?? Date.now
   const origin = rustyOrigin(options.origin)
   const discovery = await discoverRustyService(origin, fetcher)
@@ -199,7 +199,7 @@ export async function requestRustyIdentityCatalogAccess(
   await authorizeIdentityDevice(currentAuthority, options.manager.device.deviceId)
 
   const grants: VerifiedIdentityCatalogAccessGrant[] = []
-  const fetcher = options.fetcher ?? fetch
+  const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis)
   for (const servicePin of servicePins) {
     if (grants.length >= maxEntries) break
     await options.ensureCurrent?.()
