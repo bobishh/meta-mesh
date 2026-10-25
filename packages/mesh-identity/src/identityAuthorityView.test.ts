@@ -1,11 +1,48 @@
 import { describe, expect, it } from "vitest"
-import { createRecoverableIdentity, createIdentityAuthorityView, createLocalRootIdentityAuthorityView, verifyIdentityAuthorityView,
+import { createRecoverableIdentity, createIdentityAuthorityView, createIdentityManagerAuthorityView, createLocalRootIdentityAuthorityView, verifyIdentityAuthorityView,
   mergeIdentityAuthorityViews, authorizeIdentityDataDevice, authorizeIdentityDevice, verifyIdentityDeviceAuthority, signEnvelope,
-  type DeviceCertificate } from "./index"
+  createDeviceRevocation, type DeviceCertificate, type LocalProfile } from "./index"
 import { createIdentityEnrollmentDevice } from "./identityEnrollment"
 import { emptyIdentityProfileState } from "./identityProfile"
 
 describe("portable Identity authority view", () => {
+  it.each([true, false])("Given a rootless device with canEnrollDevices=%s, when building management authority, then enforce the certified role", async canEnrollDevices => {
+    const root = (await createRecoverableIdentity("better", "Owner")).profile
+    const device = await createIdentityEnrollmentDevice("Delegated device")
+    const certificate = await signEnvelope(root.privateKeys.identityPrivateKey!, {
+      kind: "device-certificate" as const, version: 1 as const, personId: root.identity.personId,
+      deviceId: device.device.deviceId, devicePublicKey: device.device.publicKey,
+      issuerCertificateHash: null, canEnrollDevices,
+    }, root.identity.personId)
+    const profile: LocalProfile = { identity: root.identity, device: device.device, certificate,
+      privateKeys: { devicePrivateKey: device.privateKey } }
+    const evidence = { certificates: [root.certificate, certificate], revocations: [] }
+    const state = emptyIdentityProfileState(root.identity.personId)
+    const result = createIdentityManagerAuthorityView(profile, evidence, state)
+    if (canEnrollDevices) {
+      await expect(result).resolves.toMatchObject({ personId: root.identity.personId })
+      await expect(createLocalRootIdentityAuthorityView(profile, evidence, state)).rejects.toThrow(/root authority/i)
+    } else await expect(result).rejects.toThrow(/management authority/i)
+  })
+
+  it("Given a revoked rootless manager, when building management authority, then reject its valid key", async () => {
+    const root = (await createRecoverableIdentity("better", "Owner")).profile
+    const device = await createIdentityEnrollmentDevice("Manager")
+    const certificate = await signEnvelope(root.privateKeys.identityPrivateKey!, {
+      kind: "device-certificate" as const, version: 1 as const, personId: root.identity.personId,
+      deviceId: device.device.deviceId, devicePublicKey: device.device.publicKey,
+      issuerCertificateHash: null, canEnrollDevices: true,
+    }, root.identity.personId)
+    const profile: LocalProfile = { identity: root.identity, device: device.device, certificate,
+      privateKeys: { devicePrivateKey: device.privateKey } }
+    const state = emptyIdentityProfileState(root.identity.personId)
+    const certificates = [root.certificate, certificate]
+    const authority = await verifyIdentityDeviceAuthority(root.identity, { certificates, revocations: [] })
+    const revocation = await createDeviceRevocation(root, authority, profile.device.deviceId, state)
+    await expect(createIdentityManagerAuthorityView(profile, { certificates, revocations: [revocation] }, state))
+      .rejects.toThrow(/revoked/i)
+  })
+
   it("Given a delegated app certificate, when authority view is created and verified, then data access is allowed without management authority", async () => {
     const owner = (await createRecoverableIdentity("better", "Owner")).profile
     const app = await createIdentityEnrollmentDevice("App key")

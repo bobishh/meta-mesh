@@ -11,6 +11,7 @@ import {
   createDeviceAuthorizationApproval,
   createDeviceAuthorizationRequest,
   createIdentityAuthorityView,
+  createIdentityManagerAuthorityView,
   createIdentityEnrollmentDevice,
   createRecoverableIdentity,
   createIdentityProfileOperation,
@@ -25,7 +26,7 @@ import {
   type LocalProfile,
 } from "@meta-uber/mesh-identity"
 import { discoverRustyService } from "./rustyDiscovery"
-import { publishRustyIdentityAuthorityView } from "./rustyIdentityAuthority"
+import { publishRustyIdentityAuthorityView, readRustyIdentityAuthorityStatus } from "./rustyIdentityAuthority"
 import {
   publishRustyIdentityCatalogAccess,
   requestRustyIdentityCatalogAccess,
@@ -34,6 +35,51 @@ import {
 } from "./rustyIdentityCatalogAccessClient"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
+
+it.skipIf(!rustyBinary)("Given a rootless Identity manager and a fresh Rusty, when the manager registers its view and Rusty restarts, then catalog sign-in remains authorized", async () => {
+  const owner = (await createRecoverableIdentity("better", "Owner")).profile
+  const device = await createIdentityEnrollmentDevice("Identity manager")
+  const certificate = await createDelegatedCertificate(owner.privateKeys.devicePrivateKey,
+    owner.device.deviceId, owner.identity.personId, device.device.deviceId,
+    device.device.publicKey, await certificateHash(owner.certificate))
+  const manager: LocalProfile = { identity: owner.identity, device: device.device, certificate,
+    privateKeys: { devicePrivateKey: device.privateKey } }
+  const directory = await mkdtemp(resolve(tmpdir(), "mesh-rootless-manager-"))
+  const port = await unusedLoopbackPort(), origin = `http://127.0.0.1:${port}`
+  let child: ChildProcess | undefined
+  try {
+    child = await startRusty(directory, port)
+    const service = await discoverRustyService(origin)
+    const certificates = [owner.certificate, certificate]
+    let profileState = emptyIdentityProfileState(owner.identity.personId)
+    const pin = await createIdentityRustyServicePinOperation(manager, profileState, {
+      origin, serviceId: service.serviceId, servicePublicKey: service.servicePublicKey,
+    }, certificates)
+    profileState = await readIdentityProfileState({ ...profileState, operations: [pin] }, owner.identity, certificates)
+    const view = await createIdentityManagerAuthorityView(manager, { certificates, revocations: [] }, profileState)
+    expect(manager.privateKeys.identityPrivateKey).toBeUndefined()
+    await publishRustyIdentityAuthorityView({ origin, servicePublicKey: service.servicePublicKey,
+      identity: manager.identity, deviceId: manager.device.deviceId, devicePublicKey: manager.device.publicKey,
+      view, signAuthorization: payload => signEnvelope(manager.privateKeys.devicePrivateKey, payload, manager.device.deviceId),
+    })
+    await stopRusty(child)
+    child = await startRusty(directory, port)
+    const status = await readRustyIdentityAuthorityStatus({ origin, servicePublicKey: service.servicePublicKey,
+      identity: manager.identity })
+    expect(status.payload).toMatchObject({ state: "ready", view: { viewDigest: view.viewDigest } })
+    const paths: string[] = []
+    const grants = await requestRustyIdentityCatalogAccess({ manager, currentAuthorityView: view,
+      profileState, applicationOrigin: "https://boards.example", fetcher: async (input, init) => {
+        paths.push(new URL(String(input)).pathname)
+        return fetch(input, init)
+      } })
+    expect(grants).toEqual([])
+    expect(paths).toContain("/v2/identity/catalog-access/request")
+  } finally {
+    if (child) await stopRusty(child)
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 15_000)
 
 it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app device, when SDK publishes and requests opaque catalog access, then real Rusty verifies both directions", async () => {
   const identity = (await createRecoverableIdentity("better", "Catalog owner")).profile

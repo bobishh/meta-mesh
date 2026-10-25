@@ -13,6 +13,13 @@ The npm workspace is marked `private` so root-package publishing cannot happen a
 
 Shared Identity sign-in, service sessions and resource ownership contracts are described in [Identity and resource access](docs/identity-and-resource-access.md).
 
+An approved Identity manager can publish its verified authority view to a new
+Rusty service using its own device key. `createIdentityManagerAuthorityView`
+checks the manager certificate chain and revocations without requiring recovery
+material. Ordinary app certificates do not have this management role. The
+separate `createLocalRootIdentityAuthorityView` helper retains its local-root
+requirement for application genesis.
+
 ## Independent Rusty replica clients
 
 `@meta-uber/mesh-replication/rusty-replica` exports the shared Rusty origin,

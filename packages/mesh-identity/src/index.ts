@@ -816,6 +816,27 @@ export async function createIdentityAuthorityView(
   return verifyIdentityAuthorityView(view, domain)
 }
 
+/** Build authority for an active Identity manager without requiring recovery material. */
+export async function createIdentityManagerAuthorityView(
+  profileValue: Pick<LocalProfile, "identity" | "device" | "certificate">,
+  evidenceValue: IdentityDeviceAuthorityEvidence,
+  profileState: IdentityProfileState,
+  domain = "MATCH/1",
+): Promise<VerifiedIdentityAuthorityView> {
+  const profile = structuredClone({ identity: profileValue.identity, device: profileValue.device, certificate: profileValue.certificate })
+  const evidence = structuredClone(evidenceValue)
+  if (profile.identity.personId !== await publicKeyId(profile.identity.publicKey) ||
+      profile.device.deviceId !== profile.certificate.payload.deviceId ||
+      profile.device.publicKey !== profile.certificate.payload.devicePublicKey ||
+      !evidence.certificates.some(value => canonicalizeJson(value) === canonicalizeJson(profile.certificate))) {
+    throw new Error("Identity manager profile does not match its certificate evidence")
+  }
+  const authority = await verifyIdentityDeviceAuthority(profile.identity, evidence, domain)
+  const key = await authorizeIdentityDevice(authority, profile.device.deviceId, domain)
+  if (key !== profile.device.publicKey) throw new Error("Identity manager key does not match its authority")
+  return createIdentityAuthorityView(profile.identity, evidence, profileState, domain)
+}
+
 /** Explicit local-first genesis path; adopted device certificates cannot bootstrap a person's Rusty authority. */
 export async function createLocalRootIdentityAuthorityView(
   profile: LocalProfile,
