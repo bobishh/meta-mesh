@@ -143,6 +143,27 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
     expect(opened).toEqual({ status: "ready", entries: [
       { serviceId: service.serviceId, catalogId, sourceRevision: 1, access: opaqueAccess },
     ] })
+
+    const managerPublisherRequest = await createDeviceAuthorizationRequest(identity, {
+      applicationOrigin, challenge: "c".repeat(64), expiresAt: Date.now() + 90_000,
+      personId: null, includeIdentityCatalogAccess: true,
+    })
+    const managerPublisherApproval = await createDeviceAuthorizationApproval(identity, managerPublisherRequest, {
+      applicationOrigin, challenge: managerPublisherRequest.payload.challenge,
+      certificates: [identity.certificate, approval.certificate], profileState, revocations: [],
+      includeProfileState: true, identityCatalogAccess: [],
+    })
+    const managerPublication = await publishRustyIdentityCatalogAccess({
+      origin, servicePublicKey: service.servicePublicKey, publisher: identity, currentAuthorityView: checkedView,
+      retainedAuthorization: managerPublisherApproval, applicationOrigin, catalogId: "manager-device-catalog",
+      access: opaqueAccess, journal, fetcher: captureServerError,
+    })
+    expect(managerPublication).toHaveLength(1)
+    const managerEnvelope = transmitted.at(-1) as { payload: { publisherAuthorization: {
+      request: { payload: { personId: string | null } }; certificate: { payload: { canEnrollDevices: boolean } } } } }
+    expect(managerEnvelope.payload.publisherAuthorization.request.payload.personId).toBeNull()
+    expect(managerEnvelope.payload.publisherAuthorization.certificate.payload.canEnrollDevices).toBe(true)
+    expect(failures).toEqual([])
   } finally {
     if (child) await stopRusty(child)
     await rm(stateDirectory, { recursive: true, force: true })
