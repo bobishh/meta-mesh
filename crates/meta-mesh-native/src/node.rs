@@ -149,6 +149,9 @@ pub struct NativeNode {
 /// One browser-compatible Iroh connection for multi-stream protocols such as
 /// workspace invitation and handoff. A normal `request` opens a new connection
 /// for every frame, which the browser invitation host cannot accept.
+/// Incoming and outgoing streams wait for the shared peer read capacity rather
+/// than treating a temporary burst as a broken connection. Incoming slot waits
+/// and body reads share the existing transfer deadline.
 pub struct NativeBrowserConnection {
     connection: Connection,
     peer_read_slots: Arc<Semaphore>,
@@ -175,16 +178,11 @@ impl NativeBrowserRequest {
 }
 
 impl NativeBrowserConnection {
-    fn try_read_permit(&self) -> Result<OwnedSemaphorePermit, BoxError> {
-        self.peer_read_slots
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| io_error("Peer stream concurrency limit exceeded"))
-    }
-
     pub async fn accept(&self) -> Result<NativeBrowserRequest, BoxError> {
         let (mut send, mut receive) = self.connection.accept_bi().await?;
-        let _permit = match self.try_read_permit() {
+        let started = std::time::Instant::now();
+        let timeout = Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS));
+        let _permit = match acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await {
             Ok(permit) => permit,
             Err(error) => {
                 send.reset(0u32.into()).ok();
@@ -193,7 +191,7 @@ impl NativeBrowserConnection {
             }
         };
         match tokio::time::timeout(
-            Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
+            timeout.saturating_sub(started.elapsed()),
             receive.read_to_end(MAX_RPC_BYTES),
         )
         .await
@@ -215,7 +213,9 @@ impl NativeBrowserConnection {
 
     pub async fn accept_pairing(&self) -> Result<NativeBrowserRequest, BoxError> {
         let (mut send, mut receive) = self.connection.accept_bi().await?;
-        let _permit = match self.try_read_permit() {
+        let started = std::time::Instant::now();
+        let timeout = Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS));
+        let _permit = match acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await {
             Ok(permit) => permit,
             Err(error) => {
                 send.reset(0u32.into()).ok();
@@ -224,7 +224,7 @@ impl NativeBrowserConnection {
             }
         };
         let result = tokio::time::timeout(
-            Duration::from_millis(u64::from(MAX_TRANSFER_DEADLINE_MS)),
+            timeout.saturating_sub(started.elapsed()),
             read_pairing_frame(&mut receive, false),
         )
         .await;
@@ -248,9 +248,10 @@ impl NativeBrowserConnection {
         if payload.len() > MAX_RPC_BYTES {
             return Err(io_error("RPC request exceeds size limit"));
         }
-        let _permit = self.try_read_permit()?;
+        let started = std::time::Instant::now();
+        let _permit = acquire_peer_read_slot(self.peer_read_slots.clone(), timeout).await?;
         let (mut send, mut receive) = self.connection.open_bi().await?;
-        match tokio::time::timeout(timeout, async {
+        match tokio::time::timeout(timeout.saturating_sub(started.elapsed()), async {
             send.write_all(payload).await?;
             send.finish()?;
             let response = receive.read_to_end(MAX_RPC_BYTES).await?;
@@ -797,6 +798,92 @@ async fn acquire_peer_read_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn browser_incoming_stream_waits_for_read_capacity_without_closing_connection() {
+        for pairing in [false, true] {
+            let remote = Endpoint::builder(presets::N0)
+                .alpns(vec![BROWSER_RPC_ALPN.to_vec()])
+                .relay_mode(RelayMode::Disabled)
+                .bind_addr(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .unwrap()
+                .bind()
+                .await
+                .unwrap();
+            let node = NativeNode::start_with_options(NativeNodeOptions {
+                relay_mode: RelayMode::Disabled,
+                bind_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+            let (session, peer) = tokio::join!(
+                node.connect_browser(remote.addr(), Duration::from_secs(5)),
+                async { remote.accept().await.unwrap().await.unwrap() }
+            );
+            let session = session.unwrap();
+            let first_slot = session
+                .peer_read_slots
+                .clone()
+                .acquire_owned()
+                .await
+                .unwrap();
+            let second_slot = session
+                .peer_read_slots
+                .clone()
+                .acquire_owned()
+                .await
+                .unwrap();
+            assert_eq!(session.peer_read_slots.available_permits(), 0);
+            let payload = if pairing {
+                PairingCodec::encode("sync-heartbeat", "secret", &[]).unwrap()
+            } else {
+                b"incoming request".to_vec()
+            };
+            let (mut send, mut receive) = peer.open_bi().await.unwrap();
+            send.write_all(&payload).await.unwrap();
+            send.finish().unwrap();
+            let accepting = async {
+                if pairing {
+                    session.accept_pairing().await
+                } else {
+                    session.accept().await
+                }
+            };
+            tokio::pin!(accepting);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), &mut accepting)
+                    .await
+                    .is_err(),
+                "an excess incoming stream must wait instead of failing the admitted connection"
+            );
+            assert_eq!(session.peer_read_slots.available_permits(), 0);
+            drop(first_slot);
+            let request = tokio::time::timeout(Duration::from_secs(1), &mut accepting)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(request.payload(), payload);
+            request.respond(b"ack").await.unwrap();
+            assert_eq!(receive.read_to_end(32).await.unwrap(), b"ack");
+            drop(second_slot);
+
+            let (mut send, mut receive) = peer.open_bi().await.unwrap();
+            send.write_all(&payload).await.unwrap();
+            send.finish().unwrap();
+            let request = if pairing {
+                session.accept_pairing().await
+            } else {
+                session.accept().await
+            }
+            .unwrap();
+            request.respond(b"next ack").await.unwrap();
+            assert_eq!(receive.read_to_end(32).await.unwrap(), b"next ack");
+            session.close();
+            node.close().await.unwrap();
+            remote.close().await;
+        }
+    }
 
     #[tokio::test]
     async fn pairing_exchange_waits_for_a_peer_stream_slot() {
