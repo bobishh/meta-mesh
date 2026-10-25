@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { authorizeIdentityDataDevice, certificateHash, createRecoverableIdentity, createDeviceRevocation,
-  openIdentityRecoveryEnvelope, publicKeyId, signEnvelope, verifyDeviceCertificateChain, verifyIdentityDeviceAuthority } from "./index"
+  openIdentityRecoveryEnvelope, publicKeyId, signEnvelope, toBase64Url, verifyDeviceCertificateChain,
+  verifyIdentityDeviceAuthority } from "./index"
 import { createDelegatedCertificate, createDeviceAuthorizationApproval, createDeviceAuthorizationRequest,
-  issueDeviceAuthorization, verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
+  issueDeviceAuthorization, parseDeviceAuthorizationApproval, verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
   verifyDeviceAuthorizationRequest } from "./deviceAuthorization"
 import { createIdentityProfileOperation, createIdentityRustyServicePinOperation, emptyIdentityProfileState, readIdentityProfileState } from "./identityProfile"
 
@@ -169,6 +170,56 @@ describe("application device enrollment", () => {
     await expect(verifyDeviceAuthorizationApproval(approval, request)).resolves.toMatchObject({
       certificate: { signature: legacyCertificate.signature },
     })
+  })
+
+  it("Given an existing manager device signing in as its same app key, when it reauthorizes, then accept only its exact preexisting certificate", async () => {
+    const manager = (await createRecoverableIdentity("better", "Existing manager app")).profile
+    const childOne = (await createRecoverableIdentity("better", "First child")).profile
+    const childTwo = (await createRecoverableIdentity("better", "Second child")).profile
+    const rootCertificateHash = await certificateHash(manager.certificate)
+    const childOneCertificate = await createDelegatedCertificate(manager.privateKeys.devicePrivateKey,
+      manager.device.deviceId, manager.identity.personId, childOne.device.deviceId, childOne.device.publicKey, rootCertificateHash)
+    const childTwoCertificate = await createDelegatedCertificate(manager.privateKeys.devicePrivateKey,
+      manager.device.deviceId, manager.identity.personId, childTwo.device.deviceId, childTwo.device.publicKey, rootCertificateHash)
+    const certificates = [childTwoCertificate, manager.certificate, childOneCertificate]
+    const initial = emptyIdentityProfileState(manager.identity.personId)
+    const photo = await createIdentityProfileOperation(manager, initial, "photo", {
+      avatarData: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAfwAAfwAA",
+      changedAt: "2026-10-25T00:00:00.000Z",
+    }, certificates)
+    const profileState = await readIdentityProfileState({ ...initial, operations: [photo] }, manager.identity, certificates)
+    const request = await createDeviceAuthorizationRequest(manager, { applicationOrigin, challenge,
+      expiresAt: Date.now() + 90_000, personId: manager.identity.personId })
+    const approval = await createDeviceAuthorizationApproval(manager, request, {
+      applicationOrigin, challenge, certificates, profileState, revocations: [], includeProfileState: true,
+    })
+    expect(approval.certificate).toEqual(manager.certificate)
+    expect(approval.certificate.payload.canEnrollDevices).toBe(true)
+
+    const existingProfile = { identity: manager.identity, device: manager.device, certificate: manager.certificate }
+    const verifyExisting = (profile: typeof existingProfile) => verifyDeviceAuthorizationApproval(approval, request,
+      { expectedExistingProfile: profile })
+    await expect(verifyExisting(existingProfile)).resolves.toMatchObject({ certificate: manager.certificate })
+    const encoded = toBase64Url(new TextEncoder().encode(JSON.stringify(approval)))
+    await expect(parseDeviceAuthorizationApproval(encoded, request, { expectedExistingProfile: existingProfile }))
+      .resolves.toMatchObject({ certificate: manager.certificate })
+    await expect(verifyDeviceAuthorizationApproval(approval, request)).rejects.toThrow(/does not match/u)
+
+    const anotherIdentity = (await createRecoverableIdentity("better", "Other manager")).profile
+    await expect(verifyExisting({ identity: anotherIdentity.identity, device: anotherIdentity.device,
+      certificate: anotherIdentity.certificate })).rejects.toThrow(/does not match/u)
+
+    const alternateCertificate = await signEnvelope(manager.privateKeys.identityPrivateKey!, {
+      ...manager.certificate.payload, canEnrollDevices: false,
+    }, manager.identity.personId)
+    await expect(verifyExisting({ ...existingProfile, certificate: alternateCertificate })).rejects.toThrow(/does not match/u)
+
+    const legacyApproval = await createDeviceAuthorizationApproval(manager, request, {
+      applicationOrigin, challenge, certificates: [manager.certificate],
+    })
+    expect(legacyApproval.proof.payload.version).toBe(1)
+    await expect(verifyDeviceAuthorizationApproval(legacyApproval, request,
+      { expectedExistingProfile: existingProfile })).rejects.toThrow(/does not match/u)
   })
 
   it("Given a substituted device key or another application challenge, when approved, then refuse enrollment", async () => {

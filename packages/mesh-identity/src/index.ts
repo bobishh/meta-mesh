@@ -137,6 +137,7 @@ export { createDelegatedCertificate, createDeviceAuthorizationRequest, encodeDev
   verifyDeviceAuthorizationApproval, verifyRetainedDeviceAuthorizationApproval,
   verifyDeviceAuthorizationRequest, parseDeviceAuthorizationApproval } from "./deviceAuthorization"
 export type { DeviceAuthorizationRequest, DeviceAuthorizationApproval, DeviceAuthorizationApprovalPayload } from "./deviceAuthorization"
+export type { DeviceAuthorizationApprovalVerificationOptions } from "./deviceAuthorization"
 export { createIdentityEnrollmentDevice, createIdentityDeviceEnrollmentRequest, issueIdentityDeviceEnrollment,
   verifyIdentityDeviceEnrollmentRequest, identityRequestAllowsRecoveryTransfer } from "./identityEnrollment"
 export type { IdentityDeviceEnrollmentRequest, IdentityEnrollmentDevice } from "./identityEnrollment"

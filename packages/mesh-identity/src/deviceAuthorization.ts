@@ -2,7 +2,7 @@ import { canonicalizeJson, publicKeyId, signEnvelope, toBase64Url, verifyEnvelop
   certificateHash, verifyDeviceCertificateChain, sha256Base64Url,
   verifyIdentityDeviceAuthority, authorizeIdentityDevice, authorizeIdentityDataDevice,
   createIdentityAuthorityView, verifyIdentityAuthorityView,
-  type DeviceCertificate, type IdentityAuthorityHead, type IdentityAuthorityView,
+  type DeviceCertificate, type IdentityAuthorityHead, type IdentityAuthorityView, type PublicIdentity,
   type IdentityDeviceRevocation, type LocalProfile, type SignedEnvelope } from "./index"
 import { identityProfileRevision, identityProfileValue, identityProfileRustyServicePins, normalizeIdentityRustyServicePins,
   readIdentityProfileStateWithRevocations, type IdentityProfileState, type IdentityRustyServicePin } from "./identityProfile"
@@ -278,7 +278,7 @@ export async function createDeviceAuthorizationApproval(
 
 /** Decode and verify bounded redirect evidence through the same public protocol seam. */
 export async function parseDeviceAuthorizationApproval(encoded: string, request: DeviceAuthorizationRequest,
-  options: { now?: () => number } = {}): Promise<DeviceAuthorizationApproval> {
+  options: DeviceAuthorizationApprovalVerificationOptions = {}): Promise<DeviceAuthorizationApproval> {
   if (typeof encoded !== "string" || encoded.length > 350_000 || !/^[A-Za-z0-9_-]+$/u.test(encoded)) {
     throw new Error("Invalid Identity device approval")
   }
@@ -295,7 +295,7 @@ export async function parseDeviceAuthorizationApproval(encoded: string, request:
 export async function verifyDeviceAuthorizationApproval(
   approvalValue: unknown,
   requestValue: DeviceAuthorizationRequest,
-  options: { now?: () => number } = {},
+  options: DeviceAuthorizationApprovalVerificationOptions = {},
 ): Promise<DeviceAuthorizationApproval> {
   return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, options, false)
 }
@@ -304,14 +304,21 @@ export async function verifyDeviceAuthorizationApproval(
 export async function verifyRetainedDeviceAuthorizationApproval(
   approvalValue: unknown,
   requestValue: DeviceAuthorizationRequest,
+  options: DeviceAuthorizationApprovalVerificationOptions = {},
 ): Promise<DeviceAuthorizationApproval> {
-  return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, {}, true)
+  return verifyDeviceAuthorizationApprovalEvidence(approvalValue, requestValue, options, true)
+}
+
+export type DeviceAuthorizationApprovalVerificationOptions = {
+  now?: () => number
+  /** Exact profile loaded from the app's current durable identity store, only for same-device reauthorization. */
+  expectedExistingProfile?: Pick<LocalProfile, "identity" | "device" | "certificate">
 }
 
 async function verifyDeviceAuthorizationApprovalEvidence(
   approvalValue: unknown,
   requestValue: DeviceAuthorizationRequest,
-  options: { now?: () => number },
+  options: DeviceAuthorizationApprovalVerificationOptions,
   retained: boolean,
 ): Promise<DeviceAuthorizationApproval> {
   const request = structuredClone(requestValue)
@@ -343,7 +350,9 @@ async function verifyDeviceAuthorizationApprovalEvidence(
       (!retained && now! >= payload.expiresAt) ||
       approval.certificate.payload.deviceId !== request.payload.deviceId ||
       approval.certificate.payload.devicePublicKey !== request.payload.devicePublicKey ||
-      approval.certificate.payload.personId !== approval.identity.personId || approval.certificate.payload.canEnrollDevices) {
+      approval.certificate.payload.personId !== approval.identity.personId ||
+      (approval.certificate.payload.canEnrollDevices &&
+        (!version2 || !isExpectedExistingManagerProfile(options.expectedExistingProfile, approval.identity, approval.certificate)))) {
     throw new Error("Identity device approval does not match this request")
   }
   if ((request.payload.version === 2 && !version3) || (request.payload.version === 1 && payload.version === 3)) {
@@ -415,6 +424,19 @@ async function verifyDeviceAuthorizationApprovalEvidence(
   }
   if (payload.version !== 4 && approval.profileState !== undefined) throw new Error("Unexpected Identity profile on this approval")
   return approval
+}
+
+function isExpectedExistingManagerProfile(
+  profile: Pick<LocalProfile, "identity" | "device" | "certificate"> | undefined,
+  identity: PublicIdentity,
+  certificate: DeviceCertificate,
+): boolean {
+  return Boolean(profile && certificate.payload.canEnrollDevices &&
+    profile.identity.personId === identity.personId && profile.identity.publicKey === identity.publicKey &&
+    profile.device.deviceId === certificate.payload.deviceId &&
+    profile.device.publicKey === certificate.payload.devicePublicKey &&
+    profile.certificate.payload.canEnrollDevices &&
+    canonicalizeJson(profile.certificate) === canonicalizeJson(certificate))
 }
 
 async function isDeviceBlockedByRevocation(view: IdentityAuthorityView, deviceId: string): Promise<boolean> {
