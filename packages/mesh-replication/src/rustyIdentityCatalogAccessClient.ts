@@ -16,6 +16,7 @@ const maxResponseBytes = 384 * 1024
 const maxCiphertextBytes = 48 * 1024
 const maxPublishedCiphertextBytes = 16 * 1024
 const maxPublishedCiphertextTotal = 64 * 1024
+const catalogAccessPendingRetryDelaysMs = [200, 400, 800, 1_600, 1_600] as const
 const publishDomain = "MESH-IDENTITY-CATALOG-ACCESS-PUBLISH/1"
 const requestDomain = "MESH-IDENTITY-CATALOG-ACCESS-REQUEST/1"
 
@@ -222,15 +223,10 @@ export async function requestRustyIdentityCatalogAccess(
     if (!await verifyEnvelope(request, options.manager.device.publicKey, requestDomain)) {
       throw new Error("Identity catalog access request signature is invalid")
     }
-    await options.ensureCurrent?.()
-    const response = await fetcher(`${service.origin}/v2/identity/catalog-access/request`, {
-      method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(request), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    const response = await fetchCatalogListWithPendingRetry({
+      fetcher, url: `${service.origin}/v2/identity/catalog-access/request`, request,
+      expiresAt: requestPayload.expiresAt, now, ensureCurrent: options.ensureCurrent,
     })
-    if (!response.ok) {
-      await response.body?.cancel()
-      throw new Error(`Rusty Identity catalog access request failed with HTTP ${response.status}`)
-    }
     const body = await readBoundedJson(response, maxResponseBytes, "Rusty Identity catalog access list")
     if (!isRecord(body) || !hasExactKeys(body, ["envelopes", "receipt"]) || !Array.isArray(body.envelopes) ||
         body.envelopes.length > maxEntries) throw new Error("Invalid Rusty Identity catalog access list response")
@@ -268,6 +264,41 @@ export async function requestRustyIdentityCatalogAccess(
     if (grants.length > maxEntries) throw new Error("Too many Identity catalog access grants")
   }
   return grants
+}
+
+async function fetchCatalogListWithPendingRetry(options: {
+  fetcher: RustyFetch
+  url: string
+  request: RustyIdentityCatalogAccessRequest
+  expiresAt: number
+  now: () => number
+  ensureCurrent?: () => void | Promise<void>
+}): Promise<Response> {
+  const body = JSON.stringify(options.request)
+  for (let retry = 0; ; retry += 1) {
+    await options.ensureCurrent?.()
+    if (options.now() >= options.expiresAt) throw new Error("Rusty Identity catalog access request expired while waiting for publication")
+    const response = await options.fetcher(options.url, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
+      body, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
+    })
+    if (response.ok) return response
+    if (response.status !== 503) {
+      await response.body?.cancel()
+      throw new Error(`Rusty Identity catalog access request failed with HTTP ${response.status}`)
+    }
+    let errorBody: unknown
+    try { errorBody = await readBoundedJson(response, 2 * 1024, "Rusty Identity catalog access error") }
+    catch { throw new Error("Rusty Identity catalog access request failed with HTTP 503") }
+    if (!isRecord(errorBody) || errorBody.code !== "catalog_access_pending") {
+      throw new Error("Rusty Identity catalog access request failed with HTTP 503")
+    }
+    const delayMs = catalogAccessPendingRetryDelaysMs[retry]
+    if (delayMs === undefined) {
+      throw new Error("Rusty Identity catalog access remained pending after bounded retries")
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+  }
 }
 
 async function publishOneRecipient(options: PublishRustyIdentityCatalogAccessOptions & {

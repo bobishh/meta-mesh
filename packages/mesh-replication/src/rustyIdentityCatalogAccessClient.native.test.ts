@@ -6,9 +6,12 @@ import { resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it, vi } from "vitest"
 import {
+  certificateHash,
+  createDelegatedCertificate,
   createDeviceAuthorizationApproval,
   createDeviceAuthorizationRequest,
   createIdentityAuthorityView,
+  createIdentityEnrollmentDevice,
   createRecoverableIdentity,
   createIdentityProfileOperation,
   createIdentityRustyServicePinOperation,
@@ -130,6 +133,138 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
       manager: identity, currentAuthorityView: checkedView, profileState, applicationOrigin,
     })
     expect(grants).toHaveLength(1)
+
+    const enrollManager = async (label: string) => {
+      const enrollment = await createIdentityEnrollmentDevice(label)
+      const certificate = await createDelegatedCertificate(identity.privateKeys.devicePrivateKey,
+        identity.device.deviceId, identity.identity.personId, enrollment.device.deviceId,
+        enrollment.device.publicKey, await certificateHash(identity.certificate))
+      const manager: LocalProfile = { identity: identity.identity, device: enrollment.device, certificate,
+        privateKeys: { devicePrivateKey: enrollment.privateKey } }
+      return { manager, certificate }
+    }
+    const { manager: newManager, certificate: newManagerCertificate } = await enrollManager("New manager B")
+    const authorityWithNewManager = await verifyIdentityAuthorityView(await createIdentityAuthorityView(identity.identity,
+      { certificates: [identity.certificate, approval.certificate, newManagerCertificate], revocations: [] }, profileState))
+    await publishRustyIdentityAuthorityView({
+      origin, servicePublicKey: service.servicePublicKey, identity: identity.identity,
+      deviceId: identity.device.deviceId, devicePublicKey: identity.device.publicKey,
+      view: authorityWithNewManager, signAuthorization: signOwner,
+    })
+    const refreshedApproval = await createDeviceAuthorizationApproval(identity, request, {
+      applicationOrigin, challenge: request.payload.challenge,
+      certificates: [identity.certificate, approval.certificate, newManagerCertificate], profileState,
+      revocations: [], includeProfileState: true, identityCatalogAccess: [],
+    })
+    const retriedBodies: string[] = []
+    let republishedForNewManager = false
+    const publishOnPending: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        retriedBodies.push(String(init.body))
+        if (!republishedForNewManager && response.status === 503) {
+          republishedForNewManager = true
+          await publishRustyIdentityCatalogAccess({
+            origin, servicePublicKey: service.servicePublicKey, publisher, currentAuthorityView: authorityWithNewManager,
+            retainedAuthorization: refreshedApproval, applicationOrigin, catalogId, access: opaqueAccess, journal,
+          })
+        }
+      }
+      return response
+    }
+    const grantsForNewManager = await requestRustyIdentityCatalogAccess({ manager: newManager,
+      currentAuthorityView: authorityWithNewManager, profileState, applicationOrigin, fetcher: publishOnPending })
+    expect(grantsForNewManager).toHaveLength(1)
+    expect(retriedBodies).toHaveLength(2)
+    expect(retriedBodies[1]).toBe(retriedBodies[0])
+    const newManagerApproval = await createDeviceAuthorizationApproval(newManager, request, {
+      applicationOrigin, challenge: request.payload.challenge,
+      certificates: [identity.certificate, approval.certificate, newManagerCertificate], profileState,
+      revocations: [], includeProfileState: true, identityCatalogAccess: grantsForNewManager,
+    })
+    await expect(openApprovedIdentityCatalogAccess(newManagerApproval, request, publisher)).resolves.toEqual({ status: "ready", entries: [
+      { serviceId: service.serviceId, catalogId, sourceRevision: 1, access: opaqueAccess },
+    ] })
+
+    const foreignOriginRequests: string[] = []
+    const captureForeignOrigin: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        foreignOriginRequests.push(String(init.body))
+      }
+      return response
+    }
+    const foreignOriginGrants = await requestRustyIdentityCatalogAccess({ manager: newManager,
+      currentAuthorityView: authorityWithNewManager, profileState, applicationOrigin: "https://another-app.example",
+      fetcher: captureForeignOrigin })
+    expect(foreignOriginGrants).toEqual([])
+    expect(foreignOriginRequests).toHaveLength(1)
+
+    const { manager: offlineManager, certificate: offlineManagerCertificate } = await enrollManager("Offline source manager")
+    const authorityWithOfflineManager = await verifyIdentityAuthorityView(await createIdentityAuthorityView(identity.identity,
+      { certificates: [identity.certificate, approval.certificate, newManagerCertificate, offlineManagerCertificate], revocations: [] }, profileState))
+    await publishRustyIdentityAuthorityView({
+      origin, servicePublicKey: service.servicePublicKey, identity: identity.identity,
+      deviceId: identity.device.deviceId, devicePublicKey: identity.device.publicKey,
+      view: authorityWithOfflineManager, signAuthorization: signOwner,
+    })
+    const offlineBodies: string[] = []
+    const offlineFetcher: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        offlineBodies.push(String(init.body))
+      }
+      return response
+    }
+    await expect(requestRustyIdentityCatalogAccess({ manager: offlineManager,
+      currentAuthorityView: authorityWithOfflineManager, profileState, applicationOrigin, fetcher: offlineFetcher,
+    })).rejects.toThrow(/remained pending after bounded retries/i)
+    expect(offlineBodies).toHaveLength(6)
+    expect(new Set(offlineBodies).size).toBe(1)
+
+    let genericFailureRequests = 0
+    const generic503Fetcher: typeof fetch = async (input, init) => {
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        genericFailureRequests += 1
+        return Response.json({ code: "service_unavailable" }, { status: 503 })
+      }
+      return fetch(input, init)
+    }
+    await expect(requestRustyIdentityCatalogAccess({ manager: offlineManager,
+      currentAuthorityView: authorityWithOfflineManager, profileState, applicationOrigin, fetcher: generic503Fetcher,
+    })).rejects.toThrow(/failed with HTTP 503/i)
+    expect(genericFailureRequests).toBe(1)
+
+    const guardedRequests: string[] = []
+    let currentChecks = 0
+    const guardedFetcher: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        guardedRequests.push(String(init.body))
+      }
+      return response
+    }
+    await expect(requestRustyIdentityCatalogAccess({ manager: offlineManager,
+      currentAuthorityView: authorityWithOfflineManager, profileState, applicationOrigin, fetcher: guardedFetcher,
+      ensureCurrent: () => { currentChecks += 1; if (currentChecks >= 3) throw new Error("Identity changed") },
+    })).rejects.toThrow("Identity changed")
+    expect(guardedRequests).toHaveLength(1)
+
+    let clockReads = 0
+    const expiryRequests: string[] = []
+    const expiryFetcher: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      if (new URL(String(input)).pathname === "/v2/identity/catalog-access/request" && init?.method === "POST") {
+        expiryRequests.push(String(init.body))
+      }
+      return response
+    }
+    const clock = Date.now()
+    await expect(requestRustyIdentityCatalogAccess({ manager: offlineManager,
+      currentAuthorityView: authorityWithOfflineManager, profileState, applicationOrigin, fetcher: expiryFetcher,
+      now: () => ++clockReads < 3 ? clock : clock + 120_001,
+    })).rejects.toThrow(/expired while waiting/i)
+    expect(expiryRequests).toHaveLength(1)
     const managerRequest = await createDeviceAuthorizationRequest(appKey, {
       applicationOrigin, challenge: "b".repeat(64), expiresAt: Date.now() + 90_000,
       personId: identity.identity.personId, includeIdentityCatalogAccess: true,
@@ -185,7 +320,7 @@ it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app de
     if (child) await stopRusty(child)
     await rm(stateDirectory, { recursive: true, force: true })
   }
-})
+}, 45_000)
 
 function createMemoryJournal(): {
   journal: IdentityCatalogAccessPublicationJournal
