@@ -88,9 +88,9 @@ export type OwnerReconnectSourceState = {
   workspaceAccessSnapshot: OwnerReconnectWorkspaceAccessSnapshot
   scopeAuthoritySnapshot: unknown
   grant: WorkspaceGrant
-  replicaConfig: OwnerReplicaConfig
+  replicaConfig?: OwnerReplicaConfig
   /** Original current-owner signature binding workspace and Rusty connection, retained for offline verification. */
-  ownerStorageProof: OwnerReconnectOwnerStorageProof
+  ownerStorageProof?: OwnerReconnectOwnerStorageProof
   history: OwnerReconnectHistorySource
 }
 
@@ -231,8 +231,8 @@ export type OwnerReconnectOffer = {
     workspaceAccessSnapshot: unknown
     scopeAuthoritySnapshot: unknown
     grant: WorkspaceGrant
-    replicaConfig: OwnerReplicaConfig
-    ownerStorageProof: OwnerReconnectOwnerStorageProof
+    replicaConfig?: OwnerReplicaConfig
+    ownerStorageProof?: OwnerReconnectOwnerStorageProof
   }
 }
 
@@ -243,7 +243,8 @@ export type VerifiedOwnerReconnectWorkspace = {
   workspaceAccessSnapshot: unknown
   scopeAuthoritySnapshot: unknown
   grant: WorkspaceGrant
-  replicaConfig: OwnerReplicaConfig
+  replicaConfig?: OwnerReplicaConfig
+  ownerStorageProof?: OwnerReconnectOwnerStorageProof
   sourcePersonId: string
   sourceDeviceId: string
   sourceRole: "editor" | "visitor"
@@ -332,11 +333,12 @@ export async function createOwnerReconnectChallenge(input: {
     throw new Error("Owner reconnect request does not match the current workspace owner")
   }
   const sourceRole = await verifySourceReadAccess(input.source, input.profile, sourceView, session.workspaceId, now)
+  const storage = ownerReconnectStorage(input.source)
   const expiresAt = earlierTime(Date.parse(session.expiresAt), Date.parse(input.hello.payload.expiresAt), now + maxLifetimeMs)
   return signEnvelope(input.profile.privateKeys.devicePrivateKey, {
     kind: "mesh-owner-reconnect-challenge", version: 1,
     invitationId: session.invitationId, workspaceId: session.workspaceId,
-    scopeId: input.source.replicaConfig.scopeId,
+    scopeId: storage?.replicaConfig.scopeId ?? session.workspaceId,
     ownerPersonId: ownerAuthority.personId, ownerPublicKey: ownerAuthority.publicKey,
     ownerDeviceId: input.hello.payload.ownerDeviceId,
     ownerDevicePublicKey: input.hello.payload.ownerDevicePublicKey,
@@ -448,15 +450,22 @@ export async function createOwnerReconnectOffer(input: {
       canonicalizeJson(input.source.grant) !== canonicalizeJson(input.challenge.payload.sourceWorkspaceAccessProof.grant)) {
     throw new Error("Owner reconnect source authority changed after challenge")
   }
-  validateReplicaConfig(input.source.replicaConfig, session.workspaceId, input.challenge.payload.scopeId)
+  const storage = ownerReconnectStorage(input.source)
+  if (storage) {
+    validateReplicaConfig(storage.replicaConfig, session.workspaceId, input.challenge.payload.scopeId)
+  } else if (input.challenge.payload.scopeId !== session.workspaceId) {
+    throw new Error("Owner reconnect challenge has an unexpected storage scope")
+  }
   const content = captureJson({
     workspace: input.source.workspace,
     workspaceAuthority: input.source.workspaceAuthority,
     workspaceAccessSnapshot: captureAccessSnapshot(input.source.workspaceAccessSnapshot),
     scopeAuthoritySnapshot: input.source.scopeAuthoritySnapshot,
     grant: input.source.grant,
-    replicaConfig: normalizeOwnerReplicaConfig(input.source.replicaConfig),
-    ownerStorageProof: input.source.ownerStorageProof,
+    ...(storage ? {
+      replicaConfig: normalizeOwnerReplicaConfig(storage.replicaConfig),
+      ownerStorageProof: storage.ownerStorageProof,
+    } : {}),
   })
   const contentDigest = await digest(content)
   const expiresAt = earlierTime(Date.parse(session.expiresAt), Date.parse(input.challenge.payload.expiresAt))
@@ -526,8 +535,8 @@ export async function verifyOwnerReconnectOffer(input: {
     workspaceAccessSnapshot: restoreAccessSnapshot(content.workspaceAccessSnapshot),
     scopeAuthoritySnapshot: content.scopeAuthoritySnapshot,
     grant: content.grant,
-    replicaConfig: content.replicaConfig,
-    ownerStorageProof: content.ownerStorageProof,
+    ...(Object.hasOwn(content, "replicaConfig") ? { replicaConfig: content.replicaConfig } : {}),
+    ...(Object.hasOwn(content, "ownerStorageProof") ? { ownerStorageProof: content.ownerStorageProof } : {}),
     history: unavailableHistorySource(),
   } as OwnerReconnectSourceState
   await verifySourceReadAccess(source, { identity: { personId: payload.sourcePersonId, publicKey: sourceView.identityPublicKey },
@@ -542,13 +551,19 @@ export async function verifyOwnerReconnectOffer(input: {
     throw new Error("Owner reconnect workspace history differs from the current scope controller")
   }
   validateOwnerWorkspace(source.workspace, session.workspaceId, scope.controller.personId)
-  validateReplicaConfig(source.replicaConfig, session.workspaceId, payload.scopeId)
+  const storage = ownerReconnectStorage(source)
+  if (storage) {
+    validateReplicaConfig(storage.replicaConfig, session.workspaceId, payload.scopeId)
+  } else if (payload.scopeId !== session.workspaceId) {
+    throw new Error("Owner reconnect offer has an unexpected storage scope")
+  }
   validateCausalWorkspace(source.workspace, source.workspaceAuthority, source.workspaceAccessSnapshot,
     input.knownWorkspaceAuthority, session.workspaceId, now)
   return {
     workspaceId: session.workspaceId, workspace: source.workspace, workspaceAuthority: source.workspaceAuthority,
     workspaceAccessSnapshot: source.workspaceAccessSnapshot, scopeAuthoritySnapshot: source.scopeAuthoritySnapshot,
-    grant: source.grant, replicaConfig: source.replicaConfig, sourcePersonId: payload.sourcePersonId,
+    grant: source.grant, ...(storage ? { replicaConfig: storage.replicaConfig, ownerStorageProof: storage.ownerStorageProof } : {}),
+    sourcePersonId: payload.sourcePersonId,
     sourceDeviceId: payload.sourceDeviceId, sourceRole: source.grant.payload.role as "editor" | "visitor",
     offerDigest: await digest(input.offer),
   }
@@ -747,15 +762,18 @@ async function verifyApprovalForChallenge(approval: OwnerReconnectApproval, chal
 async function verifySourceReadAccess(source: OwnerReconnectSourceState, profile: LocalProfile,
   identityView: IdentityAuthorityView, workspaceId: string, now: number): Promise<"editor" | "visitor"> {
   validateOwnerWorkspace(source.workspace, workspaceId, source.workspaceAuthority.authority.currentOwner.personId)
-  const config = source.replicaConfig
-  if (config.workspaceId !== workspaceId) throw new Error("Owner reconnect source workspace config mismatch")
+  const storage = ownerReconnectStorage(source)
+  if (storage && storage.replicaConfig.workspaceId !== workspaceId) throw new Error("Owner reconnect source workspace config mismatch")
   const owner = source.workspaceAuthority.authority.currentOwner
   const scope = validateCurrentScope(source.scopeAuthoritySnapshot, workspaceId, now)
   if (scope.scopeId !== workspaceId || scope.controller.personId !== owner.personId || scope.controller.publicKey !== owner.publicKey) {
     throw new Error("Rusty scope controller differs from current workspace owner")
   }
-  await verifyOwnerStorageProof(source.ownerStorageProof, source.replicaConfig, source.scopeAuthoritySnapshot,
-    source.workspaceAuthority.authority, workspaceId, owner)
+  if (storage) {
+    validateReplicaConfig(storage.replicaConfig, workspaceId, storage.replicaConfig.scopeId)
+    await verifyOwnerStorageProof(storage.ownerStorageProof, storage.replicaConfig, source.scopeAuthoritySnapshot,
+      source.workspaceAuthority.authority, workspaceId, owner)
+  }
   const grant = source.grant
   if (!grant || grant.payload.workspaceId !== workspaceId || grant.payload.personId !== profile.identity.personId ||
       (grant.payload.role !== "editor" && grant.payload.role !== "visitor")) {
@@ -780,6 +798,24 @@ async function verifySourceReadAccess(source: OwnerReconnectSourceState, profile
     departures: (source.workspaceAuthority.authority.departures ?? []) as unknown[] }, now)
   if (role !== grant.payload.role) throw new Error("Owner reconnect source has no current workspace read access")
   return role
+}
+
+function ownerReconnectStorage(source: { replicaConfig?: unknown; ownerStorageProof?: unknown }):
+  { replicaConfig: OwnerReplicaConfig; ownerStorageProof: OwnerReconnectOwnerStorageProof } | undefined {
+  const hasConfig = Object.hasOwn(source, "replicaConfig")
+  const hasProof = Object.hasOwn(source, "ownerStorageProof")
+  if (hasConfig !== hasProof) {
+    throw new Error("Owner reconnect replica config and storage proof must be supplied together")
+  }
+  if (!hasConfig) return undefined
+
+  const replicaConfig = source.replicaConfig
+  const ownerStorageProof = source.ownerStorageProof
+  if (!replicaConfig || typeof replicaConfig !== "object" || Array.isArray(replicaConfig) ||
+      !ownerStorageProof || typeof ownerStorageProof !== "object" || Array.isArray(ownerStorageProof)) {
+    throw new Error("Invalid owner reconnect storage payload")
+  }
+  return { replicaConfig: replicaConfig as OwnerReplicaConfig, ownerStorageProof: ownerStorageProof as OwnerReconnectOwnerStorageProof }
 }
 
 function verifyOwnerMembershipProof(authority: OwnerReconnectAuthority, grant: WorkspaceGrant,

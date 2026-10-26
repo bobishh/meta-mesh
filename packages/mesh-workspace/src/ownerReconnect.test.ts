@@ -6,8 +6,9 @@ import { createOwnerReconnectInvite } from "@meta-uber/mesh-pairing"
 import type { WorkspaceAuthority } from "./index"
 import {
   createOwnerReconnectApproval, createOwnerReconnectChallenge, createOwnerReconnectHello,
-  createOwnerReconnectOffer, ownerReconnectAuthenticatedPeer, verifyOwnerReconnectOffer,
-  type OwnerReconnectSession, type OwnerReconnectSourceState,
+  createOwnerReconnectOffer, decodeOwnerReconnectMessage, encodeOwnerReconnectMessage,
+  ownerReconnectAuthenticatedPeer, verifyOwnerReconnectOffer,
+  type OwnerReconnectOffer, type OwnerReconnectSession, type OwnerReconnectSourceState,
 } from "./ownerReconnect"
 
 const authority = (profile: LocalProfile): WorkspaceAuthority => ({ personId: profile.identity.personId,
@@ -83,6 +84,87 @@ async function fixture() {
 }
 
 describe("identity-authorized owner reconnect proof", () => {
+  it("Given an authorized participant copy without Rusty credentials, when owner receives the serialized offer, then verify and return the exact board without storage fields", async () => {
+    const f = await fixture()
+    const source = { ...f.sourceState } as Partial<OwnerReconnectSourceState>
+    delete source.replicaConfig
+    delete source.ownerStorageProof
+    const sourceState = source as OwnerReconnectSourceState
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    const challenge = await createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: sourceState, sourceEndpointId: "source-endpoint" })
+    const approval = await createOwnerReconnectApproval({ session: f.session, hello, challenge, profile: f.owner,
+      authorityView: f.ownerView })
+    const offer = await createOwnerReconnectOffer({ session: f.session, hello, challenge, approval, profile: f.source,
+      authorityView: f.sourceView, source: sourceState, sourceEndpointId: "source-endpoint" })
+    const received = decodeOwnerReconnectMessage(encodeOwnerReconnectMessage(offer)) as OwnerReconnectOffer
+
+    expect(Object.hasOwn(received.content, "replicaConfig")).toBe(false)
+    expect(Object.hasOwn(received.content, "ownerStorageProof")).toBe(false)
+    const verified = await verifyOwnerReconnectOffer({ session: f.session, hello, challenge, approval, offer: received,
+      profile: f.owner, authorityView: f.ownerView, ownerEndpointId: "owner-ephemeral-endpoint" })
+
+    expect(verified.workspace).toEqual(f.sourceState.workspace)
+    expect(Object.hasOwn(verified, "replicaConfig")).toBe(false)
+    expect(Object.hasOwn(verified, "ownerStorageProof")).toBe(false)
+  })
+
+  it("Given only one Rusty storage field or a forged owner proof, when source authorization is checked, then reject before creating the offer", async () => {
+    const f = await fixture()
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    const missingProof = { ...f.sourceState } as Partial<OwnerReconnectSourceState>
+    delete missingProof.ownerStorageProof
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: missingProof as OwnerReconnectSourceState, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/must be supplied together/i)
+
+    const missingConfig = { ...f.sourceState } as Partial<OwnerReconnectSourceState>
+    delete missingConfig.replicaConfig
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: missingConfig as OwnerReconnectSourceState, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/must be supplied together/i)
+
+    const forged = { ...f.sourceState, ownerStorageProof: { ...f.sourceState.ownerStorageProof!,
+      authorization: { ...f.sourceState.ownerStorageProof!.authorization, signature: toBase64Url(new Uint8Array(64)) } } }
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: forged, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/not signed by a current owner device/i)
+  })
+
+  it("Given a source-signed offer, when one storage field is removed or its owner proof is forged, then receiver rejects instead of downgrading", async () => {
+    const f = await fixture()
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    const challenge = await createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: f.sourceState, sourceEndpointId: "source-endpoint" })
+    const approval = await createOwnerReconnectApproval({ session: f.session, hello, challenge, profile: f.owner,
+      authorityView: f.ownerView })
+    const offer = await createOwnerReconnectOffer({ session: f.session, hello, challenge, approval, profile: f.source,
+      authorityView: f.sourceView, source: f.sourceState, sourceEndpointId: "source-endpoint" })
+    const resign = async (content: OwnerReconnectOffer["content"]): Promise<OwnerReconnectOffer> => {
+      const contentDigest = await sha256Base64Url(new TextEncoder().encode(canonicalizeJson(content)))
+      const envelope = await signEnvelope(f.source.privateKeys.devicePrivateKey,
+        { ...offer.envelope.payload, contentDigest }, f.source.device.deviceId, "MESH-OWNER-RECONNECT/1")
+      return { envelope: envelope as OwnerReconnectOffer["envelope"], content }
+    }
+
+    const oneSidedContent = { ...offer.content }
+    delete oneSidedContent.ownerStorageProof
+    const oneSided = await resign(oneSidedContent)
+    await expect(verifyOwnerReconnectOffer({ session: f.session, hello, challenge, approval, offer: oneSided,
+      profile: f.owner, authorityView: f.ownerView, ownerEndpointId: "owner-ephemeral-endpoint" }))
+      .rejects.toThrow(/must be supplied together/i)
+
+    const forgedContent = { ...offer.content, ownerStorageProof: { ...offer.content.ownerStorageProof!,
+      authorization: { ...offer.content.ownerStorageProof!.authorization, signature: toBase64Url(new Uint8Array(64)) } } }
+    const forged = await resign(forgedContent)
+    await expect(verifyOwnerReconnectOffer({ session: f.session, hello, challenge, approval, offer: forged,
+      profile: f.owner, authorityView: f.ownerView, ownerEndpointId: "owner-ephemeral-endpoint" }))
+      .rejects.toThrow(/not signed by a current owner device/i)
+  })
+
   it("Given a participant-held existing workspace, when current owner approves, then only post-approval offer carries owner config and native causal proof admits it", async () => {
     const f = await fixture()
     const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
@@ -106,10 +188,10 @@ describe("identity-authorized owner reconnect proof", () => {
     expect(verified).toMatchObject({ workspaceId: f.workspaceId, sourcePersonId: f.source.identity.personId,
       sourceDeviceId: f.source.device.deviceId, sourceRole: "editor" })
     expect(verified.workspace).toEqual(f.sourceState.workspace)
-    expect(verified.replicaConfig.writeToken).toBe("owner-write")
-    expect(verified.replicaConfig.scopeId).toBe("existing-rusty-scope")
-    expect(verified.replicaConfig.workspaceId).toBe("existing-job-workspace")
-    expect(verified.replicaConfig.purpose).toBe("workspace")
+    expect(verified.replicaConfig!.writeToken).toBe("owner-write")
+    expect(verified.replicaConfig!.scopeId).toBe("existing-rusty-scope")
+    expect(verified.replicaConfig!.workspaceId).toBe("existing-job-workspace")
+    expect(verified.replicaConfig!.purpose).toBe("workspace")
     expect(verified.replicaConfig).not.toHaveProperty("cursor")
     expect(verified.replicaConfig).not.toHaveProperty("lastUploaded")
     expect(verified.replicaConfig).not.toHaveProperty("boardAccess")
@@ -146,9 +228,9 @@ describe("identity-authorized owner reconnect proof", () => {
     const f = await fixture()
     const changedSource = { ...f.sourceState, scopeAuthoritySnapshot: structuredClone(f.sourceState.scopeAuthoritySnapshot) }
     const changedSnapshot = changedSource.scopeAuthoritySnapshot as { genesis: { payload: { scopeId: string } } }
-    changedSnapshot.genesis.payload.scopeId = changedSource.replicaConfig.scopeId
+    changedSnapshot.genesis.payload.scopeId = changedSource.replicaConfig!.scopeId
     const invalidSnapshot = await signEnvelope(f.owner.privateKeys.devicePrivateKey, { kind: "scope-genesis", version: 1,
-      scopeId: f.sourceState.replicaConfig.scopeId,
+      scopeId: f.sourceState.replicaConfig!.scopeId,
       creator: authority(f.owner), controlEpoch: 1 }, f.owner.device.deviceId)
     changedSnapshot.genesis = invalidSnapshot
     await expect(createOwnerReconnectChallenge({ session: f.session,
@@ -165,7 +247,7 @@ describe("identity-authorized owner reconnect proof", () => {
       authorityView: f.sourceView, source: f.sourceState, sourceEndpointId: "source-endpoint" })
     const approval = await createOwnerReconnectApproval({ session: f.session, hello, challenge, profile: f.owner,
       authorityView: f.ownerView })
-    const changedSource = { ...f.sourceState, replicaConfig: { ...f.sourceState.replicaConfig } }
+    const changedSource = { ...f.sourceState, replicaConfig: { ...f.sourceState.replicaConfig! } }
     changedSource.replicaConfig.scopeId = "another-opaque-scope"
     await expect(createOwnerReconnectOffer({ session: f.session, hello, challenge, approval, profile: f.source,
       authorityView: f.sourceView, source: changedSource, sourceEndpointId: "source-endpoint" })).rejects.toThrow(/storage proof/i)

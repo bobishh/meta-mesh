@@ -15,15 +15,21 @@ a device or transfer ownership.
 
 The host supplies its current profile/authority, exact workspace and expected
 owner, and a domain `readSource` callback. The callback returns existing signed
-workspace/history/storage evidence and bounded history readers. The runtime owns
+workspace/history evidence, optional paired Rusty config and owner proof, and
+bounded history readers. The runtime owns
 one ephemeral transport endpoint, invitation framing, signatures, endpoint
 bindings, expiry and candidate cleanup. An unrelated Identity is rejected before
 `readSource` and does not consume the unexpired invitation.
 
 The receiver supplies its current verified profile, an approval callback and a
 `commit(verified, history)` callback. Only an SDK-verified challenge reaches
-approval; board and storage data arrive after approval. The SDK independently
-validates the offer and original owner storage binding before invoking commit.
+approval; board and storage data arrive after approval. The SDK verifies the
+source's current read grant and complete causal history independently of Rusty.
+Rusty config and its owner-signed storage proof may both be absent; if either is
+present, both are required and the SDK verifies their exact binding before
+invoking commit. One-sided or invalid storage data rejects. A missing storage
+pair does not create Rusty access; it allows returning the verified workspace
+copy without Rusty availability.
 The app uses its existing causal admission/history reader and durable storage,
 registers the same workspace in the owner's catalog and commits idempotently by
 verified offer digest. A receipt follows successful commit; commit failure must

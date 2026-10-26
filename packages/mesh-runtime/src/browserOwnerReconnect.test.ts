@@ -192,6 +192,30 @@ describe("browser owner reconnect transport", () => {
     await host.close()
   })
 
+  it("Given an authorized participant copy without Rusty credentials, when the owner reconnects, then complete the framed flow without storage fields", async () => {
+    const f = await sourceFixture()
+    const source = { ...f.state } as Partial<OwnerReconnectSourceState>
+    delete source.replicaConfig
+    delete source.ownerStorageProof
+    const sourceState = source as OwnerReconnectSourceState
+    const host = await startBrowserOwnerReconnectHost({ profile: f.source, authorityView: f.sourceView,
+      origin: "https://app.example", workspaceId: f.workspaceId,
+      expectedOwner: { personId: f.owner.identity.personId, publicKey: f.owner.identity.publicKey }, readSource: async () => sourceState })
+    const commit = vi.fn(async verified => {
+      expect(verified.workspace).toEqual(f.state.workspace)
+      expect(Object.hasOwn(verified, "replicaConfig")).toBe(false)
+      expect(Object.hasOwn(verified, "ownerStorageProof")).toBe(false)
+    })
+
+    const result = await connectBrowserOwnerReconnect({ invitation: host.invitation, profile: f.owner, authorityView: f.ownerView,
+      approve: async intent => intent.workspaceId === f.workspaceId && intent.scopeId === f.workspaceId, commit })
+    await host.done
+
+    expect(result.workspaceId).toBe(f.workspaceId)
+    expect(commit).toHaveBeenCalledOnce()
+    await host.close()
+  })
+
   it("Given an unapproved owner request, when approval declines, then host never reads workspace source", async () => {
     const f = await sourceFixture()
     const readSource = vi.fn(async () => f.state)
