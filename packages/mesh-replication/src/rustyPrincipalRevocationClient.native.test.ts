@@ -6,7 +6,9 @@ import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it } from "vitest"
 import {
+  certificateHash,
   createIdentityAuthorityView,
+  createIdentityEnrollmentDevice,
   createRecoverableIdentity,
   emptyIdentityProfileState,
   publicKeyId,
@@ -18,12 +20,119 @@ import { createRustyScopeEnrollmentClient, type RustyScopeEnrollmentJournal } fr
 import { publishRustyScopeAuthoritySnapshot, type ScopeAuthorityValidation } from "./rustyScopeAuthorityClient"
 import { createRustyIdentityRequestProof } from "./rustyIdentityRequestProof"
 import { meshRustRuntime } from "./runtime"
-import { registerRustyResourcePrincipalGrant, type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
+import { registerRustyResourcePrincipalGrant, type RustyResourcePrincipalGrant,
+  type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
 import { revokeRustyResourcePrincipal } from "./rustyPrincipalRevocationClient"
 import { classifyRustyPersonIdentityScope } from "./rustyScopePurposeClient"
-import { createIdentityEnrollmentDevice } from "../../mesh-identity/src/identityEnrollment"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
+
+it.skipIf(!rustyBinary)("Given a current Identity device absent from immutable scope genesis, When it registers or revokes a resource principal, Then Rusty authorizes it through the current Identity view", async () => {
+  const owner = (await createRecoverableIdentity("better", "Legacy scope owner")).profile
+  const subject = (await createRecoverableIdentity("better", "Resource principal subject")).profile
+  const oldDevice = await createIdentityEnrollmentDevice("Original workspace controller")
+  const currentDevice = await createIdentityEnrollmentDevice("Current Identity device")
+  const oldCertificate = await signEnvelope(owner.privateKeys.devicePrivateKey, {
+    kind: "device-certificate" as const, version: 1 as const, personId: owner.identity.personId,
+    deviceId: oldDevice.device.deviceId, devicePublicKey: oldDevice.device.publicKey,
+    issuerCertificateHash: await certificateHash(owner.certificate), canEnrollDevices: false,
+  }, owner.device.deviceId, "MATCH/1")
+  const currentCertificate = await signEnvelope(owner.privateKeys.devicePrivateKey, {
+    kind: "device-certificate" as const, version: 1 as const, personId: owner.identity.personId,
+    deviceId: currentDevice.device.deviceId, devicePublicKey: currentDevice.device.publicKey,
+    issuerCertificateHash: await certificateHash(owner.certificate), canEnrollDevices: false,
+  }, owner.device.deviceId, "MATCH/1")
+  const authorityView = await createIdentityAuthorityView(owner.identity,
+    { certificates: [owner.certificate, oldCertificate, currentCertificate], revocations: [] },
+    emptyIdentityProfileState(owner.identity.personId))
+  const stateDirectory = await mkdtemp(resolve(tmpdir(), "mesh-resource-principal-current-device-"))
+  const port = await unusedLoopbackPort()
+  const origin = `http://127.0.0.1:${port}`
+  const storageScopeId = `scope-${crypto.randomUUID()}`
+  const workspaceId = `workspace-${crypto.randomUUID()}`
+  const readToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
+  const writeToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
+  let child: ChildProcess | undefined
+  let registrationResponse: { status: number; body: string } | undefined
+  let revocationResponse: { status: number; body: string } | undefined
+  try {
+    child = await startRusty(owner, stateDirectory, port)
+    const service = await discoverRustyService(origin)
+    const signOwner = <T extends { kind: string }>(payload: T) => signEnvelope(
+      owner.privateKeys.devicePrivateKey, payload, owner.device.deviceId, "MATCH/1")
+    const signCurrentDevice = <T extends { kind: string }>(payload: T) => signEnvelope(
+      currentDevice.privateKey, payload, currentDevice.device.deviceId, "MATCH/1")
+    await publishRustyIdentityAuthorityView({ origin, servicePublicKey: service.servicePublicKey,
+      identity: owner.identity, deviceId: owner.device.deviceId, devicePublicKey: owner.device.publicKey,
+      view: authorityView, signAuthorization: signOwner })
+
+    const enrollment = createRustyScopeEnrollmentClient({
+      scopePurpose: "workspace",
+      access: { origin, scopeId: storageScopeId, servicePublicKey: service.servicePublicKey, readToken, writeToken },
+      identity: owner.identity, deviceId: owner.device.deviceId, devicePublicKey: owner.device.publicKey,
+      certificates: [owner.certificate], ensureCurrent: () => {}, getManagementCapability: async () => undefined,
+      ensureManagementCurrent: () => {}, signAuthorization: signOwner, journal: createMemoryEnrollmentJournal(),
+    })
+    await enrollment.enroll({ minimumWriterVersion: 2, allowLegacyUnmanagedScope: true })
+    const scopeAuthority = {
+      genesis: await signEnvelope(oldDevice.privateKey, {
+        kind: "scope-genesis", version: 1, scopeId: workspaceId,
+        creator: { personId: owner.identity.personId, publicKey: owner.identity.publicKey,
+          certificates: [owner.certificate, oldCertificate] }, controlEpoch: 1,
+      }, oldDevice.device.deviceId, "MATCH/1"),
+    }
+    const validateSnapshot = (snapshot: unknown): ScopeAuthorityValidation => {
+      const validated = meshRustRuntime().state.validateScopeAuthority(snapshot, Date.now()) as {
+        scopeId: string; controller: { personId: string; publicKey: string }; controlEpoch: number
+      }
+      return { workspaceId: validated.scopeId, controllerPersonId: validated.controller.personId,
+        controllerPublicKey: validated.controller.publicKey, controlEpoch: validated.controlEpoch, snapshot }
+    }
+    await publishRustyScopeAuthoritySnapshot({ origin, servicePublicKey: service.servicePublicKey,
+      scopeId: storageScopeId, workspaceId, identity: owner.identity, authorityView,
+      deviceId: currentDevice.device.deviceId, devicePublicKey: currentDevice.device.publicKey,
+      scopeAuthority, validateSnapshot, mergeSnapshots: (_stored, incoming) => incoming,
+      signAuthorization: signCurrentDevice })
+
+    const grantId = "legacy-controller-editor-grant"
+    const membership = await signEnvelope(oldDevice.privateKey, {
+      kind: "workspace-grant" as const, version: 1 as const, grantId, workspaceId, personId: subject.identity.personId,
+      role: "editor" as const, accessEpoch: 1,
+    }, oldDevice.device.deviceId, "MATCH/1")
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fetch(input, init)
+      const path = new URL(String(input)).pathname
+      if (init?.method === "PUT" && path.includes("/principals/") && path.endsWith("/revocation")) {
+        revocationResponse = { status: response.status, body: await response.clone().text() }
+      } else if (init?.method === "PUT" && path.includes("/principals/")) {
+        registrationResponse = { status: response.status, body: await response.clone().text() }
+      }
+      return response
+    }
+    const registration = await registerRustyResourcePrincipalGrant({
+      origin, servicePublicKey: service.servicePublicKey, storageScopeId, workspaceId,
+      expectedScopeAuthoritySnapshot: scopeAuthority, identity: owner.identity, authorityView,
+      deviceId: currentDevice.device.deviceId, devicePublicKey: currentDevice.device.publicKey,
+      subjectIdentity: subject.identity, workspaceGrant: membership, readToken, writeToken, fetcher,
+      ensureCurrent: () => {}, validateSnapshot,
+      signAuthorization: payload => signCurrentDevice(payload as RustyResourcePrincipalGrant["payload"]),
+    })
+    expect(registration.principalGrant.payload.grantId).toBe(grantId)
+    expect(registrationResponse?.status).toBe(204)
+
+    const revocation = await revokeRustyResourcePrincipal({ origin, servicePublicKey: service.servicePublicKey,
+      storageScopeId, workspaceId, grantId, subjectPersonId: subject.identity.personId, policyEpoch: 1,
+      identity: owner.identity, authorityView, deviceId: currentDevice.device.deviceId,
+      devicePublicKey: currentDevice.device.publicKey, fetcher, validateSnapshot,
+      signAuthorization: signCurrentDevice,
+    })
+    expect(revocation.payload.grantId).toBe(grantId)
+    expect(revocationResponse?.status).toBe(200)
+  } finally {
+    if (child) await stopRusty(child)
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
 
 it.skipIf(!rustyBinary)("Given strict Rusty and mixed-case certified device IDs, When the SDK revokes a principal, Then Rusty accepts the authority view and returns the same durable receipt after restart", async () => {
   const profile = (await createRecoverableIdentity("better", "Revocation contract owner")).profile
