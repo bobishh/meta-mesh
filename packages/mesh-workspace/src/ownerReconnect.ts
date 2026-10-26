@@ -86,7 +86,7 @@ export type OwnerReconnectMeshEnvelope = {
   workspaceId: string
   ownerPersonId: string
   ownerPublicKey: string
-  ownerCertificates: DeviceCertificate[]
+  ownerCertificates: unknown[]
   transportSecret: string
   epoch: number
   peers: unknown[]
