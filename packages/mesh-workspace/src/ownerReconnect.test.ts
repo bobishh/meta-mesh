@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { BrowserIdentityStore, canonicalizeJson, createIdentityAuthorityView, emptyIdentityProfileState,
   sha256Base64Url, signEnvelope, toBase64Url, type LocalProfile } from "@meta-uber/mesh-identity"
 import { createOwnerReconnectInvite } from "@meta-uber/mesh-pairing"
-import type { WorkspaceAuthority } from "./index"
+import { createPeerAdvertisement, type WorkspaceAuthority } from "./index"
 import {
   createOwnerReconnectApproval, createOwnerReconnectChallenge, createOwnerReconnectHello,
   createOwnerReconnectOffer, decodeOwnerReconnectMessage, encodeOwnerReconnectMessage,
@@ -54,6 +54,13 @@ async function fixture() {
     emptyIdentityProfileState(owner.identity.personId))
   const sourceView = await createIdentityAuthorityView(source.identity, { certificates: [source.certificate], revocations: [] },
     emptyIdentityProfileState(source.identity.personId))
+  const persistentSourceBundle = await createPeerAdvertisement(source, workspaceId, "iroh://ray-persistent-route", {
+    instanceId: "ray-workspace-instance", grant, ownerPublicKey: owner.identity.publicKey,
+    ownerCertificates: [owner.certificate],
+  })
+  const meshEnvelope = { version: 1 as const, workspaceId, ownerPersonId: owner.identity.personId,
+    ownerPublicKey: owner.identity.publicKey, ownerCertificates: [owner.certificate], transportSecret: "shared-workspace-secret",
+    epoch: 1, peers: [persistentSourceBundle], scopeAuthoritySnapshot }
   const replicaConfig = { purpose: "workspace" as const, origin: "https://rusty.example", scopeId, servicePublicKey: "service", readToken: "owner-read",
     writeToken: "owner-write", policyRevision: 1, workspaceId, keyEpoch: 1, contentKey: toBase64Url(new Uint8Array(32).fill(7)),
     cursor: 0, lastUploaded: "", preferenceRevision: "peer:1" }
@@ -70,6 +77,7 @@ async function fixture() {
       document: changedBytes, ownershipTransfers: [], successionClaims: [], revocations: [], deviceRevocations: [], departures: [] },
     scopeAuthoritySnapshot,
     grant,
+    meshEnvelope,
     replicaConfig,
     ownerStorageProof: { authorization: ownerStorageAuthorization, certificates: [owner.certificate] },
     history: { readBaseline: async () => undefined, readDocument: async () => undefined, readObject: async () => undefined },
@@ -102,12 +110,67 @@ describe("identity-authorized owner reconnect proof", () => {
 
     expect(Object.hasOwn(received.content, "replicaConfig")).toBe(false)
     expect(Object.hasOwn(received.content, "ownerStorageProof")).toBe(false)
+    expect(received.content.meshEnvelope).toEqual(f.sourceState.meshEnvelope)
     const verified = await verifyOwnerReconnectOffer({ session: f.session, hello, challenge, approval, offer: received,
       profile: f.owner, authorityView: f.ownerView, ownerEndpointId: "owner-ephemeral-endpoint" })
 
     expect(verified.workspace).toEqual(f.sourceState.workspace)
     expect(Object.hasOwn(verified, "replicaConfig")).toBe(false)
     expect(Object.hasOwn(verified, "ownerStorageProof")).toBe(false)
+    expect(verified.meshEnvelope).toEqual(f.sourceState.meshEnvelope)
+  })
+
+  it("Given a current read grant, when the source lacks a persistent mesh invitation route, then reject before approval", async () => {
+    const f = await fixture()
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    const source = { ...f.sourceState, meshEnvelope: { ...f.sourceState.meshEnvelope, peers: [] } }
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/persistent workspace route/i)
+  })
+
+  it("Given a read-authorized source, when the durable mesh invitation is missing or names another owner, then reject before approval", async () => {
+    const f = await fixture()
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    const missingEnvelope = { ...f.sourceState, meshEnvelope: undefined as unknown as OwnerReconnectSourceState["meshEnvelope"] }
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: missingEnvelope, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/durable mesh invitation/i)
+
+    const changedOwner = { ...f.sourceState, meshEnvelope: { ...f.sourceState.meshEnvelope, ownerPersonId: "another-owner" } }
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source: changedOwner, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/durable mesh invitation/i)
+  })
+
+  it("Given a reconnect invitation endpoint, when it is reused as the source advertisement, then reject the one-shot route", async () => {
+    const f = await fixture()
+    const oneShot = await createPeerAdvertisement(f.source, f.workspaceId, "source-endpoint", {
+      instanceId: "ray-workspace-instance", grant: f.sourceState.grant,
+      ownerPublicKey: f.owner.identity.publicKey, ownerCertificates: [f.owner.certificate],
+    })
+    const source = { ...f.sourceState, meshEnvelope: { ...f.sourceState.meshEnvelope, peers: [oneShot] } }
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source, sourceEndpointId: "source-endpoint" }))
+      .rejects.toThrow(/persistent workspace route/i)
+  })
+
+  it("Given the right source endpoint, when its peer bundle carries another member's grant, then reject the invitation", async () => {
+    const f = await fixture()
+    const unrelatedGrant = await (await import("./index")).createWorkspaceGrant(f.owner, f.workspaceId, "another-member", "editor")
+    const mismatchedBundle = await createPeerAdvertisement(f.source, f.workspaceId, "iroh://ray-persistent-route", {
+      instanceId: "ray-workspace-instance", grant: unrelatedGrant,
+      ownerPublicKey: f.owner.identity.publicKey, ownerCertificates: [f.owner.certificate],
+    })
+    const source = { ...f.sourceState, meshEnvelope: { ...f.sourceState.meshEnvelope, peers: [mismatchedBundle] } }
+    const hello = await createOwnerReconnectHello({ session: f.session, profile: f.owner, authorityView: f.ownerView,
+      endpointId: "owner-ephemeral-endpoint" })
+    await expect(createOwnerReconnectChallenge({ session: f.session, hello, profile: f.source,
+      authorityView: f.sourceView, source, sourceEndpointId: "source-endpoint" })).rejects.toThrow()
   })
 
   it("Given only one Rusty storage field or a forged owner proof, when source authorization is checked, then reject before creating the offer", async () => {

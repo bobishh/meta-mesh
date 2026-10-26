@@ -2,7 +2,7 @@ import * as Automerge from "@automerge/automerge"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { BrowserIdentityStore, createIdentityAuthorityView, emptyIdentityProfileState, sha256Base64Url, signEnvelope, toBase64Url,
   type LocalProfile } from "@meta-uber/mesh-identity"
-import { createWorkspaceGrant, type OwnerReconnectSourceState, type WorkspaceAuthority } from "@meta-uber/mesh-workspace"
+import { createPeerAdvertisement, createWorkspaceGrant, type OwnerReconnectSourceState, type WorkspaceAuthority } from "@meta-uber/mesh-workspace"
 import { installPairingCodec } from "@meta-uber/mesh-pairing"
 
 const runtime = vi.hoisted(() => ({ BrowserNode: { start: vi.fn() }, WasmIngressBudgetProfile: class {} as any }))
@@ -96,9 +96,16 @@ async function sourceFixture() {
     emptyIdentityProfileState(source.identity.personId))
   const ownerView = await createIdentityAuthorityView(owner.identity, { certificates: [owner.certificate], revocations: [] },
     emptyIdentityProfileState(owner.identity.personId))
+  const persistentSourceBundle = await createPeerAdvertisement(source, workspaceId, "iroh://source-persistent-route", {
+    instanceId: "source-workspace-instance", grant, ownerPublicKey: owner.identity.publicKey,
+    ownerCertificates: [owner.certificate],
+  })
   const scopeAuthoritySnapshot = { genesis: await signEnvelope(owner.privateKeys.devicePrivateKey, { kind: "scope-genesis", version: 1,
     scopeId: workspaceId, creator: ownerRecord, controlEpoch: 1 }, owner.device.deviceId), grants: [], grantIssuers: [], revocations: [],
     controlTransfers: [], successionTransfers: [] }
+  const meshEnvelope = { version: 1 as const, workspaceId, ownerPersonId: owner.identity.personId,
+    ownerPublicKey: owner.identity.publicKey, ownerCertificates: [owner.certificate], transportSecret: "shared-workspace-secret",
+    epoch: 1, peers: [persistentSourceBundle], scopeAuthoritySnapshot }
   const replicaConfig = { purpose: "workspace" as const, origin: "https://rusty.example", scopeId, servicePublicKey: "service", readToken: "read-owner",
     writeToken: "write-owner", policyRevision: 1, workspaceId, keyEpoch: 1, contentKey: toBase64Url(new Uint8Array(32).fill(4)),
     cursor: 0, lastUploaded: "" }
@@ -114,7 +121,7 @@ async function sourceFixture() {
       deviceRevocations: [], departures: [] } },
     workspaceAccessSnapshot: { workspaceId, genesisOwner: ownerRecord, genesisEpoch: 1, expectedCurrentOwner: ownerRecord,
       document, ownershipTransfers: [], successionClaims: [], revocations: [], deviceRevocations: [], departures: [] },
-    scopeAuthoritySnapshot, grant,
+    scopeAuthoritySnapshot, grant, meshEnvelope,
     replicaConfig,
     ownerStorageProof: { authorization: ownerStorageAuthorization, certificates: [owner.certificate] },
     history: { readBaseline: async () => undefined, readDocument: async () => undefined, readObject: async () => undefined },
@@ -184,6 +191,7 @@ describe("browser owner reconnect transport", () => {
       commit: async (verified, history) => {
         committed.push(verified.offerDigest)
         expect(verified.workspace).toEqual(f.state.workspace)
+        expect(verified.meshEnvelope).toEqual(f.state.meshEnvelope)
         expect(await history.readBaseline(f.workspaceId)).toBeUndefined()
       } })
     await host.done
@@ -203,6 +211,7 @@ describe("browser owner reconnect transport", () => {
       expectedOwner: { personId: f.owner.identity.personId, publicKey: f.owner.identity.publicKey }, readSource: async () => sourceState })
     const commit = vi.fn(async verified => {
       expect(verified.workspace).toEqual(f.state.workspace)
+      expect(verified.meshEnvelope).toEqual(f.state.meshEnvelope)
       expect(Object.hasOwn(verified, "replicaConfig")).toBe(false)
       expect(Object.hasOwn(verified, "ownerStorageProof")).toBe(false)
     })

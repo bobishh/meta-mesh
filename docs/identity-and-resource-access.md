@@ -185,6 +185,13 @@ An existing historical connection may be used as signed evidence in this exchang
 this does not change ordinary Rusty network authorization or issue a new principal.
 A source lacking the required scoped key material reports it unavailable.
 
+The signed offer also carries the source's existing DurableMesh invitation
+envelope. The SDK verifies its current owner, source grant and persistent source
+route. The application receives that envelope through its existing invitation
+path so the restored workspace retains its shared transport secret and peer
+contacts; it must not mint a replacement secret or substitute the one-shot
+reconnect endpoint.
+
 SDK framing and existing bounded history readers carry the verified snapshot,
 archive data and scoped configuration. The application admits and durably saves
 them under the same workspace ID, registers that owner's catalog and activates

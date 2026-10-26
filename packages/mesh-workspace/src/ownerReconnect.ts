@@ -80,6 +80,27 @@ export type OwnerReconnectWorkspaceAccessSnapshot = {
   departures: unknown[]
 }
 
+/** Existing DurableMesh invitation payload, carried intact to restore normal workspace connectivity. */
+export type OwnerReconnectMeshEnvelope = {
+  version: 1
+  workspaceId: string
+  ownerPersonId: string
+  ownerPublicKey: string
+  ownerCertificates: DeviceCertificate[]
+  transportSecret: string
+  epoch: number
+  peers: unknown[]
+  departures?: unknown[]
+  deviceRevocations?: unknown[]
+  revocations?: unknown[]
+  ownerHistory?: unknown[]
+  ownershipTransfers?: unknown[]
+  successionPolicy?: unknown
+  successionVotes?: unknown[]
+  successionClaims?: unknown[]
+  scopeAuthoritySnapshot?: unknown
+}
+
 export type OwnerReconnectSourceState = {
   /** Workspace-set entry: { id, bytes, authorization?, chat?, mesh?, historyBaseline? }. */
   workspace: unknown
@@ -88,6 +109,8 @@ export type OwnerReconnectSourceState = {
   workspaceAccessSnapshot: OwnerReconnectWorkspaceAccessSnapshot
   scopeAuthoritySnapshot: unknown
   grant: WorkspaceGrant
+  /** Existing durable workspace mesh invitation. Its own source route must be persistent, not this session route. */
+  meshEnvelope: OwnerReconnectMeshEnvelope
   replicaConfig?: OwnerReplicaConfig
   /** Original current-owner signature binding workspace and Rusty connection, retained for offline verification. */
   ownerStorageProof?: OwnerReconnectOwnerStorageProof
@@ -231,6 +254,7 @@ export type OwnerReconnectOffer = {
     workspaceAccessSnapshot: unknown
     scopeAuthoritySnapshot: unknown
     grant: WorkspaceGrant
+    meshEnvelope: OwnerReconnectMeshEnvelope
     replicaConfig?: OwnerReplicaConfig
     ownerStorageProof?: OwnerReconnectOwnerStorageProof
   }
@@ -243,6 +267,7 @@ export type VerifiedOwnerReconnectWorkspace = {
   workspaceAccessSnapshot: unknown
   scopeAuthoritySnapshot: unknown
   grant: WorkspaceGrant
+  meshEnvelope: OwnerReconnectMeshEnvelope
   replicaConfig?: OwnerReplicaConfig
   ownerStorageProof?: OwnerReconnectOwnerStorageProof
   sourcePersonId: string
@@ -332,7 +357,8 @@ export async function createOwnerReconnectChallenge(input: {
       input.hello.payload.ownerPublicKey !== ownerAuthority.publicKey) {
     throw new Error("Owner reconnect request does not match the current workspace owner")
   }
-  const sourceRole = await verifySourceReadAccess(input.source, input.profile, sourceView, session.workspaceId, now)
+  const sourceRole = await verifySourceReadAccess(input.source, input.profile, sourceView, session.workspaceId, now,
+    input.sourceEndpointId)
   const storage = ownerReconnectStorage(input.source)
   const expiresAt = earlierTime(Date.parse(session.expiresAt), Date.parse(input.hello.payload.expiresAt), now + maxLifetimeMs)
   return signEnvelope(input.profile.privateKeys.devicePrivateKey, {
@@ -443,7 +469,7 @@ export async function createOwnerReconnectOffer(input: {
       canonicalizeJson(sourceView) !== canonicalizeJson(input.challenge.payload.sourceAuthorityView)) {
     throw new Error("Owner reconnect source does not match the invitation")
   }
-  await verifySourceReadAccess(input.source, input.profile, sourceView, session.workspaceId, now)
+  await verifySourceReadAccess(input.source, input.profile, sourceView, session.workspaceId, now, input.sourceEndpointId)
   if (canonicalizeJson(input.source.scopeAuthoritySnapshot) !== canonicalizeJson(input.challenge.payload.scopeAuthoritySnapshot) ||
       canonicalizeJson(input.source.workspaceAuthority.authority.currentOwner) !==
       canonicalizeJson(input.challenge.payload.sourceWorkspaceAccessProof.workspaceAuthority.currentOwner) ||
@@ -462,6 +488,7 @@ export async function createOwnerReconnectOffer(input: {
     workspaceAccessSnapshot: captureAccessSnapshot(input.source.workspaceAccessSnapshot),
     scopeAuthoritySnapshot: input.source.scopeAuthoritySnapshot,
     grant: input.source.grant,
+    meshEnvelope: input.source.meshEnvelope,
     ...(storage ? {
       replicaConfig: normalizeOwnerReplicaConfig(storage.replicaConfig),
       ownerStorageProof: storage.ownerStorageProof,
@@ -535,12 +562,14 @@ export async function verifyOwnerReconnectOffer(input: {
     workspaceAccessSnapshot: restoreAccessSnapshot(content.workspaceAccessSnapshot),
     scopeAuthoritySnapshot: content.scopeAuthoritySnapshot,
     grant: content.grant,
+    meshEnvelope: content.meshEnvelope,
     ...(Object.hasOwn(content, "replicaConfig") ? { replicaConfig: content.replicaConfig } : {}),
     ...(Object.hasOwn(content, "ownerStorageProof") ? { ownerStorageProof: content.ownerStorageProof } : {}),
     history: unavailableHistorySource(),
   } as OwnerReconnectSourceState
   await verifySourceReadAccess(source, { identity: { personId: payload.sourcePersonId, publicKey: sourceView.identityPublicKey },
-    device: { deviceId: payload.sourceDeviceId, publicKey: sourceKey } } as LocalProfile, sourceView, session.workspaceId, now)
+    device: { deviceId: payload.sourceDeviceId, publicKey: sourceKey } } as LocalProfile, sourceView, session.workspaceId, now,
+    payload.sourceEndpointId)
   const scope = validateCurrentScope(source.scopeAuthoritySnapshot, session.workspaceId, now)
   if (scope.scopeId !== session.workspaceId || scope.controller.personId !== input.profile.identity.personId ||
       scope.controller.publicKey !== input.profile.identity.publicKey) {
@@ -562,7 +591,8 @@ export async function verifyOwnerReconnectOffer(input: {
   return {
     workspaceId: session.workspaceId, workspace: source.workspace, workspaceAuthority: source.workspaceAuthority,
     workspaceAccessSnapshot: source.workspaceAccessSnapshot, scopeAuthoritySnapshot: source.scopeAuthoritySnapshot,
-    grant: source.grant, ...(storage ? { replicaConfig: storage.replicaConfig, ownerStorageProof: storage.ownerStorageProof } : {}),
+    grant: source.grant, meshEnvelope: source.meshEnvelope,
+    ...(storage ? { replicaConfig: storage.replicaConfig, ownerStorageProof: storage.ownerStorageProof } : {}),
     sourcePersonId: payload.sourcePersonId,
     sourceDeviceId: payload.sourceDeviceId, sourceRole: source.grant.payload.role as "editor" | "visitor",
     offerDigest: await digest(input.offer),
@@ -760,7 +790,7 @@ async function verifyApprovalForChallenge(approval: OwnerReconnectApproval, chal
 }
 
 async function verifySourceReadAccess(source: OwnerReconnectSourceState, profile: LocalProfile,
-  identityView: IdentityAuthorityView, workspaceId: string, now: number): Promise<"editor" | "visitor"> {
+  identityView: IdentityAuthorityView, workspaceId: string, now: number, ephemeralEndpointId?: string): Promise<"editor" | "visitor"> {
   validateOwnerWorkspace(source.workspace, workspaceId, source.workspaceAuthority.authority.currentOwner.personId)
   const storage = ownerReconnectStorage(source)
   if (storage && storage.replicaConfig.workspaceId !== workspaceId) throw new Error("Owner reconnect source workspace config mismatch")
@@ -769,6 +799,8 @@ async function verifySourceReadAccess(source: OwnerReconnectSourceState, profile
   if (scope.scopeId !== workspaceId || scope.controller.personId !== owner.personId || scope.controller.publicKey !== owner.publicKey) {
     throw new Error("Rusty scope controller differs from current workspace owner")
   }
+  await verifyOwnerReconnectMeshEnvelope(source.meshEnvelope, source.grant, source.workspaceAuthority.authority,
+    source.scopeAuthoritySnapshot, workspaceId, profile.identity.personId, profile.device.deviceId, ephemeralEndpointId, now)
   if (storage) {
     validateReplicaConfig(storage.replicaConfig, workspaceId, storage.replicaConfig.scopeId)
     await verifyOwnerStorageProof(storage.ownerStorageProof, storage.replicaConfig, source.scopeAuthoritySnapshot,
@@ -798,6 +830,54 @@ async function verifySourceReadAccess(source: OwnerReconnectSourceState, profile
     departures: (source.workspaceAuthority.authority.departures ?? []) as unknown[] }, now)
   if (role !== grant.payload.role) throw new Error("Owner reconnect source has no current workspace read access")
   return role
+}
+
+async function verifyOwnerReconnectMeshEnvelope(envelope: OwnerReconnectMeshEnvelope, grant: WorkspaceGrant,
+  authority: OwnerReconnectAuthority, scopeAuthoritySnapshot: unknown, workspaceId: string, sourcePersonId: string,
+  sourceDeviceId: string, ephemeralEndpointId: string | undefined, now: number): Promise<void> {
+  const state = meshRustRuntime().state
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) ||
+      envelope.workspaceId !== workspaceId || envelope.ownerPersonId !== authority.currentOwner.personId ||
+      envelope.ownerPublicKey !== authority.currentOwner.publicKey ||
+      canonicalizeJson(envelope.scopeAuthoritySnapshot) !== canonicalizeJson(scopeAuthoritySnapshot) ||
+      !state.isWorkspaceEnvelope(envelope, now)) {
+    throw new Error("Owner reconnect source has no current durable mesh invitation")
+  }
+  state.planInvitationCredential({ workspaceId, envelope, previousCredential: null, previousAuthority: null,
+    localPersonId: sourcePersonId, localGrant: grant, updatedAt: new Date(now).toISOString() })
+
+  const peers = envelope.peers.filter((value: unknown) => {
+    const payload = value && typeof value === "object" && !Array.isArray(value)
+      ? (value as { advertisement?: { payload?: unknown }; signed?: { payload?: unknown }; payload?: unknown }).advertisement?.payload ??
+        (value as { signed?: { payload?: unknown }; payload?: unknown }).signed?.payload ??
+        (value as { payload?: unknown }).payload
+      : undefined
+    return payload && typeof payload === "object" && !Array.isArray(payload) &&
+      (payload as { workspaceId?: unknown }).workspaceId === workspaceId &&
+      (payload as { personId?: unknown }).personId === sourcePersonId &&
+      (payload as { deviceId?: unknown }).deviceId === sourceDeviceId
+  })
+  if (!peers.length) throw new Error("Owner reconnect source has no persistent workspace route")
+
+  let hasPersistentSourceRoute = false
+  for (const peer of peers) {
+    const verified = state.verifyWorkspaceMemberBundle(peer, {
+      workspaceId, ownerPersonId: authority.currentOwner.personId,
+      ownerPublicKey: authority.currentOwner.publicKey,
+      ownerCertificates: envelope.ownerCertificates,
+      ownerHistory: (envelope.ownerHistory ?? [authority.currentOwner]) as unknown[],
+      allowStaleRoute: false,
+    }, now) as { payload?: { personId?: string; deviceId?: string; endpoint?: string; instanceId?: string };
+      grant?: WorkspaceGrant; role?: string }
+    if (verified.payload?.personId !== sourcePersonId || verified.payload.deviceId !== sourceDeviceId ||
+        canonicalizeJson(verified.grant) !== canonicalizeJson(grant) || verified.role !== grant.payload.role) continue
+    if (typeof verified.payload.endpoint === "string" && verified.payload.endpoint.length > 0 &&
+        typeof verified.payload.instanceId === "string" && verified.payload.instanceId.length > 0 &&
+        (!ephemeralEndpointId || verified.payload.endpoint !== ephemeralEndpointId)) {
+      hasPersistentSourceRoute = true
+    }
+  }
+  if (!hasPersistentSourceRoute) throw new Error("Owner reconnect source has no persistent workspace route")
 }
 
 function ownerReconnectStorage(source: { replicaConfig?: unknown; ownerStorageProof?: unknown }):

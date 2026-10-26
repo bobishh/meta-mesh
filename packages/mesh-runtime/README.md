@@ -15,8 +15,13 @@ a device or transfer ownership.
 
 The host supplies its current profile/authority, exact workspace and expected
 owner, and a domain `readSource` callback. The callback returns existing signed
-workspace/history evidence, optional paired Rusty config and owner proof, and
-bounded history readers. The runtime owns
+workspace/history evidence, the exact existing DurableMesh invitation envelope,
+optional paired Rusty config and owner proof, and bounded history readers. The
+envelope restores the shared workspace transport secret and authenticated
+persistent peer route through the normal invitation path; reconnect never
+creates a replacement secret. The SDK checks it against the current owner and
+source grant, and rejects a source route that is only the temporary reconnect
+endpoint. The runtime owns
 one ephemeral transport endpoint, invitation framing, signatures, endpoint
 bindings, expiry and candidate cleanup. An unrelated Identity is rejected before
 `readSource` and does not consume the unexpired invitation.
@@ -29,8 +34,9 @@ Rusty config and its owner-signed storage proof may both be absent; if either is
 present, both are required and the SDK verifies their exact binding before
 invoking commit. One-sided or invalid storage data rejects. A missing storage
 pair does not create Rusty access; it allows returning the verified workspace
-copy without Rusty availability.
-The app uses its existing causal admission/history reader and durable storage,
+copy without Rusty availability. The app validates and receives the verified
+mesh envelope with its normal invitation path, then uses its existing causal
+admission/history reader and durable storage,
 registers the same workspace in the owner's catalog and commits idempotently by
 verified offer digest. A receipt follows successful commit; commit failure must
 not report success. `ensureCurrent` guards and cancellation cover asynchronous
