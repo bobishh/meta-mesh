@@ -26,6 +26,25 @@ Resource IDs, workflow IDs, opaque Rusty storage scope IDs and Identity person I
 have different meanings. Their links must be explicit. Equality between different
 IDs must never be required accidentally by a verifier or test fixture.
 
+### Device authority and immutable resource history
+
+A resource controller is an Identity, identified by its person ID and root public
+key. Certificates embedded in genesis or a control transfer authenticate that
+historical record. Enrolling another device MUST NOT require editing or signing
+genesis again.
+
+Current Rusty scope-authority updates, principal registrations and principal
+revocations SHALL authenticate their signer through the current verified Identity
+authority and bind that Identity to the resource controller. Current actions
+require an active device and a valid request signature. Historical workspace
+grants and control decisions retain their original history verification.
+
+Offline board-storage attestations carry the signer's chain in the existing
+`BoardStorageAccess.certificates` field. Consumers SHALL verify that chain against
+a controller Identity established by signed scope history, verify the attestation
+signature, and enforce learned revocations. The chain does not replace workspace
+grants, resource policy, role, scope or storage-token binding checks.
+
 ## Ordinary sign-in
 
 1. The application creates a fresh, bounded request for its exact origin and
