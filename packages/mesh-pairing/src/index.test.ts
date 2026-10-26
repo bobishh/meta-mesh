@@ -8,6 +8,7 @@ import {
   parsePairingInvite,
   createDeviceEnrollmentInvite,
   createWorkspaceJoinInvite,
+  createOwnerReconnectInvite,
   invitationUrl,
   parseInvitation,
   inspectPairingFrame,
@@ -79,6 +80,7 @@ describe("pairing protocol", () => {
     "mesh-automerge-sync",
     "mesh-control-sync",
     "mesh-owner-workspace-offer",
+    "mesh-owner-reconnect-v1",
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
@@ -286,5 +288,25 @@ describe("pairing protocol", () => {
         expect(parsed.workspaces).toEqual([{ id: "ws_legacy", title: "Legacy Board" }])
       }
     })
+
+    it("creates a one-workspace owner-reconnect rendezvous without role or data fields", () => {
+      const now = 1700000000000
+      const invite = createOwnerReconnectInvite("endpoint_test", "secret_456", mockProfile, "ws_job", { now })
+      expect(invite).toMatchObject({ kind: "owner-reconnect", workspaceId: "ws_job", expiresAt: new Date(now + 10 * 60 * 1000).toISOString() })
+      expect(invite).not.toHaveProperty("role")
+      expect(invite).not.toHaveProperty("workspaces")
+      const parsed = parseInvitation(invitationUrl("https://match.test", invite), now)
+      expect(parsed).toEqual(invite)
+
+      const malformed = new URL(invitationUrl("https://match.test", invite))
+      malformed.hash += "&role=editor"
+      expect(() => parseInvitation(malformed.toString(), now)).toThrow(/wrong-kind/i)
+      expectExpiredInvite(invite, now)
+    })
   })
 })
+
+function expectExpiredInvite(invite: ReturnType<typeof createOwnerReconnectInvite>, now: number) {
+  expect(() => parseInvitation(invitationUrl("https://match.test", invite), Date.parse(invite.expiresAt))).toThrow(/expired/i)
+  expect(Date.parse(invite.createdAt)).toBe(now)
+}

@@ -43,14 +43,31 @@ export type WorkspaceJoinInvitation = {
   secret: string
 }
 
-export type ScopedInvitation = DeviceEnrollmentInvitation | WorkspaceJoinInvitation
+/** Rendezvous only. Workspace access and content are exchanged only after owner proof. */
+export type OwnerReconnectInvitation = {
+  version: 1
+  kind: "owner-reconnect"
+  invitationId: string
+  issuerPersonId: string
+  issuerDeviceId: string
+  issuerPublicKey: string
+  issuerEndpoint: string
+  issuerRelayUrl?: string
+  workspaceId: string
+  createdAt: string
+  expiresAt: string
+  secret: string
+}
+
+export type ScopedInvitation = DeviceEnrollmentInvitation | WorkspaceJoinInvitation | OwnerReconnectInvitation
 
 const pairingFrameTypes = [
   "sync-request", "sync-response", "sync-ack", "sync-update", "sync-heartbeat", "sync-heartbeat-ack",
   "enroll-request", "enroll-approved", "enroll-rejected", "enroll-rejected-ack", "enroll-ack", "enroll-complete",
   "workspace-join-request", "workspace-join-response", "workspace-join-rejected-ack",
   "mesh-handshake-request", "mesh-handshake-response", "mesh-handoff-request", "mesh-handoff-ready", "mesh-handoff-confirmed",
-  "mesh-automerge-sync", "mesh-control-sync", "mesh-owner-workspace-offer", "mesh-iroh-gossip", "mesh-durable-batch", "mesh-durable-ack",
+  "mesh-automerge-sync", "mesh-control-sync", "mesh-owner-workspace-offer", "mesh-owner-reconnect-v1",
+  "mesh-iroh-gossip", "mesh-durable-batch", "mesh-durable-ack",
   "mesh-blob-request-v1", "mesh-blob-response-v1", "mesh-blob-error-v1",
   "mesh-proof-request-v1", "mesh-proof-page-v1",
 ] as const
@@ -182,6 +199,36 @@ export function createWorkspaceJoinInvite(
   }
 }
 
+export function createOwnerReconnectInvite(
+  endpoint: string,
+  secret: string,
+  profile: { identity: { personId: string }; device: { deviceId: string; publicKey: string } },
+  workspaceId: string,
+  options: { now?: number; lifetimeMs?: number; relayUrl?: string } = {},
+): OwnerReconnectInvitation {
+  if (options.relayUrl !== undefined) validateRelayUrl(options.relayUrl)
+  const effectiveNow = options.now ?? Date.now()
+  const lifetimeMs = options.lifetimeMs ?? 10 * 60 * 1000
+  if (!endpoint || !secret || !workspaceId || !Number.isSafeInteger(effectiveNow) ||
+      !Number.isSafeInteger(lifetimeMs) || lifetimeMs <= 0 || lifetimeMs > 60 * 60 * 1000) {
+    throw new PairingError("Invalid owner reconnect invitation")
+  }
+  return {
+    version: 1,
+    kind: "owner-reconnect",
+    invitationId: crypto.randomUUID(),
+    issuerPersonId: profile.identity.personId,
+    issuerDeviceId: profile.device.deviceId,
+    issuerPublicKey: profile.device.publicKey,
+    issuerEndpoint: endpoint,
+    ...(options.relayUrl ? { issuerRelayUrl: options.relayUrl } : {}),
+    workspaceId,
+    createdAt: new Date(effectiveNow).toISOString(),
+    expiresAt: new Date(effectiveNow + lifetimeMs).toISOString(),
+    secret,
+  }
+}
+
 export function invitationUrl(origin: string, invite: ScopedInvitation): string {
   const url = new URL("/pair", origin)
   const params = new URLSearchParams()
@@ -206,6 +253,9 @@ export function invitationUrl(origin: string, invite: ScopedInvitation): string 
       params.set("workspaceIds", invite.workspaces.map((w) => w.id).join(","))
       params.set("workspaceTitles", invite.workspaces.map((w) => encodeURIComponent(w.title)).join(","))
     }
+  } else if (invite.kind === "owner-reconnect") {
+    if (invite.issuerRelayUrl) params.set("issuerRelayUrl", invite.issuerRelayUrl)
+    params.set("workspaceId", invite.workspaceId)
   }
   url.hash = params.toString()
   return url.toString()
@@ -229,6 +279,7 @@ type InvitationDecoder = (params: URLSearchParams, envelope: InvitationEnvelope)
 const invitationDecoders = new Map<string, InvitationDecoder>([
   ["device-enrollment", decodeDeviceEnrollment],
   ["workspace-join", decodeWorkspaceJoin],
+  ["owner-reconnect", decodeOwnerReconnect],
 ])
 
 export function parseInvitation(raw: string, now = Date.now()): ScopedInvitation {
@@ -250,7 +301,7 @@ function invitationParams(raw: string) {
   }
 
   const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash)
-  const singularFields = ["v", "kind", "invitationId", "issuerPersonId", "issuerDeviceId", "issuerPublicKey", "endpoint", "createdAt", "expiresAt", "secret", "workspaceId", "workspaceTitle", "workspaceIds", "workspaceTitles", "role"]
+  const singularFields = ["v", "kind", "invitationId", "issuerPersonId", "issuerDeviceId", "issuerPublicKey", "endpoint", "issuerRelayUrl", "createdAt", "expiresAt", "secret", "workspaceId", "workspaceTitle", "workspaceIds", "workspaceTitles", "role"]
   if (singularFields.some(field => params.getAll(field).length > 1)) throw new PairingError("Invalid pairing link")
   return params
 }
@@ -330,6 +381,21 @@ function decodeWorkspaceJoin(params: URLSearchParams, envelope: InvitationEnvelo
     workspaces,
     role,
   }
+}
+
+function decodeOwnerReconnect(params: URLSearchParams, envelope: InvitationEnvelope): OwnerReconnectInvitation {
+  const allowed = new Set(["v", "kind", "invitationId", "issuerPersonId", "issuerDeviceId", "issuerPublicKey",
+    "endpoint", "createdAt", "expiresAt", "secret", "workspaceId", "issuerRelayUrl"])
+  if ([...params.keys()].some(key => !allowed.has(key)) ||
+      ["workspaceTitle", "workspaceIds", "workspaceTitles", "role", "issuerLocalCustomAddr"]
+        .some(key => params.has(key))) {
+    throw new PairingError("Invalid invitation: wrong-kind fields present on owner-reconnect")
+  }
+  const workspaceId = params.get("workspaceId") ?? ""
+  if (!workspaceId) throw new PairingError("Invalid invitation: missing workspace on owner-reconnect")
+  const issuerRelayUrl = params.get("issuerRelayUrl") || undefined
+  if (issuerRelayUrl !== undefined) validateRelayUrl(issuerRelayUrl)
+  return { ...envelope, ...(issuerRelayUrl ? { issuerRelayUrl } : {}), kind: "owner-reconnect", workspaceId }
 }
 
 function validateRelayUrl(value: string): void {

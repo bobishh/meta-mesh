@@ -102,15 +102,17 @@ referrers. Root keys, recovery evidence and data for other applications SHALL NO
 be included. The resource provider still verifies its current signed owner grant
 before exposing the catalog or any resource.
 
-An application switching from its normal anonymous initial board to the selected
-person's authorized catalog SHALL preserve the anonymous board and its content,
-owner and local data, but leave it inactive while that catalog is active. It must
-not relabel the anonymous board as the selected person's resource. If the owner
-bootstrap is missing, expired, unavailable or denied, sign-in may complete for
-local use; the application SHALL keep the anonymous board active, show an explicit
-pending or unavailable state, and allow a fresh retry. It must not silently treat
-the person as a visitor to another person's board or imply that resource discovery
-succeeded.
+A fresh local application has its own Identity and owns its initial board. An
+untouched default board must not block ordinary sign-in: once the verified target
+catalog is ready, discard that default and select the approved person's board.
+Do not carry the default into the new catalog as another person's visitor board.
+
+If local boards contain user changes, ask before switching. The user may adopt
+those boards into the approved Identity or stay with the current local Identity
+and boards. Adoption preserves content and explicitly records the authorized
+ownership change; staying cancels the switch. There is no unnamed local holding
+area and no silent reassignment. A failed catalog lookup preserves local data,
+reports the failure and offers a fresh sign-in attempt.
 
 #### Scenario: Sign-in restores the selected person's current catalog
 
@@ -122,7 +124,8 @@ succeeded.
   bindings
 - **THEN** the application loads only resources allowed by the current owner
   authority and selects the person's authorized resource
-- **AND** it preserves the anonymous board and its data unchanged but inactive
+- **AND** it discards an untouched initial board; changed local boards require
+  the explicit adopt-or-stay choice before switching
 - **AND** an existing approved device receives the latest owner-signed revision
   through Identity synchronization before using it
 
@@ -148,16 +151,49 @@ a sign-in prerequisite, root-key conversion or a new service.
 
 ### Tincanban presentation
 
-- Before sign-in, the header presents **Sign in**.
-- After sign-in, the same control presents the person's photo, with an accessible
-  profile name and a deterministic fallback when that person has no photo.
-- A separate header button named Identity must not coexist with this control.
+- Before sign-in, the application presents **Sign in**.
+- The connected profile, photo, refresh and editing actions live together in
+  Settings → Identity. The header must not add a separate Identity or avatar
+  control duplicating that section.
 - Profile editing has one owner in Identity. An application may show the verified
   profile and open its editor with a return route; it must not present an unrelated
   editable copy as if it were the connected Identity profile.
 - A saved certificate with an unavailable profile produces an explicit loading
   or failure state. It must not fall back to an onboarding menu that hides the
   existing sign-in.
+
+## Reconnecting an existing owner's board
+
+A participant may retain a board whose current owner no longer has its local
+application configuration. This is a copy exchange with the existing owner,
+separate from ordinary sign-in, device enrollment and ownership transfer.
+
+**Connect owner device** creates one expiring QR/link for one exact workspace.
+The link contains rendezvous data and a pairing secret, never board content,
+storage credentials, private Identity keys or a membership grant. The receiving
+device must already have the current owner's verified Identity.
+
+The SDK verifies the receiver before reading source workspace state, then binds
+the challenge and approval to that invitation, workspace, logical authority,
+opaque storage scope, both endpoints, devices, nonce and expiry. A wrong Identity
+cannot read the copy, write local state or consume the owner's invitation.
+
+Before commit, the receiver independently verifies the source's current read
+admission, causal history, current controller and original owner-signed storage
+connection. Logical workspace IDs and opaque Rusty scope IDs remain distinct.
+An existing historical connection may be used as signed evidence in this exchange;
+this does not change ordinary Rusty network authorization or issue a new principal.
+A source lacking the required scoped key material reports it unavailable.
+
+SDK framing and existing bounded history readers carry the verified snapshot,
+archive data and scoped configuration. The application admits and durably saves
+them under the same workspace ID, registers that owner's catalog and activates
+the existing owner configuration. Only then may the SDK return a receipt. Retry
+must not create another board or accept changed evidence as the same commit.
+Owner, role and authority epoch remain unchanged. Offline exchange uses locally
+verified authority; learned revocations retain the consistency rules below.
+
+See the [browser runtime interface](../packages/mesh-runtime/README.md).
 
 ## Server sessions and sign-out
 

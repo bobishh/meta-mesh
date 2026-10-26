@@ -73,6 +73,7 @@ pub fn pairing_frame_budget(frame_type: &str) -> Option<PairingFrameBudget> {
         | "mesh-handshake-request"
         | "mesh-handshake-response"
         | "mesh-owner-workspace-offer"
+        | "mesh-owner-reconnect-v1"
         | "mesh-durable-batch"
         | "mesh-durable-ack"
         | "mesh-blob-request-v1"

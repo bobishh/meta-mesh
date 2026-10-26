@@ -12,6 +12,7 @@ import { signWorkspaceRecord, workspaceSignerCertificates, type WorkspaceRecordS
 export type { WorkspaceRecordSigner } from "./signing"
 
 export * from "./coownership"
+export * from "./ownerReconnect"
 export { createAutomationWorkspaceGrant, parseAutomationGrantScope,
   type AutomationGrantScope, type AutomationWorkspaceGrantIntent } from "./automationGrant"
 export { createDelegatedCertificate } from "@meta-uber/mesh-identity"

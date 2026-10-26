@@ -11,12 +11,14 @@ export type { BrowserIdentityEnrollmentApproval, BrowserIdentityEnrollmentHost, 
   IdentityEnrollmentRecovery, IdentityProfileSyncOptions, PendingIdentityEnrollment } from "./browserIdentityEnrollment"
 export type { BrowserIdentityPeerHost, BrowserIdentityPeerRuntime, ConnectedIdentityPeer, CreateBrowserIdentityPeerRuntimeOptions,
   IdentityPeerContact, IdentityPeerHostConnection, StartBrowserIdentityPeerHostOptions, ConnectBrowserIdentityPeerOptions } from "./browserIdentityReconnect"
+export type { BrowserOwnerReconnectHost, StartBrowserOwnerReconnectHostOptions, ConnectBrowserOwnerReconnectOptions } from "./browserOwnerReconnect"
 
 // Keep identity enrollment and reconnect code out of the workspace runtime's
 // startup graph. These features use the full Automerge identity replica and
 // are loaded only when a caller explicitly starts an identity operation.
 type BrowserIdentityEnrollmentApi = typeof import("./browserIdentityEnrollment")
 type BrowserIdentityReconnectApi = typeof import("./browserIdentityReconnect")
+type BrowserOwnerReconnectApi = typeof import("./browserOwnerReconnect")
 
 export function connectBrowserIdentityEnrollment(...args: Parameters<BrowserIdentityEnrollmentApi["connectBrowserIdentityEnrollment"]>) {
   return import("./browserIdentityEnrollment").then(module => module.connectBrowserIdentityEnrollment(...args))
@@ -44,6 +46,14 @@ export function connectBrowserIdentityPeer(...args: Parameters<BrowserIdentityRe
 
 export function startBrowserIdentityPeerHost(...args: Parameters<BrowserIdentityReconnectApi["startBrowserIdentityPeerHost"]>) {
   return import("./browserIdentityReconnect").then(module => module.startBrowserIdentityPeerHost(...args))
+}
+
+export function startBrowserOwnerReconnectHost(...args: Parameters<BrowserOwnerReconnectApi["startBrowserOwnerReconnectHost"]>) {
+  return import("./browserOwnerReconnect").then(module => module.startBrowserOwnerReconnectHost(...args))
+}
+
+export function connectBrowserOwnerReconnect(...args: Parameters<BrowserOwnerReconnectApi["connectBrowserOwnerReconnect"]>) {
+  return import("./browserOwnerReconnect").then(module => module.connectBrowserOwnerReconnect(...args))
 }
 
 export function createBrowserIdentityPeerRuntime(...args: Parameters<BrowserIdentityReconnectApi["createBrowserIdentityPeerRuntime"]>) {

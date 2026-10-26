@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ownerReconnect": "./src/browserOwnerReconnect.ts"
+  },
   "dependencies": {
     "@automerge/automerge": "^3.4.1",
     "@meta-uber/mesh-identity": "*",

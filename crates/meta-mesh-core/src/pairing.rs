@@ -30,6 +30,7 @@ const PAIRING_FRAME_TYPES: &[&str] = &[
     "mesh-control-sync",
     "mesh-owner-workspace-offer",
     "mesh-owner-workspace-offer-page-v1",
+    "mesh-owner-reconnect-v1",
     "mesh-iroh-gossip",
     "mesh-durable-batch",
     "mesh-durable-ack",
