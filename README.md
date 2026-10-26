@@ -238,6 +238,9 @@ reads. This crate has no transitive Iroh/WebRTC dependency.
 
 `@meta-uber/mesh-transport/transport-wasm` exports `BrowserNode`, gossip and blobs
 from the transport adapter. Import and initialize it when starting network work.
+Its default initializer shares one in-flight initialization across callers and
+allows retry after failure. Synchronous initialization rejects while asynchronous
+initialization is pending. Use this public entrypoint rather than generated glue.
 `scripts/build-wasm.sh` generates both artifacts with Rust 1.98.0 so optimized
 browser artifacts stay within the measured startup budget across local and CI
 builds. The previous relative

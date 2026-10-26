@@ -1,15 +1,15 @@
 import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 import * as policyModule from "../wasm/policy/meta_mesh_policy.js"
-import * as transportModule from "../transport-wasm/meta_mesh.js"
+import * as transportModule from "@meta-uber/mesh-transport/transport-wasm"
 
 const packageRoot = new URL("../", import.meta.url)
 
 describe("WASM package boundary", () => {
-  it("routes policy and transport imports to separate generated entrypoints", async () => {
+  it("routes policy and transport imports to separate public entrypoints", async () => {
     const manifest = JSON.parse(await readFile(new URL("package.json", packageRoot), "utf8"))
     expect(manifest.exports["./wasm"]).toBe("./wasm/policy/meta_mesh_policy.js")
-    expect(manifest.exports["./transport-wasm"]).toBe("./transport-wasm/meta_mesh.js")
+    expect(manifest.exports["./transport-wasm"]).toBe("./src/transportWasm.ts")
     expect(manifest.exports["./wasm"]).not.toBe(manifest.exports["./transport-wasm"])
   })
 

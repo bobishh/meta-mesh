@@ -6,7 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./wasm": "./wasm/policy/meta_mesh_policy.js",
-    "./transport-wasm": "./transport-wasm/meta_mesh.js"
+    "./transport-wasm": "./src/transportWasm.ts"
   },
   "scripts": {
     "check:policy": "node ../../scripts/verify-policy-deps.mjs"
