@@ -173,6 +173,13 @@ export class MemoryMeshStore implements MeshStore {
   }
 }
 
+class IndexedDBUpgradeBlockedError extends Error {
+  constructor() {
+    super("IndexedDB schema upgrade blocked by another tab")
+    this.name = "IndexedDBUpgradeBlockedError"
+  }
+}
+
 export class BrowserMeshStore implements MeshStore {
   private database?: Promise<IDBDatabase>
 
@@ -184,7 +191,9 @@ export class BrowserMeshStore implements MeshStore {
   private open(): Promise<IDBDatabase> {
     if (!this.database) {
       this.database = this.openWithStores().catch(error => {
-        this.database = undefined
+        // The refused open remains queued in IndexedDB until the other tab closes.
+        // Retain its refusal for retries rather than queueing another open behind it.
+        if (!(error instanceof IndexedDBUpgradeBlockedError)) this.database = undefined
         throw error
       })
     }
@@ -194,17 +203,28 @@ export class BrowserMeshStore implements MeshStore {
   private requestOpen(version?: number): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const request = version === undefined ? indexedDB.open(this.name) : indexedDB.open(this.name, version)
+      let settled = false
       request.onupgradeneeded = () => {
+        if (settled) { request.transaction?.abort(); return }
         for (const store of this.stores) {
           if (!request.result.objectStoreNames.contains(store)) request.result.createObjectStore(store)
         }
       }
       request.onsuccess = () => {
-        request.result.onversionchange = () => request.result.close()
-        resolve(request.result)
+        const database = request.result
+        if (settled) { database.close(); this.database = undefined; return }
+        settled = true
+        const invalidate = () => { this.database = undefined }
+        database.onversionchange = () => { database.close(); invalidate() }
+        database.onclose = invalidate
+        resolve(database)
       }
-      request.onerror = () => reject(request.error ?? new Error("IndexedDB failed to open"))
-      request.onblocked = () => reject(new Error("IndexedDB schema upgrade blocked by another tab"))
+      request.onerror = () => {
+        if (settled) this.database = undefined
+        settled = true
+        reject(request.error ?? new Error("IndexedDB failed to open"))
+      }
+      request.onblocked = () => { settled = true; reject(new IndexedDBUpgradeBlockedError()) }
     })
   }
 
@@ -216,9 +236,11 @@ export class BrowserMeshStore implements MeshStore {
       const version = current.version + 1
       current.close()
       try {
-        return await this.requestOpen(version)
+        const upgraded = await this.requestOpen(version)
+        if (this.stores.every(store => upgraded.objectStoreNames.contains(store))) return upgraded
+        upgraded.close()
       } catch (error) {
-        if (attempt === 2) throw error
+        if (error instanceof IndexedDBUpgradeBlockedError || attempt === 2) throw error
       }
     }
     throw new Error("IndexedDB schema upgrade failed")

@@ -174,7 +174,7 @@ export type { IdentityProfileRecoveryFile, IdentityProfileRecoveryPayload } from
 export { createIdentityProfileOperation, emptyIdentityProfileState, identityProfileRevision, identityProfileValue,
   createIdentityRustyServicePinOperation, identityProfileRustyServicePins, mergeIdentityProfileState,
   normalizeIdentityRustyServicePin, normalizeIdentityRustyServicePins, observeLegacyIdentityProfile, readIdentityProfileState,
-  readIdentityProfileStateWithRevocations } from "./identityProfile"
+  readIdentityProfileStateWithRevocations, filterIdentityProfileRevocations } from "./identityProfile"
 export type { IdentityProfileField, IdentityProfileOperation, IdentityProfileState, IdentityProfileValue,
   IdentityRustyServicePin } from "./identityProfile"
 

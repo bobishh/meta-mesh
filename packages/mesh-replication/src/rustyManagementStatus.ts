@@ -1,8 +1,10 @@
-import { canonicalizeJson, sha256Base64Url, verifyEnvelope, type SignedEnvelope } from "@meta-uber/mesh-identity"
-import { decodeBlindBytes } from "@meta-uber/mesh-replication/rusty-replica"
+import { canonicalizeJson, sha256Base64Url, verifyDeviceCertificateChain, verifyEnvelope,
+  type DeviceCertificate, type PublicIdentity, type SignedEnvelope } from "@meta-uber/mesh-identity"
+import { decodeBlindBytes, fetchRusty, readRustyJson } from "./rustyReplica"
 import { rustyOrigin as blindOrigin } from "@meta-uber/mesh-replication/rusty-replica"
 import type { RustyManagementAccess } from "./rustyManagementCapability"
 import { verifyRustyManagementCapability, type ExpectedManagementAuthority, type RustyManagementCapability } from "./rustyManagementCapability"
+import type { RustyFetch } from "./rustyDiscovery"
 
 export type ManagementStatusAuthorization = {
   kind: "rusty-management-policy-status"
@@ -45,6 +47,56 @@ export type VerifiedManagementStatus = {
   capability: RustyManagementCapability | null
   migrationPending: boolean
   revision: number
+}
+
+export type RustyManagementStatusBinding = RustyManagementAccess & Pick<ExpectedManagementAuthority, "resourceKind" | "resourceId">
+export type RustyManagementStatusOptions = {
+  binding: RustyManagementStatusBinding
+  identity: PublicIdentity
+  deviceId: string
+  devicePublicKey: string
+  certificates: readonly DeviceCertificate[]
+  minimumRevision: number
+  signAuthorization(payload: ManagementStatusAuthorization): Promise<SignedEnvelope<ManagementStatusAuthorization>>
+  ensureCurrent(): void | Promise<void>
+  fetcher?: RustyFetch
+}
+
+/** Shared status protocol. Callers retain key custody, learned authority and policy persistence. */
+export async function requestRustyManagementStatus(options: RustyManagementStatusOptions) {
+  const binding = structuredClone(options.binding), identity = structuredClone(options.identity)
+  binding.origin = blindOrigin(binding.origin)
+  const deviceId = options.deviceId, devicePublicKey = options.devicePublicKey, minimumRevision = options.minimumRevision
+  const certificates = structuredClone(options.certificates) as DeviceCertificate[]
+  const serviceKey = decodeBlindBytes(binding.servicePublicKey)
+  if (serviceKey.length !== 32) throw new Error("Invalid management status service pin")
+  const expected = { personId: identity.personId, deviceId, resourceKind: binding.resourceKind, resourceId: binding.resourceId,
+    operation: "management.update", minimumRevision }
+  validateExpected(expected)
+  if (!certificates.length || certificates.length > 32 ||
+      certificates.some(certificate => certificate.payload.personId !== identity.personId) ||
+      await verifyDeviceCertificateChain(identity, deviceId, certificates) !== devicePublicKey) {
+    throw new Error("Invalid management status device certificate chain")
+  }
+  const issuedAt = Date.now()
+  const payload: ManagementStatusAuthorization = { kind: "rusty-management-policy-status", version: 1,
+    serviceId: await sha256Base64Url(serviceKey), origin: binding.origin,
+    personId: identity.personId, deviceId, resourceKind: binding.resourceKind, resourceId: binding.resourceId,
+    requestId: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + 120_000 }
+  await options.ensureCurrent()
+  const authorization = structuredClone(await options.signAuthorization(structuredClone(payload)))
+  if (canonicalizeJson(authorization.payload) !== canonicalizeJson(payload) || authorization.signerKeyId !== deviceId ||
+      !await verifyEnvelope(authorization, devicePublicKey)) throw new Error("Invalid management status authorization binding or signature")
+  validateAuthorization(authorization, expected, binding, payload.serviceId)
+  await options.ensureCurrent()
+  const response = await readRustyJson(await fetchRusty(
+    `${binding.origin}/v2/management/${binding.resourceKind}/${binding.resourceId}/status`, {
+      method: "POST", cache: "no-store", signal: AbortSignal.timeout(15_000), headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: 1, identity, deviceId, certificates, authorization }),
+    }, options.fetcher), 1024 * 1024) as RustyManagementStatusResponse
+  const verified = await verifyRustyManagementStatus(response, binding, expected, authorization)
+  await options.ensureCurrent()
+  return { authorization, response, verified }
 }
 
 const responseFields = ["capability", "migrationPending", "receipt"]

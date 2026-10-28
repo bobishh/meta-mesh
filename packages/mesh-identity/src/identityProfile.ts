@@ -69,9 +69,20 @@ export async function readIdentityProfileState(value: unknown, identity: PublicI
 /** Validate profile history while enforcing every signed device-revocation snapshot. */
 export async function readIdentityProfileStateWithRevocations(value: unknown, identity: PublicIdentity,
   certificates: readonly DeviceCertificate[], revocations: readonly IdentityDeviceRevocation[]): Promise<IdentityProfileState> {
-  await verifyIdentityDeviceAuthority(identity, { certificates: Array.from(certificates), revocations: Array.from(revocations) })
+  identity = structuredClone(identity)
+  certificates = structuredClone(Array.from(certificates))
+  return readIdentityProfileState(await filterIdentityProfileRevocations(value, identity, certificates, revocations), identity, certificates)
+}
+
+/** Filter signed revocation cutoffs and dependent operations. The candidate remains untrusted until its context's profile reader validates it. */
+export async function filterIdentityProfileRevocations(value: unknown, identity: PublicIdentity,
+  certificates: readonly DeviceCertificate[], revocations: readonly IdentityDeviceRevocation[]): Promise<unknown> {
+  identity = structuredClone(identity)
+  certificates = structuredClone(Array.from(certificates))
+  revocations = structuredClone(Array.from(revocations))
   const snapshot = boundedSnapshot(value)
-  if (!Array.isArray(snapshot.operations)) throw new Error("Invalid identity profile state")
+  if (!Array.isArray(snapshot.operations) || snapshot.operations.length > maxOperations) throw new Error("Invalid identity profile state")
+  await verifyIdentityDeviceAuthority(identity, { certificates: Array.from(certificates), revocations: Array.from(revocations) })
   const revokedDevices = new Map<string, string[]>()
   for (const revocation of revocations) {
     const payload = revocation?.payload
@@ -149,7 +160,7 @@ export async function readIdentityProfileStateWithRevocations(value: unknown, id
     }
   }
   const operations = candidates.filter((_, index) => kept.has(index))
-  return readIdentityProfileState({ ...snapshot, operations }, identity, certificates)
+  return { ...snapshot, operations }
 }
 
 export async function mergeIdentityProfileState(left: IdentityProfileState, right: IdentityProfileState,

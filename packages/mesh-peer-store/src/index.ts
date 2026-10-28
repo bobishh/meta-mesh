@@ -91,6 +91,13 @@ export interface WorkspaceAuthorityRecord {
   }
 }
 
+/** Credential and durable authority observed in the same local database snapshot. */
+export interface WorkspaceAuthorizationSnapshot {
+  workspaceId: string
+  credential: WorkspaceMeshCredential | null
+  authority: WorkspaceAuthorityRecord | null
+}
+
 /** Locally durable proposal awaiting a delivery receipt. It is deliberately
  * outside the authenticated workspace catalog. */
 export interface PendingWorkspaceOwnershipTransfer {
@@ -732,6 +739,32 @@ export class PeerStore {
       validateWorkspaceCredential(record.credential)
       return structuredClone(record.credential)
     })
+  }
+
+  /** One coherent read for selected boards; legacy authority is projected without migration writes. */
+  async readWorkspaceAuthorization(workspaceIds: readonly string[]): Promise<WorkspaceAuthorizationSnapshot[]> {
+    if (!Array.isArray(workspaceIds) || !workspaceIds.length || workspaceIds.length > 512 ||
+        workspaceIds.some(id => typeof id !== "string" || !id || id.length > MAX_STRING_LENGTH) ||
+        new Set(workspaceIds).size !== workspaceIds.length) throw new Error("Invalid workspace authorization selection")
+    const selected = [...workspaceIds]
+    return this.runTx([STORE_NODE, STORE_AUTHORITY], "readonly", tx => Promise.all(selected.map(async workspaceId => {
+      const [record, storedAuthority] = await Promise.all([
+        promisifyRequest<{ key: string; credential: WorkspaceMeshCredential } | undefined>(
+          tx.objectStore(STORE_NODE).get(`${WORKSPACE_CREDENTIAL_PREFIX}${workspaceId}`)),
+        promisifyRequest<WorkspaceAuthorityRecord | undefined>(tx.objectStore(STORE_AUTHORITY).get(workspaceId)),
+      ])
+      const credential = record?.credential ?? null
+      if (credential) {
+        validateWorkspaceCredential(credential)
+        if (credential.workspaceId !== workspaceId) throw new Error("Stored workspace credential binding is invalid")
+      }
+      if (storedAuthority) {
+        validateWorkspaceAuthority(storedAuthority)
+        if (storedAuthority.workspaceId !== workspaceId) throw new Error("Stored workspace authority binding is invalid")
+      }
+      return structuredClone({ workspaceId, credential,
+        authority: storedAuthority ?? (credential ? authorityFromCredential(credential) : null) })
+    })))
   }
 
   async putWorkspaceCredential(credential: WorkspaceMeshCredential): Promise<void> {
