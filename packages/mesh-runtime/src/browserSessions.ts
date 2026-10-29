@@ -78,6 +78,8 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
 /** Shared session lifecycle; product hosts provide authenticated document sync. */
 export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMeshSession, P> {
   private static readonly HEARTBEATS_PER_ANTI_ENTROPY = 3
+  /** How long a peer-initiated replacement close may stay current while the next session arrives. */
+  static readonly SUPERSEDED_CLOSE_GRACE_MS = 1_500
   readonly entries: Map<string, BrowserMeshSessionEntry<C, S>>
   private readonly lifecycle: RustMeshSessionLifecycleState
 
@@ -252,15 +254,29 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
   private finishReceive(sessionKey: SessionLifecycleKey, generation: number,
     entry: BrowserMeshSessionEntry<C, S>, event: "receiveSucceeded" | "receiveFailed", error?: unknown): void {
     const plan = this.lifecycle.callbackPlan(sessionKey, generation, event, Date.now())
+    const superseded = error !== undefined && supersededPeerClose(error)
     if (plan.reportFailure && error !== undefined) {
-      this.host.networkFailure(this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId), error)
+      if (!superseded) {
+        this.host.networkFailure(this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId), error)
+        this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, error)
+      }
       this.host.trace("session.receive.failed", { connectionId: entry.connectionId, peerId: short(entry.deviceId),
         workspaceId: short(entry.workspaceId), instanceId: short(entry.instanceId), reason: message(error) }, "warn")
-      this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, error)
     }
-    if (plan.evict) void entry.evict("receive loop ended")
+    if (!plan.evict) return
+    const key = this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId)
+    if (superseded && this.entries.get(key) === entry) {
+      setTimeout(() => {
+        if (this.entries.get(key) === entry) void entry.evict("receive loop ended")
+      }, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
+      return
+    }
+    void entry.evict("receive loop ended")
   }
 }
 
 function short(value: string, length = 8): string { return value.slice(0, length) }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+function supersededPeerClose(error: unknown): boolean {
+  return /browser connection closed/i.test(message(error))
+}
