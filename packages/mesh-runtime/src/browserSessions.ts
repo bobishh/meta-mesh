@@ -78,7 +78,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
 /** Shared session lifecycle; product hosts provide authenticated document sync. */
 export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMeshSession, P> {
   private static readonly HEARTBEATS_PER_ANTI_ENTROPY = 3
-  /** How long a peer-initiated replacement close may stay current while the next session arrives. */
+  /** How long a successor may land before a peer-closed socket schedules a direct retry. */
   static readonly SUPERSEDED_CLOSE_GRACE_MS = 1_500
   readonly entries: Map<string, BrowserMeshSessionEntry<C, S>>
   private readonly lifecycle: RustMeshSessionLifecycleState
@@ -267,14 +267,14 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     const key = this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId)
     if (superseded && this.entries.get(key) === entry && error !== undefined) {
       const failure = error
-      setTimeout(() => {
-        if (this.entries.get(key) !== entry) return
-        void entry.evict("receive loop ended").finally(() => {
+      void entry.evict("receive loop ended").finally(() => {
+        if (this.entries.has(key)) return
+        setTimeout(() => {
           if (this.entries.has(key)) return
           this.host.networkFailure(key, failure)
           this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, failure)
-        })
-      }, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
+        }, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
+      })
       return
     }
     void entry.evict("receive loop ended")
