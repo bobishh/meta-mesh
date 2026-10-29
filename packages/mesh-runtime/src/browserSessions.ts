@@ -265,9 +265,15 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     }
     if (!plan.evict) return
     const key = this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId)
-    if (superseded && this.entries.get(key) === entry) {
+    if (superseded && this.entries.get(key) === entry && error !== undefined) {
+      const failure = error
       setTimeout(() => {
-        if (this.entries.get(key) === entry) void entry.evict("receive loop ended")
+        if (this.entries.get(key) !== entry) return
+        void entry.evict("receive loop ended").finally(() => {
+          if (this.entries.has(key)) return
+          this.host.networkFailure(key, failure)
+          this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, failure)
+        })
       }, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
       return
     }
