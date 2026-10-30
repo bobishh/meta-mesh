@@ -71,6 +71,10 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
   publishRecovered(key: string, entry: BrowserMeshSessionEntry<C, S>): Promise<void>
   /** A completed handshake alone is not proof that the stream survived. */
   stableSession?(key: string, entry: BrowserMeshSessionEntry<C, S>): void
+  /** A live session cancels a direct retry that was waiting for this handshake. */
+  routeRecovered?(key: string): void
+  /** Keep the dialer idle while a successor may replace a peer-closed socket. */
+  holdDirectReconnect?(key: string, delayMs: number): void
   protocolFailure(stage: string, error: unknown): void
   networkFailure(peerKey: string, error: unknown): void
 }
@@ -78,7 +82,7 @@ export type BrowserMeshSessionHost<C extends MeshConnection, S extends BrowserMe
 /** Shared session lifecycle; product hosts provide authenticated document sync. */
 export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMeshSession, P> {
   private static readonly HEARTBEATS_PER_ANTI_ENTROPY = 3
-  /** How long a successor may land before a peer-closed socket schedules a direct retry. */
+  /** How long the dialer waits after a peer-closed socket so a successor can land first. */
   static readonly SUPERSEDED_CLOSE_GRACE_MS = 1_500
   readonly entries: Map<string, BrowserMeshSessionEntry<C, S>>
   private readonly lifecycle: RustMeshSessionLifecycleState
@@ -186,6 +190,7 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
       },
     }
     this.entries.set(key, entry)
+    this.host.routeRecovered?.(key)
     this.host.trace("session.started", {
       connectionId: input.connectionId, peerId: short(input.deviceId), instanceId: short(input.instanceId),
       workspaceId: short(input.workspaceId), direction: input.direction, heartbeat: Boolean(input.heartbeatSupported),
@@ -266,15 +271,11 @@ export class BrowserMeshSessions<C extends MeshConnection, S extends BrowserMesh
     if (!plan.evict) return
     const key = this.host.key(entry.workspaceId, entry.deviceId, entry.instanceId)
     if (superseded && this.entries.get(key) === entry && error !== undefined) {
-      const failure = error
-      void entry.evict("receive loop ended").finally(() => {
-        if (this.entries.has(key)) return
-        setTimeout(() => {
-          if (this.entries.has(key)) return
-          this.host.networkFailure(key, failure)
-          this.host.protocolFailure(`Receive ${short(entry.deviceId, 6)}`, failure)
-        }, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
-      })
+      // The dead socket must not stay current, and the dialer must not open a second
+      // connection while the replacement handshake is still arriving.
+      if (this.host.holdDirectReconnect) this.host.holdDirectReconnect(key, BrowserMeshSessions.SUPERSEDED_CLOSE_GRACE_MS)
+      else this.host.networkFailure(key, error)
+      void entry.evict("receive loop ended")
       return
     }
     void entry.evict("receive loop ended")
