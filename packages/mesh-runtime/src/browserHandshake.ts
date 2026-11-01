@@ -1,6 +1,6 @@
 import { MeshHandshakeCodec, type MeshHandshakeFeatures, type MeshHandshakePayload } from "./handshake"
 import { meshRustRuntime, type RustMeshHandshakeFlow } from "@meta-uber/mesh-replication/runtime"
-import type { WorkspaceMemberBundle } from "@meta-uber/mesh-workspace"
+import type { WorkspaceGrant, WorkspaceMemberBundle } from "@meta-uber/mesh-workspace"
 
 export type BrowserMeshHandshakeStream = {
   read(): Promise<Uint8Array>
@@ -28,6 +28,7 @@ export type BrowserMeshHandshakeHost<C, P extends BrowserMeshHandshakePeer> = {
   secret(credential: C): string
   workspaceId(credential: C): string
   mergeAuthority(credential: C, request: MeshHandshakePayload): Promise<C>
+  localPeer?(credential: C): Promise<{ personId: string; deviceId: string; grant?: WorkspaceGrant }>
   verifyPeer(credential: C, bundle: WorkspaceMemberBundle): Promise<P>
   admit(credential: C, request: MeshHandshakePayload, remoteEndpointId: string): Promise<Pick<P, "deviceId" | "personId" | "endpoint">>
   revocations(credential: C): MeshHandshakePayload["revocations"]
@@ -77,9 +78,12 @@ export class BrowserMeshHandshake<C, P extends BrowserMeshHandshakePeer> {
             this.host.trace("handshake.incoming.verified", { connectionId, peerId: remote.deviceId.slice(0, 8),
               workspaceId: this.host.workspaceId(credential).slice(0, 8) })
             break
-          case "checkRevocation":
-            flow.advance(step, flow.isPeerRevoked(credential, remote.personId, request.peer?.grant, remote.deviceId))
+          case "checkRevocation": {
+            const local = await this.host.localPeer?.(credential)
+            const localRemoved = local && flow.isPeerRevoked(credential, local.personId, local.grant, local.deviceId)
+            flow.advance(step, !!localRemoved || flow.isPeerRevoked(credential, remote.personId, request.peer?.grant, remote.deviceId))
             continue
+          }
           case "sendRevocation": {
             await stream.send(this.codec.encodeResponse(this.host.secret(credential), {
               ...await this.host.response(credential, remote.personId),

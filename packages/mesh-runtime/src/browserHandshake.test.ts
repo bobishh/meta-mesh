@@ -56,6 +56,31 @@ describe("BrowserMeshHandshake", () => {
     expect(host.afterInstalled).toHaveBeenCalledOnce()
   })
 
+  it("returns a durable local departure without admitting an active remote participant", async () => {
+    const stream = { read: vi.fn(async () => new Uint8Array([1])), send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
+    const connection = { remoteEndpointId: "endpoint", acceptStream: vi.fn().mockResolvedValueOnce(stream).mockRejectedValueOnce(new Error("closed")), close: vi.fn(async () => {}) }
+    const departures = [{ record: { payload: { personId: "local", accessEpoch: 1 } } }]
+    const credential = { secret: "secret", workspaceId: "workspace", catalog: { departures } }
+    const host = {
+      credentials: async () => [credential], secret: () => "secret", workspaceId: () => "workspace",
+      mergeAuthority: async () => credential,
+      localPeer: async () => ({ personId: "local", deviceId: "local-device" }),
+      verifyPeer: async () => ({ deviceId: "remote", instanceId: "slot", issuedAt: "2026-01-01T00:00:00.000Z", personId: "owner", endpoint: "endpoint" }),
+      admit: vi.fn(), revocations: () => [], ownBundle: vi.fn(),
+      response: async () => ({ ...response, departures } as never), putVerifiedBundle: vi.fn(),
+      install: vi.fn(async () => true), afterInstalled: vi.fn(), trace: vi.fn(), failed: vi.fn(),
+    }
+    const codec = { inspect: () => ({ type: "mesh-handshake-request", secret: "secret" }), readRequest: () => request,
+      features: () => ({}), encodeResponse: vi.fn(() => new Uint8Array([2])) }
+    await expect(new BrowserMeshHandshake(host, codec as never).accept(connection, undefined, "departed")).resolves.toBe(false)
+    expect(codec.encodeResponse).toHaveBeenCalledWith("secret", expect.objectContaining({ departures }))
+    expect(host.admit).not.toHaveBeenCalled()
+    expect(host.install).not.toHaveBeenCalled()
+    expect(host.putVerifiedBundle).not.toHaveBeenCalled()
+    expect(host.failed).not.toHaveBeenCalled()
+    expect(connection.close).toHaveBeenCalledOnce()
+  })
+
   it("returns the owner revocation catalog before closing a revoked peer", async () => {
     const stream = { read: vi.fn(async () => new Uint8Array([1])), send: vi.fn(async () => {}), closeSend: vi.fn(async () => {}) }
     const connection = { remoteEndpointId: "endpoint", acceptStream: vi.fn().mockResolvedValueOnce(stream).mockRejectedValueOnce(new Error("closed")), close: vi.fn(async () => {}) }

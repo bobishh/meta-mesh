@@ -44,3 +44,12 @@ work. Closing a session closes only the transport it owns.
 
 [Identity and resource access](../../docs/identity-and-resource-access.md) defines
 the shared ownership, offline-revocation and user-flow contract.
+
+## Workspace departure responses
+
+`BrowserMeshHandshake` hosts may provide `localPeer(credential)` alongside the
+remote peer verifier. The SDK checks both members against the same signed
+revocation/departure policy. A removed local member returns the current signed
+authority response, then closes the candidate without admitting a data session.
+Hosts retain only the credential and signed evidence needed to answer returning
+peers; local UI removal and final-data delivery remain application decisions.
