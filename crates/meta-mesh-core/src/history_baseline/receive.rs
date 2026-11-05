@@ -132,7 +132,7 @@ pub(super) fn verify_owner_attested_core(
             .and_then(|count| count.checked_add(payload.archive.quarantined_count))
             .ok_or("Archive classification count overflow")?
         || !matches!(payload.admission_policy.as_str(),
-            "mesh-causal-admission@1" | "mesh-causal-admission@2" | "mesh-causal-admission@3")
+            "mesh-causal-admission@1" | "mesh-causal-admission@2" | "mesh-causal-admission@3" | "mesh-causal-admission@4")
     {
         return Err("Invalid owner-attested baseline context or required policy floor".into());
     }
@@ -412,7 +412,7 @@ fn validate_payload_basics(
                 .and_then(|count| count.checked_add(payload.archive.quarantined_count))
                 .ok_or("Archive classification count overflow")?
         || !matches!(payload.admission_policy.as_str(),
-            "mesh-causal-admission@1" | "mesh-causal-admission@2" | "mesh-causal-admission@3")
+            "mesh-causal-admission@1" | "mesh-causal-admission@2" | "mesh-causal-admission@3" | "mesh-causal-admission@4")
         || payload.locator_root.kind != "workspace-history-locator-root"
         || payload.locator_root.version != 1
         || payload.locator_root.context.workspace_id != payload.workspace_id

@@ -181,28 +181,69 @@ fn only_explicit_v2_grant_admits_atomic_card_and_original_source() {
 }
 
 #[test]
-fn source_metadata_does_not_block_old_grant_moves_but_real_children_still_do() {
-    for child in [false, true] {
+fn source_metadata_and_unchanged_documents_do_not_block_leaf_job_moves() {
+    for child in [None, Some("document"), Some("job")] {
         let mut fixture = SourceFixture::new(1);
         fixture.card("other");
         fixture.source("original", false);
-        if child {
+        if let Some(kind) = child {
             let entities = fixture.doc.get(ROOT, "entities").unwrap().unwrap().1;
-            let note = fixture
+            let node = fixture
                 .doc
-                .put_object(&entities, "note", ObjType::Map)
+                .put_object(&entities, "child", ObjType::Map)
                 .unwrap();
-            fixture.doc.put(&note, "kind", "document").unwrap();
+            fixture.doc.put(&node, "id", "child").unwrap();
+            fixture.doc.put(&node, "kind", kind).unwrap();
+            fixture
+                .doc
+                .put(&node, "title", "Retained application")
+                .unwrap();
+            if kind == "job" {
+                fixture.doc.put(&node, "body", "Nested job").unwrap();
+                fixture
+                    .doc
+                    .put_object(&node, "values", ObjType::Map)
+                    .unwrap();
+            }
             let placement = fixture
                 .doc
-                .put_object(&note, "placement", ObjType::Map)
+                .put_object(&node, "placement", ObjType::Map)
                 .unwrap();
             fixture.doc.put(&placement, "parentId", "card").unwrap();
         }
         fixture.owner_commit();
         fixture.move_card();
-        assert_worker_admitted(fixture, !child);
+        assert_worker_admitted(fixture, child != Some("job"));
     }
+}
+
+#[test]
+fn allowing_document_children_does_not_allow_worker_to_modify_the_document() {
+    let mut fixture = SourceFixture::new(1);
+    fixture.card("other");
+    let entities = fixture.doc.get(ROOT, "entities").unwrap().unwrap().1;
+    let note = fixture
+        .doc
+        .put_object(&entities, "note", ObjType::Map)
+        .unwrap();
+    fixture.doc.put(&note, "id", "note").unwrap();
+    fixture.doc.put(&note, "kind", "document").unwrap();
+    fixture
+        .doc
+        .put(&note, "title", "Application submitted")
+        .unwrap();
+    let placement = fixture
+        .doc
+        .put_object(&note, "placement", ObjType::Map)
+        .unwrap();
+    fixture.doc.put(&placement, "parentId", "card").unwrap();
+    fixture.owner_commit();
+    fixture.move_card();
+    fixture
+        .doc
+        .put(&note, "title", "Unauthorized replacement")
+        .unwrap();
+    assert_worker_admitted(fixture, false);
 }
 
 #[test]

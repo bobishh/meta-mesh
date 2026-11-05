@@ -36,7 +36,7 @@ pub struct CausalAdmissionInput {
 
 /// Retained archive observations name these rules explicitly. Changes to causal
 /// admission semantics require a new policy ID and reader compatibility review.
-pub const CAUSAL_ADMISSION_POLICY_ID: &str = "mesh-causal-admission@3";
+pub const CAUSAL_ADMISSION_POLICY_ID: &str = "mesh-causal-admission@4";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -2053,8 +2053,20 @@ fn placement_parent(map: &automerge::hydrate::Map) -> Option<String> {
 fn entity_has_child(entities: &automerge::hydrate::Map, id: &str) -> bool {
     entities.values().any(|entity| {
         map_value(&entity.value).is_some_and(|map| {
-            scalar_string(map.get("kind")).as_deref() != Some("application_source")
-                && placement_parent(map).as_deref() == Some(id)
+            if placement_parent(map).as_deref() != Some(id) {
+                return false;
+            }
+            match scalar_string(map.get("kind")).as_deref() {
+                Some("application_source") => false,
+                Some("document") if !is_item_map(map) => {
+                    let document_id = scalar_string(map.get("id"));
+                    entities.values().any(|child| {
+                        map_value(&child.value)
+                            .is_some_and(|child_map| placement_parent(child_map) == document_id)
+                    })
+                }
+                _ => true,
+            }
         })
     })
 }

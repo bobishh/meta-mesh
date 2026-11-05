@@ -97,11 +97,13 @@ records, source document/control, proofs and pending originals through a sink.
 Objects carry the same page/part binding as the browser archive codec; records and
 pages are at most 64 KiB, parts 256 KiB, and index fanout at most 64. A failed sink
 leaves the source unchanged. Native admission observations carry the explicit
-`mesh-causal-admission@3` policy ID; semantic policy changes require a new ID.
+`mesh-causal-admission@4` policy ID; semantic policy changes require a new ID.
 Version 2 preserves valid historical Owner device removals and rejects historical
-Owner person removals beyond their outgoing ownership frontier. Current version 3
+Owner person removals beyond their outgoing ownership frontier. Version 3
 also admits exact application-source v2 records with immutable original message
-and ATS references. The preparation revision includes this exact policy ID.
+and ATS references. Version 4 permits an unchanged leaf document under a job card without treating it as
+a nested job card. Automation still cannot edit that document or move a card containing
+job descendants. The preparation revision includes this exact policy ID.
 Older `@1` and `@2` observations remain original versioned evidence and are not
 relabeled by a new verifier.
 `WasmStateCore.causalAdmissionPolicyId()` reports the compiled rule ID. The shared

@@ -58,3 +58,12 @@ are separate work.
 See [bounded model and conformance](../formal/CausalAdmission.md). Applications
 own durable raw/view storage, retries, review UI and capability negotiation.
 This additive API does not migrate every MetaMesh consumer to the new policy.
+
+## Automation card moves
+
+Policy `mesh-causal-admission@4` permits scoped job-card moves with unchanged
+application-source metadata and leaf document attachments. A nested job card,
+including one beneath a document, still blocks the move. Automation cannot edit
+the attached document as part of the move. Historical baseline receive retains
+support for policy identities `@1` through `@3`; new writes require an upgraded
+reader to interpret the expanded move policy.
