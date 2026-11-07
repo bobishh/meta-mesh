@@ -41,14 +41,38 @@ pub struct DeviceCertificatePayload {
 pub type DeviceCertificate = SignedEnvelope<DeviceCertificatePayload>;
 
 pub fn canonicalize_json(value: &Value) -> Result<String, String> {
+    canonicalize_with_numbers(value, false)
+}
+
+/// Signature bytes use scalar key order and ECMAScript number formatting.
+/// Stored content hashes retain their original serializer via `canonicalize_json`.
+pub fn canonicalize_signature_json(value: &Value) -> Result<String, String> {
+    canonicalize_with_numbers(value, true)
+}
+
+fn canonicalize_with_numbers(value: &Value, signature_numbers: bool) -> Result<String, String> {
     match value {
+        Value::Number(number) if signature_numbers => {
+            const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+            if number
+                .as_u64()
+                .is_some_and(|value| value > MAX_SAFE_INTEGER)
+                || number
+                    .as_i64()
+                    .is_some_and(|value| value.unsigned_abs() > MAX_SAFE_INTEGER)
+            {
+                return Err("Signed integer exceeds JavaScript safe range".to_string());
+            }
+            let value = number.as_f64().ok_or("Invalid signed number")?;
+            Ok(ryu_js::Buffer::new().format_finite(value).to_string())
+        }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
             serde_json::to_string(value).map_err(|_| "JSON canonicalization failed".to_string())
         }
         Value::Array(values) => {
             let values = values
                 .iter()
-                .map(canonicalize_json)
+                .map(|value| canonicalize_with_numbers(value, signature_numbers))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("[{}]", values.join(",")))
         }
@@ -60,7 +84,7 @@ pub fn canonicalize_json(value: &Value) -> Result<String, String> {
                 .map(|key| {
                     let encoded_key = serde_json::to_string(key)
                         .map_err(|_| "JSON canonicalization failed".to_string())?;
-                    let encoded_value = canonicalize_json(&object[key])?;
+                    let encoded_value = canonicalize_with_numbers(&object[key], signature_numbers)?;
                     Ok(format!("{encoded_key}:{encoded_value}"))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
@@ -110,7 +134,7 @@ pub fn sign_json_envelope(
         .and_then(Value::as_str)
         .filter(|kind| !kind.is_empty())
         .ok_or_else(|| "Signed payload kind missing".to_string())?;
-    let canonical = canonicalize_json(&payload)?;
+    let canonical = canonicalize_signature_json(&payload)?;
     let key_pair = KeyPair::from_seed(Seed::new(*seed));
     let signature = key_pair
         .sk
@@ -160,9 +184,21 @@ pub fn verify_signed_envelope<T: Serialize>(
         Signature::from_slice(&signature_bytes).map_err(|_| "Invalid signature".to_string())?;
     let key = PublicKey::from_slice(&decode_public_key(public_key)?)
         .map_err(|_| "Invalid public key".to_string())?;
-    let canonical = canonicalize_json(&payload)?;
+    let legacy = canonicalize_json(&payload)?;
+    if let Ok(canonical) = canonicalize_signature_json(&payload) {
+        if key
+            .verify(signature_input(kind, &canonical, domain), &signature)
+            .is_ok()
+        {
+            return Ok(true);
+        }
+        if canonical == legacy {
+            return Ok(false);
+        }
+    }
+    // Keep historical native signatures readable without rewriting stored hashes.
     Ok(key
-        .verify(signature_input(kind, &canonical, domain), &signature)
+        .verify(signature_input(kind, &legacy, domain), &signature)
         .is_ok())
 }
 
@@ -247,6 +283,45 @@ fn decode_public_key(public_key: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn signature_numbers_match_ecmascript_without_changing_stored_canonical_bytes() {
+        let payload =
+            json!({"kind": "numbers", "small": 1e-6, "large": 1e20, "integral": 1.0, "zero": -0.0});
+        assert_eq!(
+            canonicalize_signature_json(&payload).unwrap(),
+            r#"{"integral":1,"kind":"numbers","large":100000000000000000000,"small":0.000001,"zero":0}"#
+        );
+        assert_eq!(
+            canonicalize_json(&payload).unwrap(),
+            r#"{"integral":1.0,"kind":"numbers","large":1e+20,"small":1e-6,"zero":-0.0}"#
+        );
+        assert!(canonicalize_signature_json(&json!({"count": 9_007_199_254_740_992_u64})).is_err());
+    }
+
+    #[test]
+    fn saved_native_number_signature_survives_and_tampering_fails() {
+        let seed = [17; 32];
+        let payload = json!({"kind": "numbers", "small": 1e-6, "large": 1e20});
+        let key_pair = KeyPair::from_seed(Seed::new(seed));
+        let signature = key_pair.sk.sign(
+            signature_input(
+                "numbers",
+                &canonicalize_json(&payload).unwrap(),
+                DEFAULT_SIGNATURE_DOMAIN,
+            ),
+            None,
+        );
+        let mut envelope = SignedEnvelope {
+            payload,
+            signer_key_id: "probe".to_string(),
+            signature: URL_SAFE_NO_PAD.encode(signature.as_ref()),
+        };
+        let public_key = public_key_from_seed(&seed).unwrap();
+        assert!(verify_signed_envelope(&envelope, &public_key, DEFAULT_SIGNATURE_DOMAIN).unwrap());
+        envelope.payload["small"] = json!(1e-5);
+        assert!(!verify_signed_envelope(&envelope, &public_key, DEFAULT_SIGNATURE_DOMAIN).unwrap());
+    }
 
     #[test]
     fn signature_matches_typescript_webcrypto_golden_vector() {

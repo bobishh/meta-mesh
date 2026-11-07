@@ -1,61 +1,70 @@
-# Mesh
+# MetaMesh
 
-Reusable browser P2P primitives for identity, signed routes, durable delivery, sparse gossip, native Automerge anti-entropy, calling, blobs, and contact bootstrap.
+MetaMesh is a reusable peer-to-peer SDK for application identity, signed
+authorization, durable delivery, gossip, Automerge synchronization, and encrypted
+blob transfer. It supplies shared infrastructure to products such as tincanban;
+applications keep their own data model, user interface, and business rules.
 
-Rust layout:
+## Components
 
-- `crates/meta-mesh-core`: platform-neutral protocol code. No browser, WASM, or Iroh dependency; owns pairing frames, identity/recovery crypto, Ed25519 envelopes, grants, invitations, certificate admission, workspace ownership/succession/revocation, peer/replica merge policy, durable admission/outbox transitions, route/ACK policy, and Automerge sync state for web, iOS, Android, and native clients.
-- `crates/meta-mesh-native`: native/mobile runtime on current Iroh, iroh-gossip, and iroh-blobs. Owns endpoint identity, admission, gossip, Bao blob transfer, and memory/disk stores.
-- `crates/meta-mesh-mobile`: UniFFI adapter over the same core and native runtime. `scripts/generate-mobile-bindings.sh` emits checked-in Swift and Kotlin APIs for iOS and Android clients.
-- `crates/meta-mesh`: browser-only WASM adapter on the WebRTC transport's pinned Iroh version. No native runtime fallback.
+| Component | Role |
+| --- | --- |
+| `meta-mesh-core` | Platform-neutral protocol, identity, authority, delivery, and Automerge policy |
+| `meta-mesh-native` | Native runtime using Iroh, gossip, and blob transfer |
+| `meta-mesh-mobile` | UniFFI interface for Swift and Kotlin clients over the shared native runtime |
+| `meta-mesh` | Browser WebAssembly adapter for the pinned WebRTC transport |
+| `packages/*` | TypeScript identity, transport, replication, runtime, storage, and workspace APIs |
 
-The npm workspace is marked `private` so root-package publishing cannot happen accidentally. Packages are consumed from a pinned Git submodule until their API stabilizes. Repository visibility is a separate GitHub setting.
+The Rust core does not depend on browser, WASM, or Iroh APIs. Browser and native
+adapters use the shared protocol code while providing platform-specific transport
+and storage.
 
-See [replication protocol](docs/replication.md) for identity boundaries, route lifecycle, delivery guarantees, browser-instance behavior, security checks, and operational traces.
-See [verification measurements](docs/measurements.md) for current topology, byte, duplicate, reconnect, and limitation evidence.
-See [protocol models](formal/README.md) for bounded TLA+ checks of authority epochs, session generations, and durable batch acknowledgements.
-See [co-owned scope governance](docs/coownership.md) for opt-in v2 quorum, conflict resolution, independent forks, and consumer integration limits.
-See [causal write admission](docs/causal-admission.md) for retained raw history, revocation reclassification, authorized projections, and grant-bound transaction provenance.
+## Use from an application
 
-Identity recovery uses a random 256-bit Ed25519 root. A 4, 12, or 24-word recovery phrase derives an AES-256-GCM wrapping key with PBKDF2-HMAC-SHA-256 and 600,000 iterations; it never derives the identity itself. Rewrapping with newly generated words changes recovery strength without changing the person ID. Applications own storage and replication of the encrypted version-3 recovery envelope.
+Tincanban consumes these packages from a pinned Git submodule. The npm workspace
+is private and the packages are not published to npm while their APIs stabilize.
+See the [tincanban ecosystem map](https://github.com/bobishh/tincanban/blob/main/README.md) for the
+application-to-SDK boundary.
 
-Workspace authority is durable application state, separate from live transport. `mesh-peer-store` keeps owner history, grants, revocations, transfer records, and succession records in its `authority` store. Route cleanup and leaving an active mesh remove peers and transport credentials while preserving that signed authority. Full local-data reset may remove both.
+## Check the TypeScript workspace
 
-No direct-derived identity compatibility or migration path exists. Applications discard pre-envelope sessions. Application-specific passphrases can encrypt a separate envelope around the same random-root model; they never derive identity keys.
-
-## Browser WASM packaging
-
-`@meta-uber/mesh-transport/wasm` exports policy, identity, pairing, Automerge and
-runtime state machines from `meta-mesh-policy`. Initialize it before local policy
-reads. This crate has no transitive Iroh/WebRTC dependency.
-
-`@meta-uber/mesh-transport/transport-wasm` exports `BrowserNode`, gossip and blobs
-from the transport adapter. Import and initialize it when starting network work.
-`scripts/build-wasm.sh` generates both artifacts. The previous relative
-`wasm/meta_mesh.js` files remain for existing direct-path consumers; package
-imports use the new boundaries.
-
-## Apple package
-
-Build the iOS device and Apple Silicon simulator binaries, then package them with the generated Swift bindings:
+Requirements: Node.js 22.12 or newer on the supported Node 22, 24, or 26+ lines.
 
 ```sh
-./scripts/build-apple-xcframework.sh
-./scripts/verify-apple-xcframework.sh
+npm ci
+npm run check
+npm test
 ```
 
-The generated Swift package lives at `crates/meta-mesh-mobile/generated`. The XCFramework is a local build artifact and is not committed.
+## Build platform artifacts
 
-Run generated Swift and Kotlin clients against the native runtime, including deny-by-default and revocation checks:
+For browser development, `scripts/build-wasm.sh` generates the policy WASM package
+and the transport WASM package. `@meta-uber/mesh-transport/wasm` contains policy
+and runtime state machines; `@meta-uber/mesh-transport/transport-wasm` contains
+`BrowserNode`, gossip, and blobs. Initialize policy WASM before local policy
+reads, and initialize transport WASM before network work.
 
-```sh
-./scripts/test-mobile-language-interop.sh
-```
+For Apple platforms, `scripts/build-apple-xcframework.sh` builds device and Apple
+Silicon simulator artifacts; `scripts/verify-apple-xcframework.sh` checks the
+package. Generated Swift and Kotlin clients can be exercised with
+`scripts/test-mobile-language-interop.sh`. The generated XCFramework is a local
+build artifact.
 
-## Browser release artifacts
+## Protocol and evidence
 
-`scripts/build-wasm.sh` omits the WebAssembly debugging `name` section from
-the shipped browser artifact. This keeps Rust symbol names out of the download;
-exports and executable sections are preserved. For symbolized local debugging,
-run `wasm-bindgen` on `target/wasm32-unknown-unknown/release/meta_mesh.wasm`
-without `--remove-name-section` into a separate local output directory.
+- [Replication protocol](docs/replication.md): identity boundaries, route
+  lifecycle, delivery guarantees, browser instances, and security checks.
+- [Verification measurements](docs/measurements.md): measured topology, bytes,
+  duplicates, reconnect behavior, and limits.
+- [Causal write admission](docs/causal-admission.md): retained history,
+  revocation reclassification, and grant-bound writes.
+- [Co-owned scopes](docs/coownership.md): quorum rules, conflict resolution,
+  independent forks, and consumer integration limits.
+- [Formal models](formal/README.md): bounded checks for authority epochs,
+  sessions, delivery, and acknowledgements.
+
+Identity uses a random root key. Recovery words wrap that key; they do not derive
+identity. Workspace authority is durable application state, separate from live
+transport routes. There is no compatibility path for the former direct-derived
+identity scheme. See the protocol docs for exact formats, migration boundaries,
+and verification scope.
