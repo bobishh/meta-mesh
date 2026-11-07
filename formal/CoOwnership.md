@@ -14,7 +14,7 @@ The main model checks the finite candidate graph. It includes branches A/B, late
 
 Four mutation runs require their named invariant to fail: one-signature threshold bypass, stale-head replay, conflict-evidence forgetting, and unilateral alternate-identity recovery. The focused runner stores compact logs and can retain a fresh graph with `--graph-dir PATH` or `COOWNERSHIP_GRAPH_DIR=PATH`.
 
-All formal runners use the shared TLC pin in `tla-tools-pin.env`: official TLA+ release asset 683491413 (`tla2tools.jar`, v1.8.0), downloaded through its immutable GitHub release-asset API URL and checked against SHA-256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e`. The release API reports the same digest. Historical measurements remain separate from fresh runs against this asset.
+All formal runners use the shared official TLA+ release version, asset ID and SHA-256 in `tla-tools-pin.env`. Downloads use the public release URL and must match the pinned digest before execution. A replaced upstream asset fails verification until its published digest is checked and the shared pin is updated. Historical measurements remain separate from fresh runs.
 
 ## Executable conformance
 
