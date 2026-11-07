@@ -159,7 +159,7 @@ pub use replication::{
 };
 pub use runtime::{
     control_frames, preferred_session_direction, validate_mesh_capabilities, ControlChunk,
-    ControlFrameReceiver, DialMode, DialPlan, MeshLifecycleState, MeshRuntimeState, ReconnectState,
+    ControlFrameReceiver, DialMode, DialPlan, GossipTopology, MeshLifecycleState, MeshRuntimeState, ReconnectState,
     RelayDialPolicy, RouteAttempt, RuntimeSession, SessionAdmission, SessionCandidate,
     SessionDirection, SessionKey, CONTROL_CHUNK_BYTES, MAX_CONTROL_FRAME_BYTES,
     MAX_CONTROL_SNAPSHOT_BYTES, MESH_CAPABILITIES,

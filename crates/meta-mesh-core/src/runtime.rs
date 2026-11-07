@@ -227,6 +227,16 @@ pub struct MeshRuntimeState {
     sessions: BTreeMap<SessionKey, RuntimeSession>,
     attempts: BTreeMap<String, RouteAttempt>,
     reconnects: BTreeMap<String, ReconnectState>,
+    // Retained for the native mobile topology ABI; neighbor policy lives in GossipLifecycleState.
+    #[serde(default)]
+    gossip_peers: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GossipTopology {
+    pub changed: bool,
+    pub endpoints: Vec<String>,
 }
 
 /// Lifecycle decisions shared by browser and native hosts. Hosts perform I/O;
@@ -324,6 +334,7 @@ impl MeshRuntimeState {
         self.running = false;
         self.attempts.clear();
         self.reconnects.clear();
+        self.gossip_peers.clear();
         let connections = self
             .sessions
             .values()
@@ -335,6 +346,23 @@ impl MeshRuntimeState {
 
     pub fn is_running(&self) -> bool {
         self.running
+    }
+
+    pub fn set_gossip_endpoints(&mut self, workspace_id: String, mut endpoints: Vec<String>) -> GossipTopology {
+        endpoints.sort();
+        endpoints.dedup();
+        let changed = self.gossip_peers.get(&workspace_id).map(Vec::as_slice).unwrap_or_default()
+            != endpoints.as_slice();
+        if endpoints.is_empty() {
+            self.gossip_peers.remove(&workspace_id);
+        } else {
+            self.gossip_peers.insert(workspace_id, endpoints.clone());
+        }
+        GossipTopology { changed, endpoints }
+    }
+
+    pub fn clear_gossip(&mut self, workspace_id: &str) {
+        self.gossip_peers.remove(workspace_id);
     }
 
     pub fn sessions(&self) -> impl Iterator<Item = &RuntimeSession> {
@@ -642,6 +670,31 @@ fn validate_chunk(chunk: &ControlChunk, workspace_id: &str) -> Result<(), String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mobile_gossip_topology_preserves_workspace_ownership_and_resets_on_stop() {
+        // Given workspace-owned native gossip endpoints, When reordered/cleared/stopped,
+        // Then canonical topology changes only for the affected workspace and lifecycle.
+        let mut runtime = MeshRuntimeState::default();
+        assert!(!runtime.set_gossip_endpoints("one".into(), Vec::new()).changed);
+        assert!(!runtime.set_gossip_endpoints("one".into(), Vec::new()).changed);
+        let endpoints = vec!["b".into(), "a".into(), "a".into()];
+        let first = runtime.set_gossip_endpoints("one".into(), endpoints.clone());
+        assert!(first.changed);
+        assert_eq!(first.endpoints, vec!["a", "b"]);
+        assert!(!runtime.set_gossip_endpoints("one".into(), vec!["a".into(), "b".into()]).changed);
+        assert!(runtime.set_gossip_endpoints("two".into(), endpoints.clone()).changed);
+        runtime.clear_gossip("one");
+        assert!(!runtime.set_gossip_endpoints("two".into(), endpoints.clone()).changed);
+        assert!(runtime.set_gossip_endpoints("one".into(), endpoints.clone()).changed);
+        let cleared = runtime.set_gossip_endpoints("one".into(), Vec::new());
+        assert!(cleared.changed);
+        assert!(cleared.endpoints.is_empty());
+        assert!(!runtime.set_gossip_endpoints("one".into(), Vec::new()).changed);
+        assert!(runtime.set_gossip_endpoints("one".into(), endpoints.clone()).changed);
+        runtime.stop();
+        assert!(runtime.set_gossip_endpoints("two".into(), endpoints).changed);
+    }
+
     use super::*;
 
     #[test]

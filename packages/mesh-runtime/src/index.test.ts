@@ -21,14 +21,20 @@ describe("Rust mesh runtime", () => {
       connectionId: "sibling", remoteIssuedAt: "2026-09-21T00:00:00Z",
       remoteRouteSequence: 1, direction: "incoming",
     }, "incoming")
+    const nonPreferred = runtime.admitSession({
+      key: { workspaceId: "workspace", deviceId: "device", instanceId: "one" },
+      connectionId: "non-preferred", remoteIssuedAt: "2026-09-21T00:00:00Z",
+      remoteRouteSequence: 2, direction: "outgoing",
+    }, "incoming")
     const replacement = runtime.admitSession({
       key: { workspaceId: "workspace", deviceId: "device", instanceId: "one" },
       connectionId: "replacement", remoteIssuedAt: "2026-09-21T00:00:00Z",
       remoteRouteSequence: 2, direction: "outgoing",
-    }, "incoming")
+    }, "outgoing")
 
     expect(first.decision).toBe("accepted")
     expect(sibling.decision).toBe("accepted")
+    expect(nonPreferred).toEqual({ decision: "rejected", retainedConnectionId: "first" })
     expect(replacement).toMatchObject({ decision: "accepted", replacedConnectionId: "first" })
     expect(runtime.removeSession({ workspaceId: "workspace", deviceId: "device", instanceId: "one" }, first.generation!))
       .toBeNull()
