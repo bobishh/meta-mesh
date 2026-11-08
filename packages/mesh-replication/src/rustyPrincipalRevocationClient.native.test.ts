@@ -21,13 +21,13 @@ import { publishRustyScopeAuthoritySnapshot, type ScopeAuthorityValidation } fro
 import { createRustyIdentityRequestProof } from "./rustyIdentityRequestProof"
 import { meshRustRuntime } from "./runtime"
 import { registerRustyResourcePrincipalGrant, type RustyResourcePrincipalGrant,
-  type RustyWorkspaceMembershipGrant } from "./rustyResourcePrincipalGrantClient"
+  type RustyWorkspaceMembershipGrant, type RegisterRustyResourcePrincipalGrantOptions } from "./rustyResourcePrincipalGrantClient"
 import { revokeRustyResourcePrincipal } from "./rustyPrincipalRevocationClient"
 import { classifyRustyPersonIdentityScope } from "./rustyScopePurposeClient"
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
 
-it.skipIf(!rustyBinary)("Given a current Identity device absent from immutable scope genesis, When it registers or revokes a resource principal, Then Rusty authorizes it through the current Identity view", async () => {
+it.skipIf(!rustyBinary).each(["original", "current"])("Given a current Identity device absent from immutable scope genesis and a %s membership signer, When it registers or revokes a resource principal, Then Rusty authorizes it through the current Identity view", async membershipSigner => {
   const owner = (await createRecoverableIdentity("better", "Legacy scope owner")).profile
   const subject = (await createRecoverableIdentity("better", "Resource principal subject")).profile
   const oldDevice = await createIdentityEnrollmentDevice("Original workspace controller")
@@ -95,10 +95,11 @@ it.skipIf(!rustyBinary)("Given a current Identity device absent from immutable s
       signAuthorization: signCurrentDevice })
 
     const grantId = "legacy-controller-editor-grant"
-    const membership = await signEnvelope(oldDevice.privateKey, {
+    const memberIssuer = membershipSigner === "current" ? currentDevice : oldDevice
+    const membership = await signEnvelope(memberIssuer.privateKey, {
       kind: "workspace-grant" as const, version: 1 as const, grantId, workspaceId, personId: subject.identity.personId,
       role: "editor" as const, accessEpoch: 1,
-    }, oldDevice.device.deviceId, "MATCH/1")
+    }, memberIssuer.device.deviceId, "MATCH/1")
     const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
       const response = await fetch(input, init)
       const path = new URL(String(input)).pathname
@@ -109,14 +110,21 @@ it.skipIf(!rustyBinary)("Given a current Identity device absent from immutable s
       }
       return response
     }
-    const registration = await registerRustyResourcePrincipalGrant({
+    const registrationOptions: RegisterRustyResourcePrincipalGrantOptions = {
       origin, servicePublicKey: service.servicePublicKey, storageScopeId, workspaceId,
       expectedScopeAuthoritySnapshot: scopeAuthority, identity: owner.identity, authorityView,
       deviceId: currentDevice.device.deviceId, devicePublicKey: currentDevice.device.publicKey,
       subjectIdentity: subject.identity, workspaceGrant: membership, readToken, writeToken, fetcher,
       ensureCurrent: () => {}, validateSnapshot,
       signAuthorization: payload => signCurrentDevice(payload as RustyResourcePrincipalGrant["payload"]),
+    }
+    const prior = await registerRustyResourcePrincipalGrant({ ...registrationOptions,
+      deviceId: oldDevice.device.deviceId, devicePublicKey: oldDevice.device.publicKey,
+      signAuthorization: payload => signEnvelope(oldDevice.privateKey, payload, oldDevice.device.deviceId, "MATCH/1"),
     })
+    expect(registrationResponse?.status).toBe(204)
+    expect(prior.principalGrant.signerKeyId).toBe(oldDevice.device.deviceId)
+    const registration = await registerRustyResourcePrincipalGrant(registrationOptions)
     expect(registration.principalGrant.payload.grantId).toBe(grantId)
     expect(registrationResponse?.status).toBe(204)
 
@@ -128,6 +136,8 @@ it.skipIf(!rustyBinary)("Given a current Identity device absent from immutable s
     })
     expect(revocation.payload.grantId).toBe(grantId)
     expect(revocationResponse?.status).toBe(200)
+  } catch (cause) {
+    throw new Error(`${String(cause)}; registration: ${registrationResponse?.body ?? "none"}; revocation: ${revocationResponse?.body ?? "none"}`, { cause })
   } finally {
     if (child) await stopRusty(child)
     await rm(stateDirectory, { recursive: true, force: true })
@@ -336,6 +346,8 @@ it.skipIf(!rustyBinary)("Given strict Rusty and mixed-case certified device IDs,
     })
     expect(registeredEditor.scopeAuthority.snapshot).toEqual(scopeAuthority)
     expect(grantPuts).toEqual([`/v2/scopes/${opaqueScopeId}/principals/${grantId}`])
+    const replacement = await signOwner({ ...workspaceGrant.payload, grantId: "unrevoked-replacement" })
+    await expect(register(editor.identity, replacement)).rejects.toThrow(/replacement requires prior revocation/)
     const readProof = await createEditorReadProof(origin, discovery.servicePublicKey, opaqueScopeId, readToken,
       editor, editorAuthorityView, grantId, 3)
     const readUrl = `${origin}/v2/scopes/${encodeURIComponent(opaqueScopeId)}/objects`

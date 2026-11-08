@@ -37,9 +37,13 @@ Current Rusty scope-authority updates, principal registrations and principal
 revocations SHALL authenticate their signer through the current verified Identity
 authority and bind that Identity to the resource controller. Current actions
 require an active device and a valid request signature. Historical workspace
-grants and control decisions retain their original history verification.
+grants and control decisions retain their original controller Identity binding.
+A grant issued by a later device of the current controller may use that
+controller's verified Identity certificates; certificates cannot introduce a
+different controller or change the grant's subject, role or access epoch.
 
-Offline board-storage attestations carry the signer's chain in the existing
+Offline board-storage attestations carry both the membership issuer's and storage
+signer's chains in the existing
 `BoardStorageAccess.certificates` field. Consumers SHALL verify that chain against
 a controller Identity established by signed scope history, verify the attestation
 signature, and enforce learned revocations. The chain does not replace workspace

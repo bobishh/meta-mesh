@@ -9,7 +9,7 @@ import {
   type PublicIdentity,
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
-import { rustyOrigin, decodeBlindBytes } from "./rustyReplica"
+import { rustyOrigin, decodeBlindBytes, readRustyJson } from "./rustyReplica"
 import type { RustyFetch } from "./rustyDiscovery"
 import {
   readRustyScopeAuthorityStatus,
@@ -150,7 +150,7 @@ export async function registerRustyResourcePrincipalGrant(
       !Number.isSafeInteger(member.accessEpoch ?? 1) || (member.accessEpoch ?? 1) < 1) {
     throw new Error("Workspace membership grant does not match the Rusty principal subject")
   }
-  const role = verifyGrantInAcceptedControllerHistory(state, membershipGrant, authority.snapshot, workspaceId, subjectIdentity.personId)
+  const role = verifyGrantInAcceptedControllerHistory(state, membershipGrant, authority.snapshot, workspaceId, subjectIdentity.personId, view)
   if (role === "automation") throw new Error("Automation grants cannot access Rusty resource storage")
   const actions: Array<"read" | "write"> = role === "visitor" ? ["read"] : ["read", "write"]
   await options.ensureCurrent?.()
@@ -196,8 +196,13 @@ export async function registerRustyResourcePrincipalGrant(
     },
   )
   if (response.status !== 204) {
-    await response.body?.cancel()
-    throw new Error(`Rusty resource principal registration failed with HTTP ${response.status}`)
+    const message = `Rusty resource principal registration failed with HTTP ${response.status}`
+    try { await readRustyJson(response, 2_048) }
+    catch (cause) {
+      const reason = cause instanceof Error ? cause.message.slice(0, 512) : "Invalid error response"
+      throw new Error(`${message}: ${reason}`, { cause })
+    }
+    throw new Error(message)
   }
   await options.ensureCurrent?.()
   return { principalGrant, scopeAuthority: current }
@@ -224,15 +229,22 @@ function verifyGrantInAcceptedControllerHistory(
   snapshot: unknown,
   workspaceId: string,
   subjectPersonId: string,
+  currentIdentity: IdentityAuthorityView,
 ): RustyWorkspaceMembershipGrant["payload"]["role"] {
   const controllers = scopeControllers(snapshot)
   const matches = new Map<string, RustyWorkspaceMembershipGrant["payload"]["role"]>()
   for (const controller of controllers) {
-    try {
-      const role = state.verifyWorkspaceGrant(grant, workspaceId, subjectPersonId, controller) as RustyWorkspaceMembershipGrant["payload"]["role"]
-      matches.set(`${controller.personId}\u0000${controller.publicKey}`, role)
-    } catch {
-      // A scope snapshot can contain several authenticated controllers; only one must validate this grant.
+    const chains = [controller.certificates]
+    if (controller.personId === currentIdentity.personId && controller.publicKey === currentIdentity.identityPublicKey) {
+      chains.push(currentIdentity.certificates)
+    }
+    for (const certificates of chains) {
+      try {
+        const role = state.verifyWorkspaceGrant(grant, workspaceId, subjectPersonId, { ...controller, certificates }) as RustyWorkspaceMembershipGrant["payload"]["role"]
+        matches.set(`${controller.personId}\u0000${controller.publicKey}`, role)
+      } catch {
+        // Device proofs may arrive after immutable genesis; their root must still match an authenticated controller.
+      }
     }
   }
   if (matches.size !== 1) throw new Error("Workspace membership grant is not uniquely bound to accepted scope history")

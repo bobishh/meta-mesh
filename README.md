@@ -37,6 +37,9 @@ token hashing, wire normalization, signature verification and registration HTTP.
 The host must reject revoked membership in its `ensureCurrent` guard. Registration
 retries use the same membership grant; an accepted controller or policy change
 requires fresh authoritative state instead of rewriting the signed grant.
+Membership signatures may use controller devices approved after immutable scope
+genesis. Their certificates come from the current verified Identity authority;
+the controller's person and public key remain bound to accepted scope history.
 
 Hosts own credentials, durable CAS, lifetime guards and product admission. Save
 the exact pending ciphertext and request ID before sending; after an uncertain
