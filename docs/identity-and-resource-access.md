@@ -343,3 +343,20 @@ Production publication uses committed source and immutable checked artifacts.
 Changes must reach each repository's main branch, pass its applicable CI and be
 verified at the served revision. A local test, a feature-branch commit or a dirty
 checkout deployment is not publication evidence.
+
+### Replacing a registered storage principal
+
+An owner explicitly installing a higher workspace membership epoch may provide
+`signRevocation` to the SDK registration call. On a fresh `X-Rusty-Request-Id`,
+Rusty can return HTTP 200 with a `replacement` envelope under `RUSTY/2`; this is
+pending control-plane work, not a successful registration. The signed statement
+binds the service, origin, storage scope, workspace, controller, subject, desired
+grant and epoch, previous installed grant and epoch, challenge, canonical request
+hash and issue time. No other principal or equal/newer epoch can be retired.
+The SDK verifies all bindings, checks host freshness, obtains the existing signed
+durable revocation receipt and repeats the exact registration; only HTTP 204
+completes installation. Hosts retain the current signed workspace membership,
+not a second mutable access registry. Revocations survive restart, so interrupted
+retries can finish even when the old grant is absent locally. Ordinary reads never
+perform this lifecycle operation. Clients without the opt-in retain the existing
+prior-revocation rejection.

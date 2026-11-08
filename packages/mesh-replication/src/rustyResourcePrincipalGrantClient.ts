@@ -7,6 +7,7 @@ import {
   verifyIdentityAuthorityView,
   type IdentityAuthorityView,
   type PublicIdentity,
+  toBase64Url,
   type SignedEnvelope,
 } from "@meta-uber/mesh-identity"
 import { rustyOrigin, decodeBlindBytes, readRustyJson } from "./rustyReplica"
@@ -16,6 +17,7 @@ import {
   type ScopeAuthorityValidation,
 } from "./rustyScopeAuthorityClient"
 import { meshRustRuntime } from "./runtime"
+import { revokeRustyResourcePrincipal, type RustyResourcePrincipalRevocationOptions } from "./rustyPrincipalRevocationClient"
 
 const encoder = new TextEncoder()
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/u
@@ -70,6 +72,8 @@ export type RegisterRustyResourcePrincipalGrantOptions = {
   ensureCurrent?: () => void | Promise<void>
   validateSnapshot: (snapshot: unknown) => ScopeAuthorityValidation
   signAuthorization: (payload: RustyResourcePrincipalGrant["payload"]) => Promise<RustyResourcePrincipalGrant>
+  /** Explicitly allow replacing an older membership for this same subject after a verified durable revocation. */
+  signRevocation?: RustyResourcePrincipalRevocationOptions["signAuthorization"]
   now?: () => number
 }
 
@@ -184,17 +188,29 @@ export async function registerRustyResourcePrincipalGrant(
   }
   await options.ensureCurrent?.()
 
-  const response = await (options.fetcher ?? fetch)(
+  const request = { version: 1, grant: principalGrant }
+  const requestId = options.signRevocation ? randomNonce() : undefined
+  const send = () => (options.fetcher ?? fetch)(
     `${origin}/v2/scopes/${encodeURIComponent(storageScopeId)}/principals/${encodeURIComponent(member.grantId)}`,
     {
       method: "PUT",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ version: 1, grant: principalGrant }),
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(10_000),
+      headers: { "content-type": "application/json", accept: "application/json",
+        ...(requestId ? { "X-Rusty-Request-Id": requestId } : {}) },
+      body: JSON.stringify(request), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     },
   )
+  let response = await send()
+  if (response.status === 200 && options.signRevocation && requestId) {
+    const previous = await verifyReplacementStatus(await readRustyJson(response, 4_096),
+      { principalGrant, servicePublicKey: options.servicePublicKey, requestId,
+        requestHash: await sha256Base64Url(encoder.encode(canonicalizeJson(request))), now: now() })
+    await options.ensureCurrent?.()
+    await revokeRustyResourcePrincipal({ ...options, origin, grantId: previous.grantId,
+      subjectPersonId: member.personId, policyEpoch: previous.policyEpoch,
+      signAuthorization: options.signRevocation })
+    await options.ensureCurrent?.()
+    response = await send()
+  }
   if (response.status !== 204) {
     const message = `Rusty resource principal registration failed with HTTP ${response.status}`
     try { await readRustyJson(response, 2_048) }
@@ -221,6 +237,38 @@ function normalizeScopeSnapshot(
     throw new Error("Rusty resource principal scope snapshot changed while normalizing")
   }
   return result
+}
+
+async function verifyReplacementStatus(value: unknown, expected: {
+  principalGrant: RustyResourcePrincipalGrant; servicePublicKey: string;
+  requestId: string; requestHash: string; now: number;
+}): Promise<{ grantId: string; policyEpoch: number }> {
+  const receipt = (value as { replacement?: unknown })?.replacement as SignedEnvelope<Record<string, unknown> & { kind: string }> | undefined
+  const grant = expected.principalGrant.payload
+  const fields = ["kind", "version", "serviceId", "origin", "storageScopeId", "workspaceId", "ownerPersonId",
+    "subjectPersonId", "grantId", "policyEpoch", "previousGrantId", "previousPolicyEpoch", "requestId", "requestHash", "issuedAt"]
+  if (!hasExactKeys(value, ["replacement"]) || !hasExactKeys(receipt, ["payload", "signerKeyId", "signature"]) ||
+      !hasExactKeys(receipt?.payload, fields) || receipt!.signerKeyId !== grant.serviceId ||
+      !await verifyEnvelope(receipt!, expected.servicePublicKey, "RUSTY/2")) {
+    throw new Error("Invalid Rusty principal replacement status signature or shape")
+  }
+  const status = receipt!.payload
+  if (status.kind !== "rusty-resource-principal-replacement-required" || status.version !== 1 ||
+      status.serviceId !== grant.serviceId || status.origin !== grant.origin || status.storageScopeId !== grant.scopeId ||
+      status.workspaceId !== grant.workspaceId || status.ownerPersonId !== grant.ownerPersonId ||
+      status.subjectPersonId !== grant.subjectPersonId || status.grantId !== grant.grantId ||
+      status.policyEpoch !== grant.policyEpoch || status.requestId !== expected.requestId || status.requestHash !== expected.requestHash ||
+      typeof status.previousGrantId !== "string" || !idPattern.test(status.previousGrantId) || status.previousGrantId === grant.grantId ||
+      !Number.isSafeInteger(status.previousPolicyEpoch) || (status.previousPolicyEpoch as number) < 1 ||
+      (status.previousPolicyEpoch as number) >= grant.policyEpoch || !Number.isSafeInteger(status.issuedAt) ||
+      (status.issuedAt as number) < expected.now - 120_000 || (status.issuedAt as number) > expected.now + 60_000) {
+    throw new Error("Rusty principal replacement status does not match this newer membership request")
+  }
+  return { grantId: status.previousGrantId, policyEpoch: status.previousPolicyEpoch as number }
+}
+
+function randomNonce(): string {
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
 }
 
 function verifyGrantInAcceptedControllerHistory(

@@ -136,6 +136,35 @@ it.skipIf(!rustyBinary).each(["original", "current"])("Given a current Identity 
     })
     expect(revocation.payload.grantId).toBe(grantId)
     expect(revocationResponse?.status).toBe(200)
+
+    const second = await signCurrentDevice({ ...membership.payload, grantId: "second-editor-grant", accessEpoch: 2 })
+    await registerRustyResourcePrincipalGrant({ ...registrationOptions, workspaceGrant: second })
+    const replacement = await signCurrentDevice({ ...membership.payload,
+      grantId: "renewed-visitor-grant", role: "visitor" as const, accessEpoch: 3 })
+    let loseReply = true
+    const replace = () => registerRustyResourcePrincipalGrant({ ...registrationOptions,
+      workspaceGrant: replacement, writeToken: undefined, signRevocation: signCurrentDevice,
+      fetcher: async (input, init) => {
+        const response = await fetcher(input, init)
+        const isLostStep = membershipSigner === "original"
+          ? String(input).endsWith("/second-editor-grant/revocation") && response.ok
+          : String(input).endsWith("/renewed-visitor-grant") && response.status === 204
+        if (loseReply && isLostStep) {
+          loseReply = false
+          await response.body?.cancel()
+          throw new Error("Committed membership transition reply lost")
+        }
+        return response
+      },
+    })
+    await expect(replace()).rejects.toThrow("Committed membership transition reply lost")
+    expect(loseReply).toBe(false)
+    await stopRusty(child)
+    child = await startRusty(owner, stateDirectory, port)
+    const renewed = await replace()
+    expect(renewed.principalGrant.payload).toMatchObject({ grantId: "renewed-visitor-grant", policyEpoch: 3, actions: ["read"] })
+    await expect(registerRustyResourcePrincipalGrant({ ...registrationOptions, workspaceGrant: second }))
+      .rejects.toThrow(/revoked/)
   } catch (cause) {
     throw new Error(`${String(cause)}; registration: ${registrationResponse?.body ?? "none"}; revocation: ${revocationResponse?.body ?? "none"}`, { cause })
   } finally {

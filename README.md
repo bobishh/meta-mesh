@@ -40,6 +40,12 @@ requires fresh authoritative state instead of rewriting the signed grant.
 Membership signatures may use controller devices approved after immutable scope
 genesis. Their certificates come from the current verified Identity authority;
 the controller's person and public key remain bound to accepted scope history.
+A host may supply `signRevocation` when installing a newer membership for the same
+subject. Registration then verifies Rusty's challenged, signed predecessor status,
+revokes exactly that older grant, checks the durable receipt, and retries the
+original registration. Host lifetime guards must recheck current membership before
+every step. Retrying after a lost reply or restart derives pending work from the
+current membership and Rusty's retained revocation; it needs no old local grant.
 
 Hosts own credentials, durable CAS, lifetime guards and product admission. Save
 the exact pending ciphertext and request ID before sending; after an uncertain
