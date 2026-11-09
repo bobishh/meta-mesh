@@ -36,6 +36,7 @@ import {
 
 const rustyBinary = process.env.TINCANBAN_RUSTY_BINARY
 
+// This scenario starts the debug service twice. Each startup and SDK request retains its own deadline.
 it.skipIf(!rustyBinary)("Given a rootless Identity manager and a fresh Rusty, when the manager registers its view and Rusty restarts, then catalog sign-in remains authorized", async () => {
   const owner = (await createRecoverableIdentity("better", "Owner")).profile
   const device = await createIdentityEnrollmentDevice("Identity manager")
@@ -79,7 +80,7 @@ it.skipIf(!rustyBinary)("Given a rootless Identity manager and a fresh Rusty, wh
     if (child) await stopRusty(child)
     await rm(directory, { recursive: true, force: true })
   }
-}, 15_000)
+}, 45_000)
 
 it.skipIf(!rustyBinary)("Given an active Identity manager and same-person app device, when SDK publishes and requests opaque catalog access, then real Rusty verifies both directions", async () => {
   const identity = (await createRecoverableIdentity("better", "Catalog owner")).profile
