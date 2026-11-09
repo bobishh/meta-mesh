@@ -15,6 +15,7 @@ struct PreparedDocumentReceive {
     engine_prepared: bool,
     should_persist: bool,
     response: Option<Vec<u8>>,
+    peer_heads: Option<Vec<String>>,
     effect: MeshScopeFrameEffect,
     proofs: Option<crate::AuthorizationPageReceiver>,
 }
@@ -97,6 +98,9 @@ pub enum MeshScopeFrameEffect {
 pub struct MeshScopeDocumentCompletion {
     pub response: Option<Vec<u8>>,
     pub close_send: bool,
+    /// The authenticated peer's advertised heads. The host checks admission coverage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer_heads: Option<Vec<String>>,
 }
 
 impl MeshScopeRuntime {
@@ -259,6 +263,7 @@ impl MeshScopeRuntime {
             engine_prepared: true,
             should_persist: prepared.should_persist,
             response: prepared.response,
+            peer_heads: Some(prepared.peer_heads),
             proofs,
             effect: effect.clone(),
         });
@@ -296,6 +301,7 @@ impl MeshScopeRuntime {
                 engine_prepared: false,
                 should_persist: true,
                 response: None,
+                peer_heads: None,
                 effect,
                 proofs: Some(receiver),
             }),
@@ -449,6 +455,7 @@ impl MeshScopeRuntime {
         Ok(MeshScopeDocumentCompletion {
             response: prepared.response,
             close_send: true,
+            peer_heads: prepared.peer_heads,
         })
     }
 
@@ -491,6 +498,7 @@ impl MeshScopeRuntime {
         Ok(MeshScopeDocumentCompletion {
             response: Some(self.live.acknowledge_saved(&pending.payload)?),
             close_send: true,
+            peer_heads: None,
         })
     }
 
@@ -561,6 +569,14 @@ mod tests {
         let baseline = source_document.save();
         source_document.put(ROOT, "title", "new title").unwrap();
         let changed = source_document.save();
+        let peer_heads: Vec<_> = source_document
+            .get_heads()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let mut receiver_document = AutoCommit::load(&baseline).unwrap();
+        receiver_document.put(ROOT, "local", "local edit").unwrap();
+        let local = receiver_document.save();
 
         let mut source = MeshScopeRuntime::new("board", "secret").unwrap();
         source.start_document_sync("source", "receiver").unwrap();
@@ -575,7 +591,7 @@ mod tests {
             receiver.receive_frame(&frame).unwrap(),
             Some(MeshScopeFrameEffect::NeedDocument)
         ));
-        let effect = receiver.provide_document(&baseline, None).unwrap();
+        let effect = receiver.provide_document(&local, None).unwrap();
         let MeshScopeFrameEffect::DocumentReceive {
             document: _,
             should_persist,
@@ -590,13 +606,17 @@ mod tests {
             receiver.receive_frame(&frame).unwrap(),
             Some(MeshScopeFrameEffect::NeedDocument)
         ));
-        let effect = receiver.provide_document(&baseline, None).unwrap();
+        let effect = receiver.provide_document(&local, None).unwrap();
         let MeshScopeFrameEffect::DocumentReceive { document, .. } = effect else {
             panic!("expected document receive retry");
         };
         AutoCommit::load(&document).unwrap();
         let completion = receiver.complete_document_receive(true).unwrap();
         assert!(completion.close_send);
+        assert_eq!(
+            serde_json::to_value(completion).unwrap()["peerHeads"],
+            serde_json::json!(peer_heads)
+        );
     }
 
     #[test]

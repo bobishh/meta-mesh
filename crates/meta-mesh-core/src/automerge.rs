@@ -28,6 +28,8 @@ pub struct AutomergeSyncResult {
     pub accepted_changes: usize,
     pub accepted_hashes: Vec<String>,
     pub heads: Vec<String>,
+    #[serde(skip)]
+    pub peer_heads: Vec<String>,
     pub document: Vec<u8>,
     pub response: Option<AutomergeSyncFrame>,
 }
@@ -181,6 +183,7 @@ impl AutomergeSyncEngine {
         let mut state = self.peers.get(&key).cloned().unwrap_or_else(State::new);
         let message = Message::decode(&frame.message)
             .map_err(|error| format!("Invalid Automerge sync message: {error}"))?;
+        let peer_heads = message.heads.iter().map(ToString::to_string).collect();
         let maximum_frame_bytes = self.maximum_frame_bytes;
         let local_device_id = self.local_device_id.clone();
         let document = self.document_mut(&frame.document_id)?;
@@ -232,6 +235,7 @@ impl AutomergeSyncEngine {
             accepted_changes,
             accepted_hashes,
             heads,
+            peer_heads,
             document: document_bytes,
             response,
         })

@@ -269,7 +269,7 @@ export type RustMeshScopeFrameEffect =
   | { kind: "handoffRequest"; payload: Uint8Array | number[] }
   | { kind: "workspaceSnapshot"; payload: Uint8Array | number[]; closeSend: boolean }
 
-export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]; closeSend: boolean }
+export type RustMeshScopeDocumentCompletion = { response?: Uint8Array | number[]; closeSend: boolean; peerHeads?: string[] }
 
 export type RustMeshScopeRuntime = {
   beginAuthorizationTransfer(candidate: Uint8Array, local: Uint8Array, manifest: unknown): RustMeshScopeFrameEffect

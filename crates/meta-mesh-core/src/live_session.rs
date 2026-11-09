@@ -77,6 +77,8 @@ pub struct PreparedLiveDocument {
     pub should_persist: bool,
     pub accepted_hashes: Vec<String>,
     pub heads: Vec<String>,
+    #[serde(skip)]
+    pub peer_heads: Vec<String>,
     pub response: Option<Vec<u8>>,
     pub proof: Option<Value>,
 }
@@ -446,6 +448,7 @@ impl LiveWorkspaceSession {
             should_persist: result.accepted_changes > 0 || proof.is_some(),
             accepted_hashes: result.accepted_hashes,
             heads: result.heads,
+            peer_heads: result.peer_heads,
             response: result
                 .response
                 .map(|frame| self.encode_automerge_frame(&frame))

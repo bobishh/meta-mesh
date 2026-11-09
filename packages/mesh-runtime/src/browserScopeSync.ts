@@ -26,7 +26,8 @@ export type MeshScopeHost = {
   readChat?(known: Set<string>): Promise<unknown>
   readMesh?(): Promise<unknown>
   persistDocument(document: Uint8Array, proof: unknown): Promise<boolean | void>
-  onDocumentAccepted?(acceptedChanges: number): void
+  /** The host may check whether the admitted document covers the advertised peer heads. */
+  onDocumentAccepted?(acceptedChanges: number, peerHeads?: readonly string[]): void
   mergeDurableBatch?(payload: Uint8Array): Promise<void>
   mergeAuthorization?(authorization: unknown): Promise<void>
   mergeChat?(chat: unknown): Promise<void>
@@ -210,7 +211,7 @@ export class BrowserMeshScopeSync {
           const completion = await this.runtime.completeDocumentReceive(persisted)
           if (completion.response) await stream.send(toBytes(completion.response))
           if (completion.closeSend) await stream.closeSend()
-          this.host.onDocumentAccepted?.(prepared.acceptedChanges)
+          this.host.onDocumentAccepted?.(prepared.acceptedChanges, completion.peerHeads)
         } catch (error) {
           if (pending) {
             try { await this.runtime.rejectDocumentReceive() } catch { /* completion failure already owns error */ }
@@ -272,7 +273,7 @@ export class BrowserMeshScopeSync {
           const completion = await this.runtime.completeDocumentReceive(persisted)
           if (completion.response) await stream.send(toBytes(completion.response))
           if (completion.closeSend) await stream.closeSend()
-          this.host.onDocumentAccepted?.(effect.acceptedChanges)
+          this.host.onDocumentAccepted?.(effect.acceptedChanges, completion.peerHeads)
         } catch (error) {
           try { await this.runtime.rejectDocumentReceive() } catch { /* preserve original failure */ }
           throw error

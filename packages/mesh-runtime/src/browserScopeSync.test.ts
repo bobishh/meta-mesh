@@ -3,6 +3,25 @@ import type { RustMeshScopeRuntime } from "@meta-uber/mesh-replication/runtime"
 import { BrowserMeshScopeSync, type MeshScopeExecutor } from "./browserScopeSync"
 
 describe("asynchronous scope computation", () => {
+  it("reports the peer frontier after the document is persisted and the receive completes", async () => {
+    const persistence = Promise.withResolvers<boolean>()
+    const peerHeads = ["peer-head"]
+    const runtime = {
+      receiveFrame: vi.fn(async () => ({ kind: "documentReceive", document: new Uint8Array([1]), shouldPersist: true, acceptedChanges: 1 })),
+      completeDocumentReceive: vi.fn(async () => ({ closeSend: true, peerHeads })),
+    } as unknown as MeshScopeExecutor
+    const host = { readDocument: vi.fn(), persistDocument: vi.fn(() => persistence.promise), onDocumentAccepted: vi.fn() }
+    const scope = new BrowserMeshScopeSync(runtime, host)
+    const stream = { send: vi.fn(), read: vi.fn(), closeSend: vi.fn(async () => {}) }
+    const receiving = scope.receive(stream, new Uint8Array([2]))
+    await vi.waitFor(() => expect(host.persistDocument).toHaveBeenCalledOnce())
+    expect(host.onDocumentAccepted).not.toHaveBeenCalled()
+    persistence.resolve(true)
+    await receiving
+    expect(host.onDocumentAccepted).toHaveBeenCalledExactlyOnceWith(1, peerHeads)
+    await scope.close()
+  })
+
   it("Given authorization pages pending, when another document arrives, then current candidate survives until proof validation", async () => {
     const runtime = {
       receiveFrame: vi.fn()
