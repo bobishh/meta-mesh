@@ -361,7 +361,7 @@ it.skipIf(!rustyBinary)("Given strict Rusty and mixed-case certified device IDs,
         controlEpoch: 1,
       }, editor.device.deviceId, "MATCH/1"),
     }
-    await expect(register(editor.identity, workspaceGrant, forkedScopeAuthority)).rejects.toThrow(/stale/i)
+    await expect(register(editor.identity, workspaceGrant, forkedScopeAuthority)).rejects.toThrow("Rusty resource principal scope authority changed")
     const forgedGrant = await signEnvelope(editor.privateKeys.devicePrivateKey, workspaceGrant.payload,
       editor.device.deviceId, "MATCH/1")
     await expect(register(editor.identity, forgedGrant)).rejects.toThrow(/accepted scope history/i)
