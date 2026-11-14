@@ -243,7 +243,7 @@ fn validate_payload(
         return Err("Peer advertisement timestamp is in the future (> 5 minutes)".to_string());
     }
     if !opts.allow_stale_route && issued < now_ms - MAX_STALE_TOLERANCE_MS {
-        return Err("Peer advertisement timestamp is stale (> 30 days)".to_string());
+        return Err("Peer advertisement is older than 30 days".to_string());
     }
     if let Some(expiry) = &payload.expires_at {
         let expiry = parse_time(expiry)?;

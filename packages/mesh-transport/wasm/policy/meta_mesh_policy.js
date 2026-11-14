@@ -3388,6 +3388,18 @@ export class WasmStateCore {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * @param {any} raw
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static planWorkspaceAuthorityRecovery(raw, now_ms) {
+        const ret = wasm.wasmstatecore_planWorkspaceAuthorityRecovery(raw, now_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * @param {string} local_device_id
      * @param {string} local_instance_id
      * @param {string} remote_device_id
@@ -3459,6 +3471,18 @@ export class WasmStateCore {
      */
     static reconcileReplicaSets(left, right) {
         const ret = wasm.wasmstatecore_reconcileReplicaSets(left, right);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} peer
+     * @param {number} now_ms
+     * @returns {any}
+     */
+    static recoveryPeerAdvertisements(peer, now_ms) {
+        const ret = wasm.wasmstatecore_recoveryPeerAdvertisements(peer, now_ms);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }

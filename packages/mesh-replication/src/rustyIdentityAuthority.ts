@@ -183,11 +183,11 @@ export async function publishRustyIdentityAuthorityView(options: PublishRustyIde
           payload.requestHash !== requestHash || !Number.isSafeInteger(payload.issuedAt) ||
           !Number.isSafeInteger(currentTime) || Math.abs(currentTime - payload.issuedAt) > 120_000 || !payload.view ||
           !isRustyIdentityEnforcement(payload.enforcement)) {
-        throw new Error("Invalid Rusty Identity stale-authority response")
+        throw new Error("Invalid Rusty Identity authority refresh response")
       }
       const currentView = await verifyIdentityAuthorityView(payload.view)
       if (currentView.personId !== identity.personId || currentView.identityPublicKey !== identity.publicKey) {
-        throw new Error("Rusty stale-authority response belongs to another Identity")
+        throw new Error("Rusty authority refresh response belongs to another Identity")
       }
       throw new RustyIdentityAuthorityStaleError(status, currentView)
     }
@@ -331,10 +331,10 @@ async function readStaleAuthorityResponse(response: Response): Promise<RustyIden
   const contentLength = response.headers.get("content-length")
   if (contentLength !== null && (!/^\d+$/u.test(contentLength) || Number(contentLength) > 1_048_576)) {
     await response.body?.cancel()
-    throw new Error("Rusty Identity stale-authority response is too large")
+    throw new Error("Rusty Identity authority refresh response is too large")
   }
   const reader = response.body?.getReader()
-  if (!reader) throw new Error("Rusty Identity stale-authority response is empty")
+  if (!reader) throw new Error("Rusty Identity authority refresh response is empty")
   const chunks: Uint8Array[] = []
   let length = 0
   try {
@@ -344,7 +344,7 @@ async function readStaleAuthorityResponse(response: Response): Promise<RustyIden
       length += value.byteLength
       if (length > 1_048_576) {
         await reader.cancel()
-        throw new Error("Rusty Identity stale-authority response is too large")
+        throw new Error("Rusty Identity authority refresh response is too large")
       }
       chunks.push(value)
     }
@@ -354,7 +354,7 @@ async function readStaleAuthorityResponse(response: Response): Promise<RustyIden
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
   let value: unknown
   try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) } catch {
-    throw new Error("Invalid Rusty Identity stale-authority response")
+    throw new Error("Invalid Rusty Identity authority refresh response")
   }
   if (!isRecord(value) || value.code !== "identity_authority_stale" || !isRecord(value.authorityStatus) ||
       !hasExactKeys(value.authorityStatus, ["payload", "signerKeyId", "signature"]) ||
@@ -362,7 +362,7 @@ async function readStaleAuthorityResponse(response: Response): Promise<RustyIden
       !isRecord(value.authorityStatus.payload) ||
       !hasExactKeys(value.authorityStatus.payload, ["kind", "version", "serviceId", "origin", "personId", "state",
         "requestNonce", "requestHash", "issuedAt", "view", "enforcement"])) {
-    throw new Error("Invalid Rusty Identity stale-authority response")
+    throw new Error("Invalid Rusty Identity authority refresh response")
   }
   return value.authorityStatus as unknown as RustyIdentityAuthorityStatus
 }

@@ -140,7 +140,7 @@ describe("portable Identity authority view", () => {
         { certificates, revocations: [] }), removed.device.deviceId, state)
     const current = await createIdentityAuthorityView(owner.identity, { certificates, revocations: [record] }, state)
 
-    await expect(mergeIdentityAuthorityViews(current, base)).rejects.toThrow(/stale|prefix/i)
+    await expect(mergeIdentityAuthorityViews(current, base)).rejects.toThrow(/superseded|prefix/i)
     const fork = { ...current, revocationHead: { ...current.revocationHead, recordHash: "A".repeat(43) } }
     await expect(verifyIdentityAuthorityView(fork)).rejects.toThrow(/head|digest/i)
   })

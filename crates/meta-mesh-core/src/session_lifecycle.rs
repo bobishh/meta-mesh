@@ -110,7 +110,7 @@ impl MeshSessionLifecycleState {
         }
         let replaced_generation = self.current.get(&key).copied();
         if self.last_generation >= generation {
-            return Err("Stale mesh session generation".into());
+            return Err("Mesh session generation changed".into());
         }
         let replaced_connection_id = replaced_generation
             .and_then(|previous| self.entries.get(&(key.clone(), previous)))
@@ -377,7 +377,7 @@ mod tests {
         lifecycle.register(key.clone(), "new".into(), 8, 0).unwrap();
         assert_eq!(
             lifecycle.register(key, "stale".into(), 7, 1).unwrap_err(),
-            "Stale mesh session generation"
+            "Mesh session generation changed"
         );
     }
 
@@ -392,7 +392,7 @@ mod tests {
             lifecycle
                 .register(key.clone(), "stale".into(), 7, 1)
                 .unwrap_err(),
-            "Stale mesh session generation"
+            "Mesh session generation changed"
         );
         assert!(lifecycle.register(key, "new".into(), 9, 2).is_ok());
     }

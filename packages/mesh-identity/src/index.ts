@@ -753,7 +753,7 @@ export async function verifyIdentityDeviceAuthority(
         typeof signerId !== "string" || signerId === payload.deviceId || revoked.has(payload.deviceId) ||
         await isChainRevoked(signerId, revoked, evidence.certificates) ||
         await isChainRevoked(payload.deviceId, revoked, evidence.certificates)) {
-      throw new Error("Invalid or stale Identity device revocation")
+      throw new Error("Identity device revocation is invalid or has been superseded")
     }
     const subtree = await identityDeviceDescendants(payload.deviceId, evidence.certificates)
     for (const deviceId of subtree) {
@@ -908,7 +908,7 @@ export async function mergeIdentityAuthorityViews(
     throw new Error("Identity authority views belong to different people")
   }
   if (incoming.revocationHead.revision < current.revocationHead.revision) {
-    throw new Error("Stale Identity revocation head")
+    throw new Error("Identity revocation head has been superseded")
   }
   for (let index = 0; index < current.revocations.length; index += 1) {
     if (canonicalizeJson(current.revocations[index]) !== canonicalizeJson(incoming.revocations[index])) {

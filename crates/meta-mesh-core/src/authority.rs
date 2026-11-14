@@ -841,7 +841,7 @@ pub fn verify_workspace_succession_claim(
     }
     verify_workspace_succession_policy(&payload.policy, workspace_id, authority, now_ms)?;
     if payload.policy.payload.epoch != minimum_epoch {
-        return Err("Succession policy epoch is stale".to_string());
+        return Err("Succession policy epoch has been superseded".to_string());
     }
     if verify_workspace_grant(
         &payload.candidate_grant,

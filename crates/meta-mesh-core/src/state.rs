@@ -159,6 +159,26 @@ pub fn merge_peer_records(
     })
 }
 
+/// Portable recovery retains every live lease and two recent bootstrap contacts
+/// per device. Expired browser instances are addresses, not durable authority.
+pub fn recovery_peer_advertisements(peer: &WorkspacePeerRecord, now_ms: i128) -> Result<Vec<Value>, String> {
+    validate_peer_record(peer)?;
+    let mut routes = peer.instances.as_deref().unwrap_or_default().iter()
+        .filter_map(|instance| instance.advertisement.as_ref().map(|bundle| (instance, bundle)))
+        .map(|(instance, bundle)| Ok((timestamp_ms(&instance.last_seen)?, &instance.instance_id, bundle)))
+        .collect::<Result<Vec<_>, String>>()?;
+    if routes.is_empty() { return Ok(peer.advertisement.clone().into_iter().collect()); }
+    routes.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(right.1)));
+    let mut fallback_count = 0;
+    Ok(routes.into_iter().filter_map(|(_, _, bundle)| {
+        let live = bundle.pointer("/advertisement/payload/expiresAt").and_then(Value::as_str)
+            .and_then(|expiry| timestamp_ms(expiry).ok()).is_some_and(|expiry| expiry > now_ms);
+        if live { return Some(bundle.clone()); }
+        fallback_count += 1;
+        (fallback_count <= 2).then(|| bundle.clone())
+    }).collect())
+}
+
 fn newer_grant_record<'a>(
     left: &'a WorkspacePeerRecord,
     right: &'a WorkspacePeerRecord,
@@ -560,6 +580,25 @@ mod tests {
         assert_eq!(merged.endpoint, "new");
         assert_eq!(merged.role, WorkspaceRole::Visitor);
         assert_eq!(merge_peer_records(&new, &old).unwrap(), merged);
+    }
+
+    #[test]
+    fn recovery_contacts_keep_live_instances_and_recent_offline_fallbacks() {
+        let mut record = peer("latest", "2026-09-20T10:00:00.000Z");
+        record.instances = Some((0..8).map(|index| PeerTransportInstance {
+            instance_id: format!("instance-{index}"), endpoint: format!("endpoint-{index}"),
+            last_seen: format!("2026-09-20T10:0{index}:00.000Z"),
+            advertisement: Some(serde_json::json!({"advertisement":{"payload":{
+                "endpoint":format!("endpoint-{index}"),
+                "expiresAt":if index == 0 { "2026-09-20T11:00:00.000Z" } else { "2026-09-20T10:09:00.000Z" }
+            }}})),
+        }).collect());
+        let now = timestamp_ms("2026-09-20T10:10:00.000Z").unwrap();
+        let result = recovery_peer_advertisements(&record, now).unwrap();
+        assert_eq!(result.iter().map(|bundle| bundle.pointer("/advertisement/payload/endpoint").unwrap().as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["endpoint-7", "endpoint-6", "endpoint-0"]);
+        record.instances.as_mut().unwrap().reverse();
+        assert_eq!(recovery_peer_advertisements(&record, now).unwrap(), result);
     }
 
     #[test]

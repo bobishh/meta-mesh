@@ -144,7 +144,7 @@ export async function registerRustyResourcePrincipalGrant(
   if (expected.workspaceId !== workspaceId || expected.controllerPersonId !== authority.controllerPersonId ||
       expected.controllerPublicKey !== authority.controllerPublicKey || expected.controlEpoch !== authority.controlEpoch ||
       canonicalizeJson(expected.snapshot) !== canonicalizeJson(current.snapshot)) {
-    throw new Error("Rusty resource principal scope authority is stale")
+    throw new Error("Rusty resource principal scope authority changed")
   }
 
   const membershipGrant = structuredClone(grant)

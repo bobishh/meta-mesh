@@ -49,6 +49,7 @@ export type RustStateCore = {
   knowsWorkspaceIssuer(workspaces: unknown[], issuerPersonId: string, localPersonId: string, localDeviceId: string): boolean
   nextAccessEpoch(credential: unknown, issuedGrants: unknown[]): number
   planInvitationCredential(input: unknown): unknown
+  planWorkspaceAuthorityRecovery(input: unknown, nowMs: number): unknown
   planCatalogMerge(): Array<"ownership" | "revocations" | "refreshCredential" | "succession" | "peers" | "notify">
   selectOwnershipTransfer(input: unknown): { peerIndices: number[]; advertisementIndex: number | null;
     pendingIndex: number | null; targetOnline: boolean }
@@ -126,6 +127,7 @@ export type RustStateCore = {
   authorizationExport(document: Uint8Array, bundle: unknown): unknown
   transitionOutboxClaim(current: unknown, input: unknown): unknown
   mergePeerRecords(existing: unknown, incoming: unknown): unknown
+  recoveryPeerAdvertisements(peer: unknown, nowMs: number): unknown[]
   reconcileReplicaSets(left: unknown, right: unknown): unknown
   selectScopedNeighbors(localDeviceId: string, candidates: unknown, bounds: unknown, nowMs: number, rotation: number): string[]
   validateDeviceRoute(route: unknown): void

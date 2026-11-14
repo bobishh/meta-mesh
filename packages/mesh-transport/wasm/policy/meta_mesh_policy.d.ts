@@ -329,6 +329,7 @@ export class WasmStateCore {
     static planSuccessionCatalog(raw: any): any;
     static planSuccessionMerge(raw: any, now_ms: number): any;
     static planSuccessionPolicyRefresh(current: any, eligible: any, epoch: number): any;
+    static planWorkspaceAuthorityRecovery(raw: any, now_ms: number): any;
     static preferredSessionDirection(local_device_id: string, local_instance_id: string, remote_device_id: string, remote_instance_id: string): any;
     /**
      * Run full Native causal admission and bind it to the current Owner's
@@ -344,6 +345,7 @@ export class WasmStateCore {
     static prepareWorkspaceHistoryFromBasis(source_raw: any, signer_raw: any, basis: WasmVerifiedReceivedHistoryBaseline): WasmVerifiedHistoryPreparation;
     static prepareWriteEvidence(raw: any): any;
     static reconcileReplicaSets(left: any, right: any): any;
+    static recoveryPeerAdvertisements(peer: any, now_ms: number): any;
     static requireChangeAuthorizationCoverage(change_hashes: any, records: any): void;
     /**
      * Shared native capability validation; the host owns durable authority and replay storage.
@@ -809,11 +811,13 @@ export interface InitOutput {
     readonly wasmstatecore_planSuccessionCatalog: (a: any) => [number, number, number];
     readonly wasmstatecore_planSuccessionMerge: (a: any, b: number) => [number, number, number];
     readonly wasmstatecore_planSuccessionPolicyRefresh: (a: any, b: any, c: number) => [number, number, number];
+    readonly wasmstatecore_planWorkspaceAuthorityRecovery: (a: any, b: number) => [number, number, number];
     readonly wasmstatecore_preferredSessionDirection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly wasmstatecore_prepareWorkspaceHistory: (a: any, b: any) => [number, number, number];
     readonly wasmstatecore_prepareWorkspaceHistoryFromBasis: (a: any, b: any, c: number) => [number, number, number];
     readonly wasmstatecore_prepareWriteEvidence: (a: any) => [number, number, number];
     readonly wasmstatecore_reconcileReplicaSets: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_recoveryPeerAdvertisements: (a: any, b: number) => [number, number, number];
     readonly wasmstatecore_requireChangeAuthorizationCoverage: (a: any, b: any) => [number, number];
     readonly wasmstatecore_resourceAccess: (a: any) => [number, number, number];
     readonly wasmstatecore_selectMeshHandshakeBundle: (a: any, b: number, c: number, d: number, e: number) => [number, number, number];

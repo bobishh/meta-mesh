@@ -17,6 +17,78 @@ pub const MAX_SCOPE_REVOCATIONS: usize = 4_096;
 pub const MAX_SCOPE_CONTROL_TRANSFERS: usize = 128;
 pub const MAX_SCOPE_SUCCESSION_TRANSFERS: usize = 128;
 
+/// Recover signed authority independently of delivery routes and transport keys.
+/// The host persists this record without changing its connection credential.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceAuthorityRecoveryInput {
+    pub workspace_id: String,
+    pub current: Option<serde_json::Value>,
+    pub snapshots: Vec<ScopeAuthoritySnapshot>,
+    pub updated_at: String,
+}
+
+pub fn plan_workspace_authority_recovery(
+    input: WorkspaceAuthorityRecoveryInput,
+    now_ms: i128,
+) -> Result<Option<serde_json::Value>, String> {
+    use serde_json::{Value, json};
+    valid_scope_id(&input.workspace_id)?;
+    if input.snapshots.is_empty() { return Ok(None); }
+    let mut record = input.current.unwrap_or_else(|| json!({}));
+    if record.get("workspaceId").is_some_and(|id| id != &input.workspace_id) {
+        return Err("Recovery authority belongs to another workspace".into());
+    }
+    let mut merged: Option<ScopeAuthoritySnapshot> = record.get("scopeAuthoritySnapshot")
+        .filter(|value| !value.is_null()).map(|value| serde_json::from_value(value.clone()))
+        .transpose().map_err(|_| "Invalid retained scope authority")?;
+    for snapshot in &input.snapshots {
+        let authority = validate_scope_authority_at(snapshot, now_ms)?;
+        if authority.scope_id != input.workspace_id {
+            return Err("Recovery authority belongs to another workspace".into());
+        }
+        if merged.is_none() && record.get("ownerPersonId").is_some() &&
+            (record.get("ownerPersonId") != Some(&json!(authority.controller.person_id)) ||
+             record.get("ownerPublicKey") != Some(&json!(authority.controller.public_key))) {
+            return Err("Recovery authority names a different workspace owner".into());
+        }
+        merged = Some(merge_scope_authority_snapshots_at(merged.as_ref(), snapshot, now_ms)?);
+    }
+    let snapshot = merged.ok_or("Missing recovery scope authority")?;
+    let authority = validate_scope_authority_at(&snapshot, now_ms)?;
+    let epoch = record.get("epoch").and_then(Value::as_u64).unwrap_or(1).max(authority.control_epoch);
+    let same_controller = record.get("ownerPersonId") == Some(&json!(authority.controller.person_id)) &&
+        record.get("ownerPublicKey") == Some(&json!(authority.controller.public_key));
+    let mut certificates = authority.controller.certificates.iter().map(|certificate| json!(certificate)).collect::<Vec<_>>();
+    if same_controller {
+        for certificate in record.get("ownerCertificates").and_then(Value::as_array).into_iter().flatten() {
+            if certificate.pointer("/payload/personId") == Some(&json!(authority.controller.person_id)) && !certificates.contains(certificate) {
+                certificates.push(certificate.clone());
+            }
+        }
+    }
+    let mut history = record.get("ownerHistory").and_then(Value::as_array).cloned().unwrap_or_default();
+    for owner in std::iter::once(&authority.creator).chain(snapshot.control_transfers.iter().map(|transfer| &transfer.payload.to_controller)) {
+        if owner.person_id != authority.controller.person_id && !history.iter().any(|entry| entry["personId"] == owner.person_id) {
+            history.push(json!(owner));
+        }
+    }
+    let fields = record.as_object_mut().ok_or("Invalid retained workspace authority")?;
+    fields.insert("version".into(), json!(1));
+    fields.insert("workspaceId".into(), json!(input.workspace_id));
+    fields.insert("epoch".into(), json!(epoch));
+    fields.insert("updatedAt".into(), json!(input.updated_at));
+    fields.insert("genesisOwnerPersonId".into(), json!(authority.creator.person_id));
+    fields.insert("ownerPersonId".into(), json!(authority.controller.person_id));
+    fields.insert("ownerPublicKey".into(), json!(authority.controller.public_key));
+    fields.insert("ownerCertificates".into(), json!(certificates));
+    if history.is_empty() { fields.remove("ownerHistory"); }
+    else { fields.insert("ownerHistory".into(), json!(history)); }
+    fields.insert("scopeAuthoritySnapshot".into(), json!(snapshot));
+    fields.remove("transportSecret");
+    Ok(Some(record))
+}
+
 /// Initial browser-adapter descriptor. Not an authority proof.
 /// New authority decisions require `SignedScopeGenesis`.
 #[derive(Debug, Clone, Deserialize)]
@@ -774,6 +846,37 @@ mod tests {
     const TEST_NOW_MS: i128 = 1_791_926_400_000;
     const TEST_TIME: &str = "2026-10-02T00:00:00.000Z";
 
+    #[test]
+    fn workspace_recovery_requires_signed_matching_authority_without_transport() {
+        let (owner, seed, device) = authority([1; 32], [2; 32]);
+        let snapshot = ScopeAuthoritySnapshot { genesis: genesis(&owner, &seed, &device),
+            grants: vec![], grant_issuers: vec![], revocations: vec![], control_transfers: vec![], succession_transfers: vec![] };
+        let current = json!({ "workspaceId": "scope-a", "ownerPersonId": owner.person_id,
+            "ownerPublicKey": owner.public_key, "epoch": 3, "catalog": { "revocations": ["retained"] } });
+        let plan = |current, snapshots| plan_workspace_authority_recovery(WorkspaceAuthorityRecoveryInput {
+            workspace_id: "scope-a".into(), current, snapshots, updated_at: TEST_TIME.into(),
+        }, TEST_NOW_MS);
+        let restored = plan(Some(current.clone()), vec![snapshot.clone(), snapshot.clone()]).unwrap().unwrap();
+        assert!(restored.get("transportSecret").is_none());
+        assert_eq!(restored["epoch"], 3);
+        assert_eq!(restored["catalog"], current["catalog"]);
+        assert_eq!(restored["scopeAuthoritySnapshot"]["genesis"], json!(snapshot.genesis));
+        let (another_device, _, _) = authority([1; 32], [3; 32]);
+        let mut expanded = restored;
+        expanded["ownerCertificates"].as_array_mut().unwrap().extend(another_device.certificates.iter().map(|certificate| json!(certificate)));
+        assert_eq!(plan(Some(expanded.clone()), vec![snapshot.clone()]).unwrap().unwrap(), expanded);
+        let mut different_owner = current.clone();
+        different_owner["ownerPersonId"] = json!("another-owner");
+        assert!(plan(Some(different_owner), vec![snapshot.clone()]).is_err());
+        let mut forged = snapshot.clone();
+        forged.genesis.signature = "forged".into();
+        assert!(plan(Some(current.clone()), vec![forged]).is_err());
+        let mut another_workspace = current;
+        another_workspace["workspaceId"] = json!("scope-b");
+        assert!(plan(Some(another_workspace), vec![snapshot.clone()]).is_err());
+        assert!(plan(None, vec![snapshot]).unwrap().is_some());
+    }
+
     fn signed_grant(
         seed: &[u8; 32],
         signer: &str,
@@ -1372,6 +1475,10 @@ mod tests {
             succession_transfers: vec![],
         };
         let merged = merge_scope_authority_snapshots(Some(&current), &stale).unwrap();
+        let recovered = plan_workspace_authority_recovery(WorkspaceAuthorityRecoveryInput {
+            workspace_id: "scope-a".into(), current: None, snapshots: vec![merged.clone()], updated_at: TEST_TIME.into(),
+        }, TEST_NOW_MS).unwrap().unwrap();
+        assert_eq!(recovered["ownerHistory"], json!([creator]));
         assert_eq!(merged.grants, current.grants);
         assert_eq!(merged.revocations, current.revocations);
         assert_eq!(merged.control_transfers, current.control_transfers);

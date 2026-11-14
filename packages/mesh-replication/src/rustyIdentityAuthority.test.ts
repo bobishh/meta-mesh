@@ -211,7 +211,7 @@ describe("Rusty Identity authority high-water update", () => {
           requestNonce: "A".repeat(43), requestHash: "B".repeat(43), issuedAt: Date.now(), view,
           enforcement: { mode: "strict" as const, epoch: 1 as const },
         }, service.identity.personId, "RUSTY/2") }, { status: 409 }),
-    })).rejects.toThrow(/stale-authority response/i)
+    })).rejects.toThrow(/authority refresh response/i)
   })
 
   it("Given an active app-only Identity device, when relaying a root-signed current view, then permit publication without manager rights", async () => {

@@ -201,6 +201,7 @@ pub use runtime::{
 };
 pub use runtime::{MeshHandshakeFeatures, mesh_handshake_features};
 pub use scope_authority::{
+    WorkspaceAuthorityRecoveryInput, plan_workspace_authority_recovery,
     ScopeAuthority, ScopeAuthoritySnapshot, ScopeCapability, ScopeCapabilityGrant,
     ScopeCapabilityGrantPayload, ScopeCapabilityRevocation, ScopeCapabilityRevocationPayload,
     ScopeControlTransfer, ScopeControlTransferPayload, ScopeControlTransferPayloadInput,
@@ -222,7 +223,7 @@ pub use session_lifecycle::{
 };
 pub use state::{
     GossipBounds, GossipCandidate, PeerTransportInstance, ReplicaRecord, ReplicaSet,
-    ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, reconcile_replica_sets,
+    ReplicaTombstone, WorkspacePeerRecord, merge_peer_records, recovery_peer_advertisements, reconcile_replica_sets,
     select_scoped_neighbors, validate_peer_record,
 };
 pub use succession_merge::{

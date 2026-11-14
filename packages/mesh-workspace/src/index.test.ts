@@ -171,7 +171,7 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
 
       await expect(verifyWorkspaceSuccessionClaim(staleClaim, workspaceId, {
         personId: owner.identity.personId, publicKey: owner.identity.publicKey, certificates: [owner.certificate],
-      }, 2, new Set([departed.identity.personId]))).rejects.toThrow(/epoch is stale/i)
+      }, 2, new Set([departed.identity.personId]))).rejects.toThrow(/epoch has been superseded/i)
 
       const policy = await createWorkspaceSuccessionPolicy(owner, workspaceId, null,
         [candidate.identity.personId], 2)
@@ -876,7 +876,7 @@ describe("Mesh records cryptographic admission (src/sync/meshRecords.ts)", () =>
           bundle,
           { workspaceId, ownerPublicKey: owner.identity.publicKey, now }
         )
-      ).rejects.toThrow(/stale|expired/i)
+      ).rejects.toThrow(/older than 30 days|expired/i)
     })
 
     it("rejects non-canonical or invalid ISO timestamp format", async () => {

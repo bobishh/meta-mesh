@@ -960,6 +960,12 @@ impl WasmStateCore {
         to_value(&meta_mesh_core::plan_invitation_credential(input).map_err(js_error)?)
     }
 
+    #[wasm_bindgen(js_name = planWorkspaceAuthorityRecovery)]
+    pub fn plan_workspace_authority_recovery(raw: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let input: meta_mesh_core::WorkspaceAuthorityRecoveryInput = from_value(raw)?;
+        to_value(&meta_mesh_core::plan_workspace_authority_recovery(input, now_ms as i128).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = planCatalogMerge)]
     pub fn plan_catalog_merge() -> Result<JsValue, JsValue> {
         to_value(&meta_mesh_core::plan_catalog_merge())
@@ -1573,6 +1579,12 @@ impl WasmStateCore {
         let incoming: WorkspacePeerRecord = from_value(incoming)?;
         let merged = meta_mesh_core::merge_peer_records(&existing, &incoming).map_err(js_error)?;
         to_value(&merged)
+    }
+
+    #[wasm_bindgen(js_name = recoveryPeerAdvertisements)]
+    pub fn recovery_peer_advertisements(peer: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+        let peer: WorkspacePeerRecord = from_value(peer)?;
+        to_value(&meta_mesh_core::recovery_peer_advertisements(&peer, now_ms as i128).map_err(js_error)?)
     }
 
     #[wasm_bindgen(js_name = reconcileReplicaSets)]

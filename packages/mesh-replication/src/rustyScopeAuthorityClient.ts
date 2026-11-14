@@ -245,7 +245,7 @@ async function synchronizeRustyScopeAuthoritySnapshot(
     await assertStatus(stale, { serviceId, servicePublicKey: options.servicePublicKey, origin, scopeId,
       requestId: authorizationPayload.requestId, requestHash, now: now() })
     if (stale.payload.state !== "ready" || stale.payload.workspaceId !== workspaceId || !stale.payload.scopeAuthority) {
-      throw new Error("Rusty scope authority stale response omitted current workspace authority")
+      throw new Error("Rusty authority refresh response omitted current workspace authority")
     }
     throw new RustyScopeAuthorityStaleError(stale, stale.payload.scopeAuthority)
   }
