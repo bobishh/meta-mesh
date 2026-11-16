@@ -181,6 +181,18 @@ fn only_explicit_v2_grant_admits_atomic_card_and_original_source() {
 }
 
 #[test]
+fn signed_card_and_source_share_causal_views() {
+    let mut fixture = SourceFixture::new(2);
+    fixture.card("lead");
+    fixture.source("original", false);
+    CAUSAL_ROOT_READS.with(|reads| reads.set(0));
+
+    assert_worker_admitted(fixture, true);
+
+    assert_eq!(CAUSAL_ROOT_READS.with(|reads| reads.get()), 2);
+}
+
+#[test]
 fn source_metadata_and_unchanged_documents_do_not_block_leaf_job_moves() {
     for child in [None, Some("document"), Some("job")] {
         let mut fixture = SourceFixture::new(1);

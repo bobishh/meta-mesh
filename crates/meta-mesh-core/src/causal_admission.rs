@@ -1,4 +1,8 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    ops::Deref,
+    rc::Rc,
+};
 
 use automerge::{
     AutoCommit, Change, ObjId, Prop, ROOT, ReadDoc, ScalarValue, hydrate::Value as HydratedValue,
@@ -313,6 +317,8 @@ fn evaluate_causal_admission_inner(
     let mut application_source_creations = HashMap::<String, (Vec<String>, Option<ObjId>)>::new();
     let mut entities_map_rebindings = HashMap::<String, ObjId>::new();
 
+    let mut causal_roots = CausalRootCache::default();
+
     // Resolve repeatedly; serialized arrival order cannot decide whether a
     // dependency was classified before its child.
     loop {
@@ -376,16 +382,24 @@ fn evaluate_causal_admission_inner(
                     ) {
                         entities_map_rebindings.insert(node.hash.clone(), previous_entities_id);
                     }
+                    let mut source_views = None;
                     let source_result = {
                         let raw_document = admission_document(&mut raw, &input.snapshot.document)?;
                         if application_source_change_may_touch(raw_document, node) {
-                            application_source_change_allowed(
-                                raw_document,
-                                node,
-                                role,
-                                &input.snapshot.workspace_id,
-                                automation_scopes.get(&node.hash),
-                            )
+                            match causal_roots.change_views(raw_document, node) {
+                                Ok((before, after)) => {
+                                    let result = application_source_change_allowed(
+                                        &before,
+                                        &after,
+                                        role,
+                                        &input.snapshot.workspace_id,
+                                        automation_scopes.get(&node.hash),
+                                    );
+                                    source_views = Some((before, after));
+                                    result
+                                }
+                                Err(_) => Err("Application source change views are unavailable"),
+                            }
                         } else {
                             Ok(Vec::new())
                         }
@@ -414,6 +428,8 @@ fn evaluate_causal_admission_inner(
                                 admission_document(&mut raw, &input.snapshot.document)?,
                                 node,
                                 scope,
+                                &mut causal_roots,
+                                source_views,
                             ) {
                                 Ok(effect) => {
                                     automation_effects.insert(node.hash.clone(), effect);
@@ -527,7 +543,7 @@ fn evaluate_causal_admission_inner(
                     statuses.get(hash),
                     Some(CausalAdmissionStatus::Admitted { .. })
                 )
-                && projected_item_has_parent_conflict(&mut authorized, &effect.item_id))
+                && projected_item_has_parent_conflict(&authorized, &effect.item_id))
             .then_some(hash.clone())
         })
         .collect::<Vec<_>>();
@@ -698,22 +714,20 @@ fn build_authorized_projection(
     Ok(authorized)
 }
 
-fn projected_item_has_parent_conflict(doc: &mut AutoCommit, item_id: &str) -> bool {
-    let Ok(HydratedValue::Map(root)) = doc.hydrate(&ROOT, None) else {
-        return false;
-    };
-    let Some(HydratedValue::Map(entities)) = root.get("entities") else {
-        return false;
-    };
-    let Some(HydratedValue::Map(item)) = entities.get(item_id) else {
-        return false;
-    };
-    let Some(HydratedValue::Map(placement)) = item.get("placement") else {
-        return false;
-    };
-    placement
-        .iter()
-        .any(|(key, value)| key == "parentId" && value.conflict)
+fn projected_item_has_parent_conflict(doc: &AutoCommit, item_id: &str) -> bool {
+    let mut object = ROOT;
+    for key in ["entities", item_id, "placement"] {
+        let Ok(Some((
+            automerge::Value::Object(automerge::ObjType::Map | automerge::ObjType::Table),
+            child,
+        ))) = doc.get(&object, key)
+        else {
+            return false;
+        };
+        object = child;
+    }
+    doc.get_all(&object, "parentId")
+        .is_ok_and(|values| values.len() > 1)
 }
 
 fn admission_document<'a>(
@@ -729,38 +743,68 @@ fn admission_document<'a>(
     Ok(document.as_mut().expect("loaded admission document"))
 }
 
-/// Read causal views without cloning the full operation history for each scope check.
-fn change_root_views(
-    raw: &mut AutoCommit,
-    node: &ChangeNode,
-) -> Result<(HydratedValue, HydratedValue), &'static str> {
-    if node
-        .change
-        .deps()
-        .iter()
-        .any(|hash| raw.get_change_by_hash(hash).is_none())
-    {
-        return Err("dependency view unavailable");
+#[cfg(test)]
+thread_local! {
+    static CAUSAL_ROOT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+type CausalRootViews = (Rc<HydratedValue>, Rc<HydratedValue>);
+
+/// Retain one immutable historical view within this admission. A linear
+/// successor can reuse exactly the parent's result as its dependency view.
+#[derive(Default)]
+struct CausalRootCache {
+    last: Option<(automerge::ChangeHash, Rc<HydratedValue>)>,
+}
+
+impl CausalRootCache {
+    fn change_views(
+        &mut self,
+        raw: &mut AutoCommit,
+        node: &ChangeNode,
+    ) -> Result<CausalRootViews, &'static str> {
+        let dependencies = node.change.deps();
+        if dependencies
+            .iter()
+            .any(|hash| raw.get_change_meta_by_hash(hash).is_none())
+        {
+            return Err("dependency view unavailable");
+        }
+        let before = match &self.last {
+            Some((hash, root)) if dependencies == [*hash] => Rc::clone(root),
+            _ => Rc::new(
+                read_causal_root(raw, Some(dependencies))
+                    .map_err(|_| "dependency root unavailable")?,
+            ),
+        };
+        let hash = node.change.hash();
+        let after = if raw.get_change_meta_by_hash(&hash).is_some() {
+            let root = Rc::new(
+                read_causal_root(raw, Some(&[hash])).map_err(|_| "result root unavailable")?,
+            );
+            self.last = Some((hash, Rc::clone(&root)));
+            root
+        } else {
+            // A pending change is not in the retained raw history.
+            let mut after = raw
+                .fork_at(dependencies)
+                .map_err(|_| "dependency view unavailable")?;
+            after
+                .apply_changes(vec![node.change.clone()])
+                .map_err(|_| "change could not be replayed")?;
+            Rc::new(read_causal_root(&after, None).map_err(|_| "result root unavailable")?)
+        };
+        Ok((before, after))
     }
-    let before = raw
-        .hydrate(&ROOT, Some(node.change.deps()))
-        .map_err(|_| "dependency root unavailable")?;
-    let after = if raw.get_change_by_hash(&node.change.hash()).is_some() {
-        raw.hydrate(&ROOT, Some(&[node.change.hash()]))
-            .map_err(|_| "result root unavailable")?
-    } else {
-        // Pending change bytes have no historical view in the retained snapshot.
-        let mut after = raw
-            .fork_at(node.change.deps())
-            .map_err(|_| "dependency view unavailable")?;
-        after
-            .apply_changes(vec![node.change.clone()])
-            .map_err(|_| "change could not be replayed")?;
-        after
-            .hydrate(&ROOT, None)
-            .map_err(|_| "result root unavailable")?
-    };
-    Ok((before, after))
+}
+
+fn read_causal_root(
+    doc: &AutoCommit,
+    heads: Option<&[automerge::ChangeHash]>,
+) -> Result<HydratedValue, automerge::AutomergeError> {
+    #[cfg(test)]
+    CAUSAL_ROOT_READS.with(|reads| reads.set(reads.get() + 1));
+    doc.hydrate(&ROOT, heads)
 }
 
 const MAX_APPLICATION_SOURCE_RECORDS: usize = 20_000;
@@ -771,32 +815,18 @@ const MAX_APPLICATION_SOURCE_BYTES: usize = 65_536;
 /// independent records remain independent while edits cannot masquerade as
 /// creation on a later branch.
 fn application_source_change_allowed(
-    raw: &mut AutoCommit,
-    node: &ChangeNode,
+    before: &HydratedValue,
+    after: &HydratedValue,
     role: WorkspaceRole,
     workspace_id: &str,
     automation_scope: Option<&AutomationGrantScope>,
 ) -> Result<Vec<String>, &'static str> {
-    let (before, after) = change_root_views(raw, node)
-        .map_err(|_| "Application source change views are unavailable")?;
-    let (HydratedValue::Map(mut before_root), HydratedValue::Map(mut after_root)) = (before, after)
-    else {
+    let (HydratedValue::Map(before_root), HydratedValue::Map(after_root)) = (before, after) else {
         return Err("Application source workspace root is not a map");
     };
-    let before_entities = before_root
-        .remove("entities")
-        .and_then(|value| match value.value {
-            HydratedValue::Map(map) => Some(map),
-            _ => None,
-        })
-        .unwrap_or_default();
-    let after_entities = after_root
-        .remove("entities")
-        .and_then(|value| match value.value {
-            HydratedValue::Map(map) => Some(map),
-            _ => None,
-        })
-        .unwrap_or_default();
+    let empty = automerge::hydrate::Map::default();
+    let before_entities = before_root.get("entities").and_then(map_value).unwrap_or(&empty);
+    let after_entities = after_root.get("entities").and_then(map_value).unwrap_or(&empty);
 
     let candidates = before_entities
         .keys()
@@ -837,8 +867,8 @@ fn application_source_change_allowed(
                 .and_then(|map| scalar_string(map.get("kind")))
                 .as_deref()
                 == Some("application_source");
-        let before_conflict = map_entry_conflict(&before_entities, &id);
-        let after_conflict = map_entry_conflict(&after_entities, &id);
+        let before_conflict = map_entry_conflict(before_entities, &id);
+        let after_conflict = map_entry_conflict(after_entities, &id);
         if !protected && !before_conflict && !after_conflict {
             continue;
         }
@@ -860,7 +890,7 @@ fn application_source_change_allowed(
         if after_conflict {
             return Err("Application source record creation has a same-id conflict");
         }
-        validate_application_source_entity(&id, entity, &after_entities, workspace_id)?;
+        validate_application_source_entity(&id, entity, after_entities, workspace_id)?;
         created_ids.push(id);
     }
     Ok(created_ids)
@@ -872,7 +902,7 @@ fn application_source_change_allowed(
 fn application_source_change_may_touch(raw: &mut AutoCommit, node: &ChangeNode) -> bool {
     use automerge::legacy::{Key, ObjectId, OpType};
     let hash = node.change.hash();
-    if raw.get_change_by_hash(&hash).is_none() {
+    if raw.get_change_meta_by_hash(&hash).is_none() {
         return true;
     }
     // Expanded legacy operations allocate per-character structs for browser
@@ -984,7 +1014,7 @@ fn application_source_kind_at(
 }
 
 fn map_entry_conflict(map: &automerge::hydrate::Map, id: &str) -> bool {
-    map.iter().any(|(key, value)| key == id && value.conflict)
+    map.deref().get(id).is_some_and(|value| value.conflict)
 }
 
 fn application_source_conflicts(raw: &mut AutoCommit) -> BTreeSet<String> {
@@ -1444,34 +1474,29 @@ fn visitor_profile_change_only(
     node: &ChangeNode,
     person_id: &str,
 ) -> Result<(), &'static str> {
-    let (before_value, after_value) = change_root_views(raw, node)?;
-    let (HydratedValue::Map(mut before_root), HydratedValue::Map(mut after_root)) =
-        (before_value, after_value)
+    let (before_value, after_value) = CausalRootCache::default().change_views(raw, node)?;
+    let (Some(before_root), Some(after_root)) = (map_value(&before_value), map_value(&after_value))
     else {
         return Err("root is not a map");
     };
-    let (
-        Some(HydratedValue::Map(mut before_entities)),
-        Some(HydratedValue::Map(mut after_entities)),
-    ) = (
-        before_root.remove("entities").map(|value| value.value),
-        after_root.remove("entities").map(|value| value.value),
-    )
-    else {
+    let (Some(before_entities), Some(after_entities)) = (
+        before_root.get("entities").and_then(map_value),
+        after_root.get("entities").and_then(map_value),
+    ) else {
         return Err("entity map is missing");
     };
-    if before_root != after_root {
+    if !maps_match_except(before_root, after_root, "entities") {
         return Err("workspace root changed");
     }
     let profile_id = format!("member-profile:{person_id}");
-    let before_profile = before_entities.remove(&profile_id).map(|value| value.value);
-    let after_profile = after_entities.remove(&profile_id).map(|value| value.value);
-    if before_entities != after_entities {
+    if !maps_match_except(before_entities, after_entities, &profile_id) {
         return Err("another entity changed");
     }
-    if let Some(reason) =
-        profile_delta_rejection(before_profile.as_ref(), after_profile.as_ref(), person_id)
-    {
+    if let Some(reason) = profile_delta_rejection(
+        before_entities.get(&profile_id),
+        after_entities.get(&profile_id),
+        person_id,
+    ) {
         return Err(reason);
     }
     Ok(())
@@ -1481,10 +1506,16 @@ fn automation_change_allowed(
     raw: &mut AutoCommit,
     node: &ChangeNode,
     scope: &AutomationGrantScope,
+    causal_roots: &mut CausalRootCache,
+    views: Option<CausalRootViews>,
 ) -> Result<AutomationEffect, &'static str> {
-    let (before_value, after_value) =
-        change_root_views(raw, node).map_err(|_| "Automation change views are unavailable")?;
-    automation_transition_allowed(before_value, after_value, scope)
+    let (before_value, after_value) = match views {
+        Some(views) => views,
+        None => causal_roots
+            .change_views(raw, node)
+            .map_err(|_| "Automation change views are unavailable")?,
+    };
+    automation_transition_allowed(&before_value, &after_value, scope)
 }
 
 /// Validate one board-only before/after projection using the same immutable
@@ -1497,7 +1528,7 @@ pub fn validate_automation_board_transition(
 ) -> Result<(), String> {
     let before = hydrated_json_value(before).map_err(str::to_string)?;
     let after = hydrated_json_value(after).map_err(str::to_string)?;
-    automation_transition_allowed(before, after, scope)
+    automation_transition_allowed(&before, &after, scope)
         .map(|_| ())
         .map_err(str::to_string)
 }
@@ -1712,22 +1743,20 @@ fn hydrated_json_value(value: &serde_json::Value) -> Result<HydratedValue, &'sta
 }
 
 fn automation_transition_allowed(
-    before_value: HydratedValue,
-    after_value: HydratedValue,
+    before_value: &HydratedValue,
+    after_value: &HydratedValue,
     scope: &AutomationGrantScope,
 ) -> Result<AutomationEffect, &'static str> {
-    let (HydratedValue::Map(mut left_root), HydratedValue::Map(mut right_root)) =
-        (before_value, after_value)
-    else {
+    let (Some(left_root), Some(right_root)) = (map_value(before_value), map_value(after_value)) else {
         return Err("Automation workspace root is invalid");
     };
-    let (Some(HydratedValue::Map(left_entities)), Some(HydratedValue::Map(right_entities))) = (
-        left_root.remove("entities").map(|value| value.value),
-        right_root.remove("entities").map(|value| value.value),
+    let (Some(left_entities), Some(right_entities)) = (
+        left_root.get("entities").and_then(map_value),
+        right_root.get("entities").and_then(map_value),
     ) else {
         return Err("Automation entity map is missing");
     };
-    if left_root != right_root {
+    if !maps_match_except(left_root, right_root, "entities") {
         return Err("Automation cannot change workspace settings or schema");
     }
     let board = right_entities
@@ -1850,14 +1879,14 @@ fn automation_transition_allowed(
     let (item_id, before_item, after_item) = changed_items.pop().unwrap();
     let after_item = after_item.ok_or("Automation cannot delete job cards")?;
     let after_map = map_value(after_item).ok_or("Automation item is invalid")?;
-    if !is_item_map(after_map) || entity_has_child(&right_entities, &item_id) {
+    if !is_item_map(after_map) || entity_has_child(right_entities, &item_id) {
         return Err("Automation can change only leaf job cards");
     }
     if scalar_string(after_map.get("id")).as_deref() != Some(item_id.as_str()) {
         return Err("Automation item ID does not match its entity key");
     }
     if let Some(source) = source_append {
-        check_automation_source_append(source, &item_id, before_item.is_some(), &left_entities)?;
+        check_automation_source_append(source, &item_id, before_item.is_some(), left_entities)?;
     }
     let after_parent = placement_parent(after_map).ok_or("Automation item placement is invalid")?;
     let source_parent;
@@ -1866,7 +1895,7 @@ fn automation_transition_allowed(
         let old_parent =
             placement_parent(before_map).ok_or("Automation item base placement is invalid")?;
         if !is_item_map(before_map)
-            || entity_has_child(&left_entities, &item_id)
+            || entity_has_child(left_entities, &item_id)
             || is_archived(before_map.get("archivedAt"))
             || is_archived(after_map.get("archivedAt"))
             || archive_id.as_deref() == Some(old_parent.as_str())
@@ -1999,6 +2028,19 @@ fn check_automation_source_append(
 
 fn is_archived(value: Option<&HydratedValue>) -> bool {
     scalar_string(value).is_some()
+}
+
+fn maps_match_except(
+    before: &automerge::hydrate::Map,
+    after: &automerge::hydrate::Map,
+    excluded: &str,
+) -> bool {
+    before.len() - usize::from(before.contains_key(excluded))
+        == after.len() - usize::from(after.contains_key(excluded))
+        && before
+            .iter()
+            .filter(|(key, _)| key.as_str() != excluded)
+            .all(|(key, value)| after.deref().get(key) == Some(value))
 }
 
 fn map_value(value: &HydratedValue) -> Option<&automerge::hydrate::Map> {

@@ -428,6 +428,30 @@ fn board_only_automation_validator_accepts_coalesced_safe_cards_and_rejects_mixe
 }
 
 #[test]
+fn consecutive_changes_reuse_identical_causal_frontier() {
+    let mut doc = automation_board();
+    let basis = doc.get_heads();
+    write_automation_item(&mut doc, "first", "lead", false);
+    write_automation_item(&mut doc, "second", "lead", false);
+    let mut nodes = doc.get_changes(&basis).into_iter().map(|change| ChangeNode {
+        hash: change.hash().to_string(),
+        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+        authority: None,
+        change,
+    });
+    let first = nodes.next().unwrap();
+    let second = nodes.next().unwrap();
+    CAUSAL_ROOT_READS.with(|reads| reads.set(0));
+
+    let mut causal_roots = CausalRootCache::default();
+    let (_, intermediate) = causal_roots.change_views(&mut doc, &first).unwrap();
+    let (second_base, _) = causal_roots.change_views(&mut doc, &second).unwrap();
+
+    assert_eq!(intermediate, second_base);
+    assert_eq!(CAUSAL_ROOT_READS.with(|reads| reads.get()), 3);
+}
+
+#[test]
 fn automation_semantics_allow_lead_creation_and_reject_root_mutation() {
     for (change_root, expected) in [(false, true), (true, false)] {
         let mut doc = automation_board();
@@ -441,7 +465,14 @@ fn automation_semantics_allow_lead_creation_and_reject_root_mutation() {
             change,
         };
         assert_eq!(
-            automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+            automation_change_allowed(
+            &mut doc,
+            &node,
+            &automation_scope(),
+            &mut CausalRootCache::default(),
+            None,
+        )
+        .is_ok(),
             expected,
             "base heads {dependencies:?}"
         );
@@ -469,7 +500,14 @@ fn automation_semantics_allow_status_move_and_reject_narrative_edit() {
             change,
         };
         assert_eq!(
-            automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+            automation_change_allowed(
+            &mut doc,
+            &node,
+            &automation_scope(),
+            &mut CausalRootCache::default(),
+            None,
+        )
+        .is_ok(),
             expected
         );
     }
@@ -499,7 +537,14 @@ fn automation_semantics_accept_json_encoded_workflow_from_domain_commands() {
     };
 
     assert!(
-        automation_change_allowed(&mut doc, &node, &automation_scope()).is_ok(),
+        automation_change_allowed(
+            &mut doc,
+            &node,
+            &automation_scope(),
+            &mut CausalRootCache::default(),
+            None,
+        )
+        .is_ok(),
         "canonical JSON-string workflow written by setItemWorkflow must validate"
     );
 }
