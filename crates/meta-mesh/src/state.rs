@@ -601,6 +601,12 @@ impl WasmStateCore {
         )
     }
 
+    #[wasm_bindgen(js_name = validateAuthoredAutomationChange)]
+    pub fn validate_authored_automation_change(base_document: &[u8], raw: JsValue) -> Result<JsValue, JsValue> {
+        let input = strict_causal_input(raw)?;
+        to_value(&meta_mesh_core::causal_admission::validate_authored_automation_change(base_document, input).map_err(js_error)?)
+    }
+
     #[wasm_bindgen(js_name = createCoownershipGenesisPayload)]
     pub fn create_coownership_genesis_payload(raw: JsValue) -> Result<JsValue, JsValue> {
         let input: meta_mesh_core::coownership::CoownershipGenesisInput =

@@ -278,6 +278,7 @@ export const wasmstatecore_signDeviceRoute: (a: number, b: number, c: number, d:
 export const wasmstatecore_signDurableAck: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
 export const wasmstatecore_summarizeSuccession: (a: any, b: any, c: any, d: any, e: any, f: number) => [number, number, number];
 export const wasmstatecore_transitionOutboxClaim: (a: any, b: any) => [number, number, number];
+export const wasmstatecore_validateAuthoredAutomationChange: (a: number, b: number, c: any) => [number, number, number];
 export const wasmstatecore_validateCoownershipLedger: (a: any) => [number, number, number];
 export const wasmstatecore_validateDeviceRoute: (a: any) => [number, number];
 export const wasmstatecore_validateDeviceRoutePayload: (a: any) => [number, number];

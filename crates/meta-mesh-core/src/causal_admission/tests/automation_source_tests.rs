@@ -118,7 +118,7 @@ impl SourceFixture {
         self.doc.put(&placement, "parentId", "interview").unwrap();
     }
 
-    fn evaluate(mut self) -> (String, CausalAdmissionPlan) {
+    fn input(mut self) -> (String, CausalAdmissionInput) {
         self.doc
             .commit_with(CommitOptions::default().with_message(change_metadata(
                 &self.grant,
@@ -126,7 +126,7 @@ impl SourceFixture {
                 &self.worker_device,
             )));
         let hash = self.doc.get_changes(&[]).last().unwrap().hash().to_string();
-        let plan = evaluate_causal_admission(CausalAdmissionInput {
+        let input = CausalAdmissionInput {
             records: vec![
                 change_proof(
                     &self.owner,
@@ -148,9 +148,53 @@ impl SourceFixture {
             snapshot: snapshot(self.owner, self.doc.save()),
             pending_change_bytes: vec![],
             now_ms: 0,
-        })
-        .unwrap();
-        (hash, plan)
+        };
+        (hash, input)
+    }
+
+    fn evaluate(self) -> (String, CausalAdmissionPlan) {
+        let (hash, input) = self.input();
+        (hash, evaluate_causal_admission(input).unwrap())
+    }
+}
+
+#[test]
+fn authored_automation_admission_matches_full_policy_for_move_and_forbidden_root_change() {
+    for forbidden_root in [false, true] {
+        let mut fixture = SourceFixture::new(2);
+        fixture.card("lead");
+        fixture.owner_commit();
+        let base = fixture.doc.save();
+        fixture.move_card();
+        if forbidden_root {
+            fixture.doc.put(ROOT, "title", "Forbidden settings change").unwrap();
+        }
+        let (hash, mut input) = fixture.input();
+        let full = evaluate_causal_admission(input.clone()).unwrap();
+        let full_admitted = full.decisions.iter().any(|decision| decision.hash == hash
+            && matches!(decision.status, CausalAdmissionStatus::Admitted { .. }));
+        input.records.remove(0);
+        let incremental = validate_authored_automation_change(&base, input);
+        assert_eq!(incremental.is_ok(), full_admitted);
+        assert_eq!(incremental.is_ok(), !forbidden_root);
+    }
+}
+
+#[test]
+fn authored_automation_admission_preserves_signed_source_scope_rules() {
+    for version in [1, 2] {
+        let mut fixture = SourceFixture::new(version);
+        let base = fixture.doc.save();
+        fixture.card("lead");
+        fixture.source("original", false);
+        let (hash, mut input) = fixture.input();
+        let full = evaluate_causal_admission(input.clone()).unwrap();
+        let full_admitted = full.decisions.iter().any(|decision| decision.hash == hash
+            && matches!(decision.status, CausalAdmissionStatus::Admitted { .. }));
+        input.records.remove(0);
+        let incremental = validate_authored_automation_change(&base, input);
+        assert_eq!(incremental.is_ok(), full_admitted);
+        assert_eq!(incremental.is_ok(), version == 2);
     }
 }
 

@@ -359,6 +359,7 @@ export class WasmStateCore {
     static signDurableAck(seed: Uint8Array, signer_key_id: string, payload: any): any;
     static summarizeSuccession(policy: any, claims: any, votes: any, transfers: any, revocations: any, epoch: number): any;
     static transitionOutboxClaim(current: any, input: any): any;
+    static validateAuthoredAutomationChange(base_document: Uint8Array, raw: any): any;
     static validateCoownershipLedger(raw: any): any;
     static validateDeviceRoute(route: any): void;
     static validateDeviceRoutePayload(payload: any): void;
@@ -828,6 +829,7 @@ export interface InitOutput {
     readonly wasmstatecore_signDurableAck: (a: number, b: number, c: number, d: number, e: any) => [number, number, number];
     readonly wasmstatecore_summarizeSuccession: (a: any, b: any, c: any, d: any, e: any, f: number) => [number, number, number];
     readonly wasmstatecore_transitionOutboxClaim: (a: any, b: any) => [number, number, number];
+    readonly wasmstatecore_validateAuthoredAutomationChange: (a: number, b: number, c: any) => [number, number, number];
     readonly wasmstatecore_validateCoownershipLedger: (a: any) => [number, number, number];
     readonly wasmstatecore_validateDeviceRoute: (a: any) => [number, number];
     readonly wasmstatecore_validateDeviceRoutePayload: (a: any) => [number, number];

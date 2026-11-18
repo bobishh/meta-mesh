@@ -2,6 +2,7 @@ export type RustStateCore = {
   resourceAccess(input: unknown): unknown
   causalAdmissionPolicyId(): string
   evaluateCausalAdmission(input: unknown): unknown
+  validateAuthoredAutomationChange(baseDocument: Uint8Array, input: unknown): { hash: string; role: "automation" }
   createCoownershipGenesisPayload(input: unknown): unknown
   validateCoownershipLedger(ledger: unknown): unknown
   mergeCoownershipLedgers(current: unknown, incoming: unknown): unknown

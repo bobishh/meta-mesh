@@ -113,6 +113,66 @@ pub fn evaluate_causal_admission(
     evaluate_causal_admission_inner(input, None)
 }
 
+/// Validate a locally authored Automation change extending a previously admitted
+/// document. The caller owns admission of the base; this verifies the actual
+/// dependency frontier, signed provenance, current authority and complete effect.
+/// Never use an unverified peer document as the base.
+pub fn validate_authored_automation_change(
+    base_document: &[u8],
+    input: CausalAdmissionInput,
+) -> Result<crate::AuthorizedWorkspaceChange, String> {
+    if input.records.len() != 1 || !input.pending_change_bytes.is_empty()
+        || base_document.len() > MAX_CAUSAL_ADMISSION_BYTES
+        || input.snapshot.document.len() > MAX_CAUSAL_ADMISSION_BYTES
+    {
+        return Err("Authored Automation admission requires one signed change".into());
+    }
+    let mut base = AutoCommit::load(base_document)
+        .map_err(|_| "Invalid admitted Automation base document")?;
+    let heads = base.get_heads();
+    if heads.is_empty() {
+        return Err("Authored Automation change requires an admitted base".into());
+    }
+    let mut raw = AutoCommit::load(&input.snapshot.document)
+        .map_err(|_| "Invalid authored Automation document")?;
+    if heads.iter().any(|hash| raw.get_change_meta_by_hash(hash).is_none()) {
+        return Err("Authored Automation change does not extend its base".into());
+    }
+    let changes = raw.get_changes(&heads);
+    if changes.len() != 1 {
+        return Err("Authored Automation admission requires exactly one new change".into());
+    }
+    let change = changes.into_iter().next().ok_or("Missing authored Automation change")?;
+    if change.deps().iter().copied().collect::<BTreeSet<_>>() != heads.iter().copied().collect() {
+        return Err("Authored Automation change must extend every admitted head".into());
+    }
+    let node = ChangeNode { hash: change.hash().to_string(),
+        dependencies: change.deps().iter().map(ToString::to_string).collect(),
+        authority: parse_change_authority_metadata(change.message()), change };
+    let record = &input.records[0];
+    if record.signed.payload.hashes != [node.hash.clone()] || !metadata_identity_matches(record, &node)
+        || !automation_provenance_matches(record, &node)
+    {
+        return Err("Authored Automation change provenance does not match its authorization".into());
+    }
+    let context = crate::authorization::ValidatedWorkspaceWriteAuthorizationContext::from_snapshot_causal(&input.snapshot)?;
+    let needed = HashSet::from([&node.hash]);
+    let proofs = crate::authorization::admit_with_needed_for_causal(record, &context, &needed, false)?;
+    let proof = proofs.into_iter().next().ok_or("Missing authored Automation proof")?;
+    if proof.role != WorkspaceRole::Automation {
+        return Err("Authored Automation change requires Automation authority".into());
+    }
+    let scope = record.grant.as_ref().and_then(|grant| grant.payload.automation.as_ref())
+        .ok_or("Automation grant scope is missing")?;
+    let mut roots = CausalRootCache::default();
+    let (before, after) = roots.change_views(&mut raw, &node).map_err(str::to_string)?;
+    application_source_change_allowed(&before, &after, proof.role, &input.snapshot.workspace_id, Some(scope))
+        .map_err(str::to_string)?;
+    automation_change_allowed(&mut raw, &node, scope, &mut roots, Some((before, after)))
+        .map_err(str::to_string)?;
+    Ok(proof)
+}
+
 /// Admit only changes causally descended from a Native-verified compact
 /// history basis. The basis hash is supplied only by the opaque receiver
 /// handle; ordinary callers must use full-history admission.
